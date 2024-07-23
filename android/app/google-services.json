@@ -1,0 +1,56 @@
+{
+  "project_info": {
+    "project_number": "81700495261",
+    "firebase_url": "https://devarun-1d87a-default-rtdb.firebaseio.com",
+    "project_id": "devarun-1d87a",
+    "storage_bucket": "devarun-1d87a.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:81700495261:android:e106f45accaae7625d9974",
+        "android_client_info": {
+          "package_name": "com.esplit"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "81700495261-0p3s5pdcritjf4kokoe695niu9cn44f7.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.esplit",
+            "certificate_hash": "d333b998f322265d9389f9507c750c896b788991"
+          }
+        },
+        {
+          "client_id": "81700495261-s92so6b67cp95a2ja0anp5hn5qakguq4.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.esplit",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
+          "client_id": "81700495261-tblkaqkgefgrs949p2asu1r8g3spquv7.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBZ0ASc9D_FKX68wa9rXKdKLwnf3_ehPdA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "81700495261-tblkaqkgefgrs949p2asu1r8g3spquv7.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
