@@ -1,9 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, Button, FlatList, StyleSheet, Alert } from 'react-native';
+import { View, Text, TextInput, Button, FlatList, StyleSheet, Alert, TouchableOpacity } from 'react-native';
 import firestore from '@react-native-firebase/firestore';
 import axios from 'axios';
-
-
 
 const ExpenseTracker = ({ user, onLogoutPress }) => {
 
@@ -11,6 +9,10 @@ const ExpenseTracker = ({ user, onLogoutPress }) => {
     const [totalExpense, setTotalExpense] = useState('');
     const [expenses, setExpenses] = useState([]);
     const [totalAmount, setTotalAmount] = useState(0);
+    const [totalArun, setTotalArun] = useState(0);
+    const [totalDheeraj, setTotalDheeraj] = useState(0);
+    const [showTotal, setShowTotal] = useState(false)
+
     const getAllTokens = async () => {
         const snapshot = await firestore().collection('mobileUser').get();
         const tokens = [];
@@ -24,29 +26,37 @@ const ExpenseTracker = ({ user, onLogoutPress }) => {
     };
 
     const onSavePress = async () => {
+        console.log(user.displayName)
         if (!description || !totalExpense) {
             Alert.alert('Please fill all fields');
             return;
         }
+        const authorizedUsers = ["Arun Kumar", "Arun Singh", "Dheeraj Tripathi"];
+        if (!authorizedUsers.includes(user.displayName)) {
+            Alert.alert('You are not authorized to add expenses');
+            return;
+        }
+
 
         const isArun = user.displayName === 'Arun Kumar';
-        const myShare = isArun ? 0 : parseFloat(totalExpense) / 2;
-        const otherShare = isArun ? parseFloat(totalExpense) / 2 : 0;
+        const totalExpenseValue = parseFloat(totalExpense);
+
+        const arunShare = isArun ? 0 : totalExpenseValue / 2;
+        const dheerajShare = isArun ? totalExpenseValue / 2 : 0;
 
         await firestore().collection('expenses').add({
-
             description,
-            totalExpense: parseFloat(totalExpense),
+            totalExpense: totalExpenseValue,
             paidBy: user.displayName,
-            ArunShare: isArun ? 0 : otherShare,
-            DheerajShare: isArun ? otherShare : 0,
+            ArunShare: arunShare,
+            DheerajShare: dheerajShare,
             timestamp: firestore.FieldValue.serverTimestamp(),
         });
 
         setDescription('');
         setTotalExpense('');
+
         const tokens = await getAllTokens();
-        console.log("🚀 ~ onSavePress ~ tokens:", tokens)
         let data = {
             title: "Expense added",
             body: `New expense added by ${user.displayName}`,
@@ -69,19 +79,49 @@ const ExpenseTracker = ({ user, onLogoutPress }) => {
                 .onSnapshot((querySnapshot) => {
                     const expenses = [];
                     let total = 0;
+                    let totalArun = 0;
+                    let totalDheeraj = 0;
                     querySnapshot.forEach((documentSnapshot) => {
                         const expense = documentSnapshot.data();
                         expense.id = documentSnapshot.id;
                         expenses.push(expense);
                         total += expense.totalExpense;
+                        if (expense.paidBy === 'Arun Kumar') {
+                            totalArun += expense.totalExpense;
+                        } else if (expense.paidBy === 'Dheeraj Tripathi') {
+                            totalDheeraj += expense.totalExpense;
+                        }
                     });
                     setExpenses(expenses);
                     setTotalAmount(total);
+                    setTotalArun(totalArun);
+                    setTotalDheeraj(totalDheeraj);
                 });
 
             return () => unsubscribe();
         }
     }, [user]);
+
+    const calculateBalance = () => {
+        const total = totalAmount / 2;
+        const arunOwes = totalArun - total;
+        const dheerajOwes = totalDheeraj - total;
+        return {
+            arunOwes,
+            dheerajOwes
+        };
+    };
+
+    const formatDate = (timestamp) => {
+        if (timestamp) {
+
+            const date = timestamp.toDate();
+            return date.toLocaleDateString(); // Format the date only
+        }
+    };
+
+    const { arunOwes, dheerajOwes } = calculateBalance();
+
     return (
         <View style={styles.container}>
             <Text style={styles.title}>Expense Tracker</Text>
@@ -90,35 +130,48 @@ const ExpenseTracker = ({ user, onLogoutPress }) => {
                 placeholder="Description"
                 value={description}
                 onChangeText={setDescription}
+                placeholderTextColor={'#333'}
             />
             <TextInput
                 style={styles.input}
                 placeholder="Total Expense"
+                placeholderTextColor={'#333'}
                 keyboardType="numeric"
                 value={totalExpense}
                 onChangeText={setTotalExpense}
             />
-            <Button title="Save" onPress={onSavePress} />
+            <TouchableOpacity style={styles.saveButton} onPress={onSavePress}>
+                <Text style={styles.saveButtonText}>Add New </Text>
+            </TouchableOpacity>
 
+            <View style={{ display: showTotal ? 'flex' : "none" }}>
+                <Text style={styles.totalText}>Total Amount:  {totalAmount}</Text>
+                <Text style={styles.totalText}>Per Person:  {totalAmount / 2}</Text>
+                <Text style={styles.totalText}>Arun's Total:  {totalArun}</Text>
+                <Text style={styles.totalText}>Dheeraj's Total:  {totalDheeraj}</Text>
+                <Text style={styles.totalText}>Arun Owes:  {arunOwes.toFixed(2)}</Text>
+                <Text style={styles.totalText}>Dheeraj Owes:  {dheerajOwes.toFixed(2)}</Text>
+            </View>
 
-            <Text style={styles.totalText}>Total Amount: {totalAmount}</Text>
-            <Text style={styles.totalText}>Per Person Amount: {(totalAmount / 2).toFixed(2)}</Text>
 
             <FlatList
                 data={expenses}
                 keyExtractor={(item) => item.id}
                 renderItem={({ item }) => (
                     <View style={styles.expenseItem}>
-                        <Text>Description: {item.description}</Text>
-                        <Text>Total Expense: {item.totalExpense}</Text>
-                        <Text>Paid By: {item.paidBy}</Text>
-                        <Text>Arun's Share: {item.ArunShare}</Text>
-                        <Text>Dheeraj's Share: {item.DheerajShare}</Text>
+                        <Text style={styles.expenseText}>Description: {item.description}</Text>
+                        <Text style={styles.expenseText}>Total Expense: {item.totalExpense}</Text>
+                        <Text style={styles.expenseText}>Paid By: {item.paidBy} on {item && item.timestamp ? formatDate(item.timestamp) : null}</Text>
+                        <Text style={styles.expenseText}>Arun's Share: {item.ArunShare}</Text>
+                        <Text style={styles.expenseText}>Dheeraj's Share: {item.DheerajShare}</Text>
+
                     </View>
                 )}
             />
-            <Button title="Logout" onPress={() => { onLogoutPress() }} />
-        </View>
+            <TouchableOpacity style={styles.logoutButton} onPress={() => setShowTotal(!showTotal)}>
+                <Text style={styles.logoutButtonText}>{showTotal ? "Hide Totol" : "Show Total"}</Text>
+            </TouchableOpacity>
+        </View >
     );
 };
 
@@ -127,29 +180,88 @@ const styles = StyleSheet.create({
         flex: 1,
         justifyContent: 'center',
         padding: 16,
+        backgroundColor: '#f7f7f7',
     },
     title: {
-        fontSize: 24,
+        fontSize: 28,
         textAlign: 'center',
         marginBottom: 16,
+        color: '#333',
+        fontWeight: 'bold',
     },
     input: {
-        height: 40,
-        borderColor: 'gray',
+        height: 48,
+        borderColor: '#ddd',
         borderWidth: 1,
         marginBottom: 12,
-        paddingHorizontal: 8,
+        paddingHorizontal: 16,
+        borderRadius: 8,
+        backgroundColor: '#fff',
     },
-    totalText: {
+    saveButton: {
+        backgroundColor: '#4CAF50',
+        paddingVertical: 12,
+        borderRadius: 8,
+        alignItems: 'center',
+        marginVertical: 10,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.25,
+        shadowRadius: 3.84,
+        elevation: 5,
+    },
+    saveButtonText: {
+        color: '#fff',
+        fontSize: 18,
+        fontWeight: 'bold',
+    },
+    totalText1: {
         fontSize: 20,
         textAlign: 'center',
         marginVertical: 16,
+        color: '#333',
+        fontWeight: 'bold',
+    },
+    totalText: {
+        fontSize: 16,
+        textAlign: 'center',
+        marginVertical: 5,
+        color: '#333',
+        fontWeight: 'bold',
     },
     expenseItem: {
         borderWidth: 1,
-        borderColor: 'gray',
-        padding: 8,
+        borderColor: '#ddd',
+        padding: 16,
         marginVertical: 4,
+        borderRadius: 8,
+        backgroundColor: '#fff',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.25,
+        shadowRadius: 3.84,
+        elevation: 5,
+    },
+    expenseText: {
+        fontSize: 16,
+        color: '#333',
+    },
+    logoutButton: {
+        backgroundColor: '#FF6347',
+        paddingVertical: 12,
+        borderRadius: 8,
+        alignItems: 'center',
+        marginTop: 20,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.25,
+        shadowRadius: 3.84,
+        elevation: 5,
+    },
+    logoutButtonText: {
+        color: '#fff',
+        fontSize: 18,
+        fontWeight: 'bold',
     },
 });
 
