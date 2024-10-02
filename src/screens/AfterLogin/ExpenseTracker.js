@@ -4,8 +4,8 @@ import firestore from '@react-native-firebase/firestore';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import auth from '@react-native-firebase/auth';
-
-const ExpenseTracker = () => {
+import moment from 'moment';
+const ExpenseTracker = ({ navigation }) => {
     const user = auth().currentUser;
     const [description, setDescription] = useState('');
     const [totalExpense, setTotalExpense] = useState('');
@@ -51,18 +51,23 @@ const ExpenseTracker = () => {
 
             const currentUser = totalUsers.find(u => u.displayName === user.displayName);
             const totalExpenseValue = parseFloat(totalExpense);
-
             const userShares = totalUsers.reduce((acc, u) => {
-                acc[u.displayName] = u.displayName === currentUser.displayName ? 0 : totalExpenseValue / totalUsers.length;
+                if (u.displayName === currentUser.displayName || (u.joinDate && u.joinDate > new Date().toISOString())) {
+                    // User either paid for the expense or joined after the expense was added
+                    acc[u.displayName] = 0;
+                } else {
+                    acc[u.displayName] = totalExpenseValue / (totalUsers.length - 1); // Exclude the current user from splitting
+                }
                 return acc;
             }, {});
 
+            console.log(userShares);
             await firestore().collection('Esplitgroups').doc(groupKey).collection("expenses").add({
                 description,
                 totalExpense: totalExpenseValue,
                 paidBy: user.displayName,
                 ...userShares,
-                timestamp: firestore.FieldValue.serverTimestamp(),
+                timestamp: new Date().toISOString() // Store as ISO string
             });
 
             setDescription('');
@@ -92,8 +97,6 @@ const ExpenseTracker = () => {
                 const key = await AsyncStorage.getItem("groupKey");
                 if (key) {
                     setGroupKey(key);
-                } else {
-                    console.error('Group key is not set');
                 }
             } catch (error) {
                 console.error('Error fetching group key:', error);
@@ -117,6 +120,9 @@ const ExpenseTracker = () => {
                     setTotalUsers(members);
                 } else {
                     console.log('Group document does not exist.');
+                    await AsyncStorage.removeItem("groupKey");
+                    await AsyncStorage.removeItem('hasCheckedGroup');
+                    navigation.goBack();
                 }
             } catch (error) {
                 console.error('Error retrieving group data:', error);
@@ -155,20 +161,27 @@ const ExpenseTracker = () => {
     }, [groupKey]);
 
     const calculateBalance = () => {
-        const total = totalAmount / totalUsers.length;
+        const totalPerUser = totalAmount / totalUsers.length;
         const userBalances = {};
+
         totalUsers.forEach(u => {
-            const owes = (userExpenses[u.displayName] || 0) - total;
+            let userTotalExpenses = 0;
+
+            // Sum up expenses after the user joined the group
+            expenses.forEach(expense => {
+                if (u.joinDate && expense.timestamp > u.joinDate) { // Compare as ISO strings
+                    if (expense.paidBy === u.displayName) {
+                        userTotalExpenses += expense.totalExpense;
+                    }
+                }
+            });
+
+            // Calculate how much the user owes or is owed
+            const owes = userTotalExpenses - totalPerUser;
             userBalances[u.displayName] = owes;
         });
-        return userBalances;
-    };
 
-    const formatDate = timestamp => {
-        if (timestamp) {
-            const date = timestamp.toDate();
-            return date.toLocaleDateString();
-        }
+        return userBalances;
     };
 
     const userBalances = calculateBalance();
@@ -213,7 +226,7 @@ const ExpenseTracker = () => {
                     <View style={styles.expenseItem}>
                         <Text style={styles.expenseText}>Description: {item.description}</Text>
                         <Text style={styles.expenseText}>Total Expense: {item.totalExpense}</Text>
-                        <Text style={styles.expenseText}>Paid By: {item.paidBy} on {formatDate(item.timestamp)}</Text>
+                        <Text style={styles.expenseText}>Paid By: {item.paidBy} on {moment(item.timestamp).format('DO MMM  YY, h:mm a')}</Text>
                         {Object.keys(item).map((key, index) => {
                             if (key !== 'description' && key !== 'totalExpense' && key !== 'paidBy' && key !== 'timestamp') {
                                 return <Text key={index} style={styles.expenseText}>{key}'s Share: {item[key]}</Text>
