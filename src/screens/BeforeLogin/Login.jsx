@@ -1,11 +1,14 @@
 import React from 'react';
 import { View, StyleSheet, Image, Text, TouchableOpacity } from 'react-native';
 import { onGoogleButtonPress } from '../../services/auth';
+import firestore from '@react-native-firebase/firestore';
+import messaging from '@react-native-firebase/messaging';
 
 const LoginScreen = () => {
     const handleLogin = async () => {
         try {
-            await onGoogleButtonPress();
+            const response = await onGoogleButtonPress();
+           
         } catch (error) {
             console.log('Google sign-in failed', error);
         }
@@ -65,7 +68,8 @@ const styles = StyleSheet.create({
         paddingHorizontal: 20,
         backgroundColor: 'transparent',
         borderWidth: 2,
-        borderColor: '#4285F4',
+        borderColor: '#333',
+        borderRadius: 10
     },
     googleLogo: {
         width: 24,
