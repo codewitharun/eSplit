@@ -27,28 +27,38 @@ const GroupManagement = ({ navigation }) => {
     const handleJoinGroup = async () => {
         const joinGroupKey = selectedGroup || groupKey;
         if (joinGroupKey) {
-            // Check if the group exists in the 'Esplit/groups' collection
             const groupDoc = await firestore().collection('Esplitgroups').doc(joinGroupKey).get();
             if (groupDoc.exists) {
-                // Add the group key to the user's groupKeys array
-                await firestore().collection('Esplitusers').doc(user.uid).set(
-                    {
-                        groupKeys: firestore.FieldValue.arrayUnion(joinGroupKey)
-                    },
-                    { merge: true }
-                );
+                const groupData = groupDoc.data();
+                const members = groupData.members || [];
+                const isUserAlreadyMember = members.some(member => member.id === user.uid);
 
-                // Add the user to the group's members array
-                await firestore().collection('Esplitgroups').doc(joinGroupKey).update({
-                    members: firestore.FieldValue.arrayUnion({
-                        id: user.uid,
-                        displayName: user.displayName,
-                        photoUrl: user.photoURL || ""
-                    })
-                });
-                await AsyncStorage.setItem("groupKey", joinGroupKey)
-                await AsyncStorage.setItem('hasCheckedGroup', "true");
-                navigation.navigate('Home');
+                if (!isUserAlreadyMember) {
+                    await firestore().collection('Esplitusers').doc(user.uid).set(
+                        {
+                            groupKeys: firestore.FieldValue.arrayUnion(joinGroupKey)
+                        },
+                        { merge: true }
+                    );
+
+                    await firestore().collection('Esplitgroups').doc(joinGroupKey).update({
+                        members: firestore.FieldValue.arrayUnion({
+                            id: user.uid,
+                            displayName: user.displayName,
+                            photoUrl: user.photoURL || "",
+                            joinDate: new Date().toISOString() // Using ISO string format
+                        })
+                    });
+
+                    await AsyncStorage.setItem("groupKey", joinGroupKey);
+                    await AsyncStorage.setItem('hasCheckedGroup', "true");
+                    navigation.navigate('Home');
+                } else {
+                    console.log('You are already a member of this group.');
+                    await AsyncStorage.setItem("groupKey", joinGroupKey);
+                    await AsyncStorage.setItem('hasCheckedGroup', "true");
+                    navigation.navigate('Home');
+                }
             } else {
                 Alert.alert('Invalid Group Key', 'The group key you entered does not exist.');
             }
@@ -61,7 +71,6 @@ const GroupManagement = ({ navigation }) => {
         try {
             const newGroupKey = generateGroupKey();
 
-            // Create a new group in the 'Esplit/groups' collection
             await firestore().collection('Esplitgroups').doc(newGroupKey).set({
                 createdBy: {
                     id: user.uid,
@@ -71,18 +80,13 @@ const GroupManagement = ({ navigation }) => {
                 members: [{
                     id: user.uid,
                     displayName: user.displayName,
-                    photoUrl: user.photoURL || ""
+                    photoUrl: user.photoURL || "",
+                    joinDate: new Date().toISOString() // Using ISO string format
                 }],
-                createdAt: firestore.FieldValue.serverTimestamp(),
+                createdAt: new Date().toISOString() // Using ISO string format
             });
-            await AsyncStorage.setItem("groupKey", newGroupKey)
-            // Add the new group key to the user's document in the 'Esplit/users' collection
-            await firestore().collection('Esplitusers').doc(user.uid).set(
-                {
-                    groupKeys: firestore.FieldValue.arrayUnion(newGroupKey)
-                },
-                { merge: true }
-            );
+
+            await AsyncStorage.setItem("groupKey", newGroupKey);
             await AsyncStorage.setItem('hasCheckedGroup', "true");
             navigation.navigate('Home');
         } catch (error) {
@@ -100,16 +104,17 @@ const GroupManagement = ({ navigation }) => {
             <Text style={styles.title}>Join or Create a Group</Text>
 
             <TouchableOpacity style={styles.input} onPress={() => setModalVisible(true)}>
-                <Text>{selectedGroup ? selectedGroup : "Select a group to join"}</Text>
+                <Text style={{ color: "black" }}>{selectedGroup ? selectedGroup : "Select a group to join"}</Text>
             </TouchableOpacity>
 
             <TextInput
                 style={styles.input}
-                placeholder="Or enter 6-digit Group Key"
+                placeholder="Enter 6-digit Group Key"
                 keyboardType="numeric"
                 maxLength={6}
                 value={groupKey}
                 onChangeText={setGroupKey}
+                placeholderTextColor={"black"}
             />
 
             <TouchableOpacity style={styles.button} onPress={handleJoinGroup}>
@@ -140,7 +145,7 @@ const GroupManagement = ({ navigation }) => {
                                         setModalVisible(false);
                                     }}
                                 >
-                                    <Text>{item}</Text>
+                                    <Text style={{ color: "black" }}>{item}</Text>
                                 </TouchableOpacity>
                             )}
                             keyExtractor={(item) => item}
@@ -167,6 +172,7 @@ const styles = StyleSheet.create({
         fontSize: 24,
         fontWeight: 'bold',
         marginBottom: 20,
+        color: "black"
     },
     input: {
         width: '100%',
@@ -178,6 +184,7 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
+        color: "black"
     },
     button: {
         width: '100%',
@@ -191,6 +198,7 @@ const styles = StyleSheet.create({
         color: '#fff',
         fontSize: 16,
         fontWeight: 'bold',
+
     },
     modalContainer: {
         flex: 1,
