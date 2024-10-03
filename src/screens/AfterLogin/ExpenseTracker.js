@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, Alert, FlatList, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, TextInput, Alert, FlatList, StyleSheet, TouchableOpacity, Share } from 'react-native';
 import firestore from '@react-native-firebase/firestore';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import auth from '@react-native-firebase/auth';
 import moment from 'moment';
+import Icon from 'react-native-vector-icons/MaterialIcons';
+import DatePicker from './DatePicker';
+
 const ExpenseTracker = ({ navigation }) => {
     const user = auth().currentUser;
     const [description, setDescription] = useState('');
@@ -15,7 +18,9 @@ const ExpenseTracker = ({ navigation }) => {
     const [showTotal, setShowTotal] = useState(false);
     const [totalUsers, setTotalUsers] = useState([]);
     const [groupKey, setGroupKey] = useState("");
+    const [selectedDate, setSelectedDate] = useState('');
 
+    const url = "https://install.appcenter.ms/users/arun4appcenter/apps/esplit/distribution_groups/public"
     const getAllTokens = async () => {
         try {
             const snapshot = await firestore().collection('Esplitusers').get();
@@ -90,44 +95,42 @@ const ExpenseTracker = ({ navigation }) => {
             console.log("🚀 ~ onSavePress ~ error:", error);
         }
     };
-
-    useEffect(() => {
-        const fetchGroupKey = async () => {
-            try {
-                const key = await AsyncStorage.getItem("groupKey");
-                if (key) {
-                    setGroupKey(key);
-                }
-            } catch (error) {
-                console.error('Error fetching group key:', error);
+    const fetchGroupKey = async () => {
+        try {
+            const key = await AsyncStorage.getItem("groupKey");
+            if (key) {
+                console.log("🚀 ~ fetchGroupKey ~ key:", key)
+                setGroupKey(key);
             }
-        };
+        } catch (error) {
+            console.error('Error fetching group key:', error);
+        }
+    };
+    const fetchGroupData = async () => {
+        try {
+            const snapshot = await firestore().collection('Esplitgroups').doc(groupKey).get();
+            if (snapshot.exists) {
+                const groupData = snapshot.data();
+                console.log("🚀 ~ useEffect ~ groupData:", groupData);
 
-        fetchGroupKey();
-    }, []);
+                const members = groupData.members || [];
+                setTotalUsers(members);
+            } else {
+                console.log('Group document does not exist.');
+                await AsyncStorage.removeItem("groupKey");
+                await AsyncStorage.removeItem('hasCheckedGroup');
+                navigation.goBack();
+            }
+        } catch (error) {
+            console.error('Error retrieving group data:', error);
+        }
+    };
+
 
     useEffect(() => {
+        fetchGroupKey()
         if (!groupKey) return;
-
-        const fetchGroupData = async () => {
-            try {
-                const snapshot = await firestore().collection('Esplitgroups').doc(groupKey).get();
-                if (snapshot.exists) {
-                    const groupData = snapshot.data();
-                    console.log("🚀 ~ useEffect ~ groupData:", groupData);
-
-                    const members = groupData.members || [];
-                    setTotalUsers(members);
-                } else {
-                    console.log('Group document does not exist.');
-                    await AsyncStorage.removeItem("groupKey");
-                    await AsyncStorage.removeItem('hasCheckedGroup');
-                    navigation.goBack();
-                }
-            } catch (error) {
-                console.error('Error retrieving group data:', error);
-            }
-        };
+        fetchGroupData();
 
         const unsubscribe = firestore().collection('Esplitgroups').doc(groupKey).collection('expenses')
             .orderBy('timestamp', 'desc')
@@ -155,10 +158,10 @@ const ExpenseTracker = ({ navigation }) => {
                 console.error('Error fetching expenses:', error);
             });
 
-        fetchGroupData();
+
 
         return () => unsubscribe();
-    }, [groupKey]);
+    }, [groupKey, navigation]);
 
     const calculateBalance = () => {
         const totalPerUser = totalAmount / totalUsers.length;
@@ -185,10 +188,43 @@ const ExpenseTracker = ({ navigation }) => {
     };
 
     const userBalances = calculateBalance();
+    const onShare = async (groupKey) => {
+        try {
+            const result = await Share.share({
+                message:
+                    `🎉 You're invited to join Esplit! 🎉\n\nManage your expenses and split bills with ease.\n\n🔗 Join Esplit using this link: ${url}\n\nOr, if you're joining my group, use this group key: ${groupKey} to be part of our group. Let's simplify splitting expenses together! 💰`,
+            });
+
+            if (result.action === Share.sharedAction) {
+                if (result.activityType) {
+                    console.log(`Shared with activity type: ${result.activityType}`);
+                } else {
+                    console.log('Shared successfully');
+                }
+            } else if (result.action === Share.dismissedAction) {
+                console.log('Share dismissed');
+            }
+        } catch (error) {
+            Alert.alert('Sharing failed', error.message);
+        }
+    };
 
     return (
         <View style={styles.container}>
-            <Text style={styles.title}>Expense Tracker</Text>
+            <View style={styles.headerContainer}>
+                <Text style={styles.title}>Expense Tracker</Text>
+
+                <View style={styles.userInfoContainer}>
+                    <Text style={styles.userCountText}>Users: {totalUsers.length}</Text>
+
+                    <TouchableOpacity onPress={() => onShare(groupKey)} style={styles.shareButton}>
+                        <Text style={styles.shareButtonText}>Invite</Text>
+                        <Icon name="share" size={20} color="black" />
+                    </TouchableOpacity>
+                </View>
+            </View>
+
+            {/* <DatePicker selectedDate={selectedDate} setSelectedDate={setSelectedDate} /> */}
             <TextInput
                 style={styles.input}
                 placeholder="Description"
@@ -204,6 +240,8 @@ const ExpenseTracker = ({ navigation }) => {
                 value={totalExpense}
                 onChangeText={setTotalExpense}
             />
+
+
             <TouchableOpacity style={styles.saveButton} onPress={onSavePress}>
                 <Text style={styles.saveButtonText}>Add New</Text>
             </TouchableOpacity>
@@ -223,23 +261,26 @@ const ExpenseTracker = ({ navigation }) => {
                 data={expenses}
                 keyExtractor={item => item.id}
                 renderItem={({ item }) => (
-                    <View style={styles.expenseItem}>
+
+                    <View View style={styles.expenseItem}>
+                        {console.log(item)}
                         <Text style={styles.expenseText}>Description: {item.description}</Text>
                         <Text style={styles.expenseText}>Total Expense: {item.totalExpense}</Text>
-                        <Text style={styles.expenseText}>Paid By: {item.paidBy} on {moment(item.timestamp).format('DO MMM  YY, h:mm a')}</Text>
+                        <Text style={styles.expenseText}>Paid By: {item.paidBy} on {moment(item.timestamp).format('DD MMM  YY [at] h:mm a')}</Text>
                         {Object.keys(item).map((key, index) => {
-                            if (key !== 'description' && key !== 'totalExpense' && key !== 'paidBy' && key !== 'timestamp') {
+                            if (key !== 'description' && key !== 'totalExpense' && key !== 'paidBy' && key !== 'timestamp' && key !== 'id') {
                                 return <Text key={index} style={styles.expenseText}>{key}'s Share: {item[key]}</Text>
                             }
                             return null;
                         })}
                     </View>
-                )}
+                )
+                }
             />
-            <TouchableOpacity style={styles.toggleButton} onPress={() => setShowTotal(!showTotal)}>
+            < TouchableOpacity style={styles.toggleButton} onPress={() => setShowTotal(!showTotal)}>
                 <Text style={styles.toggleButtonText}>{showTotal ? 'Hide Total' : 'Show Total'}</Text>
-            </TouchableOpacity>
-        </View>
+            </TouchableOpacity >
+        </View >
     );
 };
 
@@ -250,13 +291,7 @@ const styles = StyleSheet.create({
         padding: 16,
         backgroundColor: '#f7f7f7',
     },
-    title: {
-        fontSize: 28,
-        textAlign: 'center',
-        marginBottom: 16,
-        color: '#333',
-        fontWeight: 'bold',
-    },
+
     input: {
         height: 48,
         borderColor: '#ddd',
@@ -284,6 +319,7 @@ const styles = StyleSheet.create({
         fontSize: 18,
         fontWeight: 'bold',
     },
+
     totalText: {
         fontSize: 16,
         textAlign: 'center',
@@ -291,6 +327,7 @@ const styles = StyleSheet.create({
         color: '#333',
         fontWeight: '600',
     },
+
     expenseItem: {
         padding: 16,
         marginVertical: 8,
@@ -323,6 +360,43 @@ const styles = StyleSheet.create({
         fontSize: 18,
         fontWeight: 'bold',
     },
+    headerContainer: {
+        justifyContent: 'space-between',
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 10,
+        paddingHorizontal: 20,
+        backgroundColor: '#F5F5F5',
+        width: "100%"
+    },
+    title: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        color: '#2D2D2D',
+    },
+    userInfoContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    userCountText: {
+        fontSize: 16,
+        marginRight: 15,
+        color: '#2D2D2D',
+    },
+    shareButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#E0E0E0',
+        paddingHorizontal: 10,
+        paddingVertical: 5,
+        borderRadius: 5,
+    },
+    shareButtonText: {
+        fontSize: 16,
+        color: '#000',
+        marginRight: 5,
+    },
+
 });
 
 export default ExpenseTracker;
