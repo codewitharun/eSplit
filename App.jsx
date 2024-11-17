@@ -82,6 +82,7 @@ const App = () => {
 
       } catch (error) {
         console.error('Error in onAuthStateChanged:', error);
+        setLoading(false);
       }
     } else {
       try {

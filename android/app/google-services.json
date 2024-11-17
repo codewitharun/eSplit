@@ -23,6 +23,14 @@
           }
         },
         {
+          "client_id": "81700495261-a4evj8blki4uud41l5b25atab07150vh.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.esplit",
+            "certificate_hash": "2fa151b70317cbabdda73af1eea528d42d1c6c81"
+          }
+        },
+        {
           "client_id": "81700495261-s92so6b67cp95a2ja0anp5hn5qakguq4.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
