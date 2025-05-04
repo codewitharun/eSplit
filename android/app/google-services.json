@@ -1,63 +1,79 @@
 {
   "project_info": {
-    "project_number": "81700495261",
-    "firebase_url": "https://devarun-1d87a-default-rtdb.firebaseio.com",
-    "project_id": "devarun-1d87a",
-    "storage_bucket": "devarun-1d87a.appspot.com"
+    "project_number": "564933121716",
+    "project_id": "esplit-d362c",
+    "storage_bucket": "esplit-d362c.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:81700495261:android:e106f45accaae7625d9974",
+        "mobilesdk_app_id": "1:564933121716:android:141359e790d3f3ad9ce9e1",
         "android_client_info": {
-          "package_name": "com.esplit"
+          "package_name": "com.techtitens.ezysplit"
         }
       },
       "oauth_client": [
         {
-          "client_id": "81700495261-0p3s5pdcritjf4kokoe695niu9cn44f7.apps.googleusercontent.com",
+          "client_id": "564933121716-ge4hf97nkfofr5j4dec1ukjpn7atvscm.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
-            "package_name": "com.esplit",
-            "certificate_hash": "d333b998f322265d9389f9507c750c896b788991"
-          }
-        },
-        {
-          "client_id": "81700495261-a4evj8blki4uud41l5b25atab07150vh.apps.googleusercontent.com",
-          "client_type": 1,
-          "android_info": {
-            "package_name": "com.esplit",
-            "certificate_hash": "2fa151b70317cbabdda73af1eea528d42d1c6c81"
-          }
-        },
-        {
-          "client_id": "81700495261-s92so6b67cp95a2ja0anp5hn5qakguq4.apps.googleusercontent.com",
-          "client_type": 1,
-          "android_info": {
-            "package_name": "com.esplit",
+            "package_name": "com.techtitens.ezysplit",
             "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
           }
         },
         {
-          "client_id": "81700495261-tblkaqkgefgrs949p2asu1r8g3spquv7.apps.googleusercontent.com",
+          "client_id": "564933121716-ifk3p2a2kpfh2q4jg19gj88scmovg3q5.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.techtitens.ezysplit",
+            "certificate_hash": "2fa151b70317cbabdda73af1eea528d42d1c6c81"
+          }
+        },
+        {
+          "client_id": "564933121716-kub4g5i9v7bq6dhkfvh30ja8fv2lgpd1.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.techtitens.ezysplit",
+            "certificate_hash": "84c123bb044be093cc01af8cefd95f188a84a224"
+          }
+        },
+        {
+          "client_id": "564933121716-qf6n8k9psvn35atdsajmofhg8ktl6g7q.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.techtitens.ezysplit",
+            "certificate_hash": "fbd560609e8a68e12caabb1fd1c31f531e713bca"
+          }
+        },
+        {
+          "client_id": "564933121716-tkkq674qed11v7hd4eogsjhgc7lta258.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.techtitens.ezysplit",
+            "certificate_hash": "e3f583980ce697c5df4811905504fa6b1ae432d2"
+          }
+        },
+        {
+          "client_id": "564933121716-dp36e59rrft18pnlgjve3gn3edo3vfr7.apps.googleusercontent.com",
           "client_type": 3
         }
       ],
       "api_key": [
         {
-          "current_key": "AIzaSyBZ0ASc9D_FKX68wa9rXKdKLwnf3_ehPdA"
+          "current_key": "AIzaSyBgdI585P34mZWSU8OZ95rRh8dOqdVv6AI"
         }
       ],
       "services": {
         "appinvite_service": {
           "other_platform_oauth_client": [
             {
-              "client_id": "81700495261-tblkaqkgefgrs949p2asu1r8g3spquv7.apps.googleusercontent.com",
+              "client_id": "564933121716-dp36e59rrft18pnlgjve3gn3edo3vfr7.apps.googleusercontent.com",
               "client_type": 3
             }
           ]
         }
-      }
+      },
+      "admob_app_id": "ca-app-pub-1001891296778824~5203560568"
     }
   ],
   "configuration_version": "1"
