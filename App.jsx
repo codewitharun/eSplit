@@ -1,27 +1,30 @@
 import React, {useEffect, useState} from 'react';
-import {View, ActivityIndicator, StyleSheet} from 'react-native';
+import {
+  View,
+  ActivityIndicator,
+  StyleSheet,
+  Linking,
+  Alert,
+} from 'react-native';
 import auth from '@react-native-firebase/auth';
 import messaging from '@react-native-firebase/messaging';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import LoginScreen from './src/screens/BeforeLogin/Login';
 import ExpenseTracker from './src/screens/AfterLogin/ExpenseTracker';
 import Notifications from './src/screens/Notifications';
-import {signOut} from './src/services/auth';
 import firestore from '@react-native-firebase/firestore';
-import notifee, {
-  AndroidImportance,
-  AuthorizationStatus,
-} from '@notifee/react-native';
+import notifee, {AuthorizationStatus, EventType} from '@notifee/react-native';
 import {NavigationContainer} from '@react-navigation/native';
+import Toast from 'react-native-toast-message';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
 import {createDrawerNavigator} from '@react-navigation/drawer';
 import GroupManagement from './src/screens/AfterLogin/GroupCheck';
 import LogoutScreen from './src/screens/AfterLogin/Logout';
+import RNCOpenDoc from '@r4dic4l/react-native-open-doc';
 
 const App = () => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [hasCheckedGroup, setHasCheckedGroup] = useState('false');
   const Stack = createNativeStackNavigator();
   const Drawer = createDrawerNavigator();
 
@@ -30,12 +33,28 @@ const App = () => {
     checkPermission();
     messaging().registerDeviceForRemoteMessages();
     Notifications.createChannel();
+    Notifications.createExportChannel();
     messaging().onMessage(async remoteMessage => {
       console.log('Received notification:', remoteMessage);
       Notifications.displayNotification(
         remoteMessage.notification.title,
         remoteMessage.notification.body,
       );
+    });
+
+    notifee.onForegroundEvent(({type, detail}) => {
+      try {
+        if (type === EventType.PRESS && detail.pressAction.id === 'open-pdf') {
+          const filePath = detail.notification?.data?.filePath;
+          Toast.show({
+            type: 'info',
+            text1: 'Coming Soon!',
+            text2: 'Click to open the PDF feature coming soon.',
+          });
+        }
+      } catch (error) {
+        console.log('🚀 ~ notifee.onForegroundEvent ~ error:', error);
+      }
     });
   }, []);
 
@@ -68,6 +87,7 @@ const App = () => {
       authStatus === messaging.AuthorizationStatus.PROVISIONAL
     ) {
       Notifications.createChannel();
+      Notifications.createExportChannel();
     }
   };
 
@@ -93,8 +113,8 @@ const App = () => {
         await AsyncStorage.setItem('userToken', user.uid);
 
         // Check if the user has already completed group check
-        const hasChecked = await AsyncStorage.getItem('hasCheckedGroup');
-        setHasCheckedGroup(hasChecked);
+
+        const lastJoinedGroup = await AsyncStorage.getItem('lastJoinedGroup');
       } catch (error) {
         console.error('Error in onAuthStateChanged:', error);
         setLoading(false);
@@ -102,8 +122,7 @@ const App = () => {
     } else {
       try {
         await AsyncStorage.removeItem('userToken');
-        await AsyncStorage.removeItem('hasCheckedGroup');
-        setHasCheckedGroup('false');
+        await AsyncStorage.removeItem('lastJoinedGroup');
       } catch (error) {
         console.error('Error in onAuthStateChanged (logout):', error);
       }
@@ -111,11 +130,8 @@ const App = () => {
   };
 
   const AfterLogin = () => (
-    <Drawer.Navigator
-      screenOptions={{headerShown: false}}
-      initialRouteName={hasCheckedGroup === 'true' ? 'Home' : ' Group-Check'}>
+    <Drawer.Navigator screenOptions={{headerShown: false}}>
       <Drawer.Screen name="Group-Check" component={GroupManagement} />
-
       <Drawer.Screen name="Home" component={ExpenseTracker} />
       <Drawer.Screen name="Logout" component={LogoutScreen} />
     </Drawer.Navigator>
@@ -138,6 +154,7 @@ const App = () => {
   return (
     <NavigationContainer>
       {user ? <AfterLogin /> : <BeforeLogin />}
+      <Toast />
     </NavigationContainer>
   );
 };

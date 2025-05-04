@@ -1,30 +1,59 @@
 // Notifications.js
-import notifee, { AndroidImportance } from '@notifee/react-native';
+import notifee, {
+  AndroidImportance,
+  AndroidVisibility,
+} from '@notifee/react-native';
 import messaging from '@react-native-firebase/messaging';
 
 const Notifications = {
-    createChannel: async () => {
-        await notifee.createChannel({
-            id: 'split',
-            name: 'split',
-            importance: AndroidImportance.HIGH,
-            sound: 'default',
-        });
-    },
+  createChannel: async () => {
+    await notifee.createChannel({
+      id: 'Transaction',
+      name: 'Split Notifications',
+      importance: AndroidImportance.HIGH,
+      sound: 'default',
+    });
+  },
+  createExportChannel: async () => {
+    await notifee.createChannel({
+      id: 'Export',
+      name: 'Exported PDF',
+      importance: AndroidImportance.LOW,
+      vibration: true,
+      sound: undefined,
+    });
+  },
+  displayExportedNotification: async ({
+    title,
+    body,
+    filePath,
+    channelId = 'Transaction',
+  }) => {
+    await notifee.displayNotification({
+      title,
+      body,
+      android: {
+        channelId,
+        sound: undefined,
+        pressAction: {
+          id: 'open-pdf',
+        },
+      },
+      data: {filePath},
+    });
+  },
 
-    displayNotification: async (title, body) => {
-        await notifee.displayNotification({
-            title: title,
-            body: body,
-            android: {
-                channelId: 'split',
-                importance: AndroidImportance.HIGH,
-            },
-        });
-    },
-
-
+  displayNotification: async (title, body) => {
+    await notifee.displayNotification({
+      title,
+      body,
+      android: {
+        channelId: 'Transaction',
+        importance: AndroidImportance.DEFAULT,
+        sound: 'default',
+      },
+    });
+  },
 };
-
 
 export default Notifications;

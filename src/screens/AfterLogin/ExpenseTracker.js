@@ -1,4 +1,4 @@
-import React, {useState, useCallback} from 'react';
+import React, {useState, useCallback, useEffect} from 'react';
 import {
   View,
   Text,
@@ -8,7 +8,11 @@ import {
   StyleSheet,
   TouchableOpacity,
   Share,
+  Button,
+  ToastAndroid,
 } from 'react-native';
+import Toast from 'react-native-toast-message';
+import RNFS from 'react-native-fs';
 import firestore from '@react-native-firebase/firestore';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -16,7 +20,12 @@ import auth from '@react-native-firebase/auth';
 import moment from 'moment';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import DatePicker from './DatePicker';
-import {useFocusEffect} from '@react-navigation/native';
+import {useIsFocused} from '@react-navigation/native';
+import {useExpenseState} from '../../store/useExpenseStore';
+import RNHTMLtoPDF from 'react-native-html-to-pdf';
+import notifee from '@notifee/react-native';
+import Notifications from '../Notifications';
+import {Download} from 'lucide-react-native';
 
 const ExpenseTracker = ({navigation}) => {
   const user = auth().currentUser;
@@ -27,57 +36,51 @@ const ExpenseTracker = ({navigation}) => {
   const [userExpenses, setUserExpenses] = useState({});
   const [showTotal, setShowTotal] = useState(false);
   const [totalUsers, setTotalUsers] = useState([]);
-  const [groupKey, setGroupKey] = useState('');
-  const [selectedDate, setSelectedDate] = useState('');
+  const [hasTransactions, setHasTransactions] = useState(false);
+  const groupKey = useExpenseState(state => state.groupKey);
+  const focused = useIsFocused();
 
-  useFocusEffect(
-    useCallback(() => {
-      fetchGroupKey();
+  useEffect(() => {
+    console.log('🚀 ~ useEffect ~ groupKey:', groupKey);
+    fetchGroupData();
 
-      if (!groupKey) {
-        return;
-      }
+    const unsubscribe = firestore()
+      .collection('Esplitgroups')
+      .doc(groupKey)
+      .collection('expenses')
+      .orderBy('timestamp', 'desc')
+      .onSnapshot(
+        querySnapshot => {
+          const expensess = [];
+          const userExpensess = {};
+          let total = 0;
 
-      fetchGroupData();
+          querySnapshot.forEach(documentSnapshot => {
+            const expense = documentSnapshot.data();
+            expense.id = documentSnapshot.id;
+            expensess.push(expense);
+            total += expense.totalExpense;
 
-      const unsubscribe = firestore()
-        .collection('Esplitgroups')
-        .doc(groupKey)
-        .collection('expenses')
-        .orderBy('timestamp', 'desc')
-        .onSnapshot(
-          querySnapshot => {
-            const expensess = [];
-            const userExpensess = {};
-            let total = 0;
+            if (!userExpensess[expense.paidBy]) {
+              userExpensess[expense.paidBy] = 0;
+            }
+            userExpensess[expense.paidBy] += expense.totalExpense;
+          });
+          setHasTransactions(expensess.length > 0);
+          setExpenses(expensess);
+          setTotalAmount(total);
+          setUserExpenses(userExpensess);
+        },
+        error => {
+          console.error('Error fetching expenses', error);
+        },
+      );
 
-            querySnapshot.forEach(documentSnapshot => {
-              const expense = documentSnapshot.data();
-              expense.id = documentSnapshot.id;
-              expensess.push(expense);
-              total += expense.totalExpense;
-
-              if (!userExpensess[expense.paidBy]) {
-                userExpensess[expense.paidBy] = 0;
-              }
-              userExpensess[expense.paidBy] += expense.totalExpense;
-            });
-
-            setExpenses(expensess);
-            setTotalAmount(total);
-            setUserExpenses(userExpensess);
-          },
-          error => {
-            console.error('Error fetching expenses:', error);
-          },
-        );
-
-      return () => unsubscribe();
-    }, []),
-  );
-
+    return () => unsubscribe();
+  }, [focused]);
   const url =
     'https://install.appcenter.ms/users/arun4appcenter/apps/esplit/distribution_groups/public';
+
   const getAllTokens = async () => {
     try {
       const snapshot = await firestore().collection('Esplitusers').get();
@@ -111,75 +114,108 @@ const ExpenseTracker = ({navigation}) => {
         return;
       }
 
-      const currentUser = totalUsers.find(
-        u => u.displayName === user.displayName,
-      );
-      const totalExpenseValue = parseFloat(totalExpense);
-      const userShares = totalUsers.reduce((acc, u) => {
-        if (
-          u.displayName === currentUser.displayName ||
-          (u.joinDate && u.joinDate > new Date().toISOString())
-        ) {
-          // User either paid for the expense or joined after the expense was added
-          acc[u.displayName] = 0;
-        } else {
-          acc[u.displayName] = totalExpenseValue / (totalUsers.length - 1); // Exclude the current user from splitting
-        }
-        return acc;
-      }, {});
-
-      console.log(userShares);
-      await firestore()
+      // Check if it's the first transaction in the group
+      const expensesSnapshot = await firestore()
         .collection('Esplitgroups')
         .doc(groupKey)
         .collection('expenses')
-        .add({
-          description,
-          totalExpense: totalExpenseValue,
-          paidBy: user.displayName,
-          ...userShares,
-          timestamp: new Date().toISOString(), // Store as ISO string
-        });
+        .limit(1)
+        .get();
 
-      setDescription('');
-      setTotalExpense('');
+      const proceedWithTransaction = async () => {
+        try {
+          const currentUser = totalUsers.find(
+            u => u.displayName === user.displayName,
+          );
+          const totalExpenseValue = parseFloat(totalExpense);
+          const perHead = totalExpenseValue / totalUsers.length;
 
-      const tokens = await getAllTokens();
-      const data = {
-        title: 'Expense added',
-        body: `New expense added by ${user.displayName}`,
-        tokens: tokens,
+          const userShares = totalUsers.reduce((acc, u) => {
+            if (
+              u.displayName === currentUser.displayName ||
+              (u.joinDate && u.joinDate > new Date().toISOString())
+            ) {
+              acc[u.displayName] = 0;
+            } else {
+              acc[u.displayName] = perHead;
+            }
+            return acc;
+          }, {});
+
+          console.log(userShares);
+
+          // Add expense record to Firestore
+          await firestore()
+            .collection('Esplitgroups')
+            .doc(groupKey)
+            .collection('expenses')
+            .add({
+              description,
+              totalExpense: totalExpenseValue,
+              paidBy: user.displayName,
+              ...userShares,
+              timestamp: new Date().toISOString(),
+            });
+
+          // Lock the group if it's the first transaction
+          if (expensesSnapshot.empty) {
+            await firestore()
+              .collection('Esplitgroups')
+              .doc(groupKey)
+              .update({isLocked: true});
+          }
+
+          // Reset input fields
+          setDescription('');
+          setTotalExpense('');
+
+          // Send notifications
+          const tokens = await getAllTokens();
+          const data = {
+            title: 'Expense added',
+            body: `New expense of ${totalExpenseValue} added by ${user.displayName}`,
+            tokens,
+          };
+
+          try {
+            const response = await axios.post(
+              'https://esplit-backend.vercel.app/send-notification',
+              data,
+            );
+            console.log('Notification sent successfully:', response.data);
+          } catch (error) {
+            console.error(
+              'Error sending notification:',
+              error.response ? error.response.data : error.message,
+            );
+          }
+        } catch (error) {
+          console.log('Error during the transaction process:', error);
+          Alert.alert('Error processing the transaction. Please try again.');
+        }
       };
 
-      try {
-        const response = await axios.post(
-          'https://esplit-backend.vercel.app/send-notification',
-          data,
+      // First transaction — alert before proceeding
+      if (expensesSnapshot.empty) {
+        Alert.alert(
+          'Confirm First Transaction',
+          'Before initiating the first transaction, make sure all group members have joined. After this, no new member can join.\n\nDo you want to proceed?',
+          [
+            {text: 'Cancel', style: 'cancel'},
+            {text: 'Proceed', onPress: proceedWithTransaction},
+          ],
         );
-        console.log('Notification sent successfully:', response.data);
-      } catch (error) {
-        console.error(
-          'Error sending notification:',
-          error.response ? error.response.data : error.message,
-        );
+      } else {
+        // Not the first transaction — proceed directly
+        proceedWithTransaction();
       }
     } catch (error) {
-      console.log('🚀 ~ onSavePress ~ error:', error);
+      console.log('Error in onSavePress:', error);
+      Alert.alert('An error occurred. Please try again.');
     }
   };
-  const fetchGroupKey = async () => {
-    try {
-      const key = await AsyncStorage.getItem('groupKey');
-      if (key) {
-        console.log('🚀 ~ fetchGroupKey ~ key:', key);
-        setGroupKey(key);
-      }
-    } catch (error) {
-      console.error('Error fetching group key:', error);
-    }
-  };
+
   const fetchGroupData = async () => {
-    console.log('usergroupcalling');
     try {
       const snapshot = await firestore()
         .collection('Esplitgroups')
@@ -187,14 +223,12 @@ const ExpenseTracker = ({navigation}) => {
         .get();
       if (snapshot.exists) {
         const groupData = snapshot.data();
-        console.log('🚀 ~ useEffect ~ groupData:', groupData);
 
         const members = groupData.members || [];
         setTotalUsers(members);
       } else {
-        console.log('Group document does not exist.');
         await AsyncStorage.removeItem('groupKey');
-        await AsyncStorage.removeItem('hasCheckedGroup');
+        await AsyncStorage.removeItem('lastJoinedGroup');
         navigation.goBack();
       }
     } catch (error) {
@@ -203,31 +237,27 @@ const ExpenseTracker = ({navigation}) => {
   };
 
   const calculateBalance = () => {
-    const totalPerUser = totalAmount / totalUsers.length;
+    const totalPerUser = totalAmount / totalUsers.length; // Equal share per user
     const userBalances = {};
 
     totalUsers.forEach(u => {
       let userTotalExpenses = 0;
 
-      // Sum up expenses after the user joined the group
       expenses.forEach(expense => {
-        if (u.joinDate && expense.timestamp > u.joinDate) {
-          // Compare as ISO strings
-          if (expense.paidBy === u.displayName) {
-            userTotalExpenses += expense.totalExpense;
-          }
+        if (expense.paidBy === u.displayName) {
+          userTotalExpenses += expense.totalExpense; // Summing up the expenses paid by the user
         }
       });
 
-      // Calculate how much the user owes or is owed
+      // Balance: How much the user has paid vs how much they should have paid
       const owes = userTotalExpenses - totalPerUser;
       userBalances[u.displayName] = owes;
     });
 
     return userBalances;
   };
-
   const userBalances = calculateBalance();
+
   const onShare = async groupID => {
     try {
       const result = await Share.share({
@@ -248,6 +278,84 @@ const ExpenseTracker = ({navigation}) => {
     }
   };
 
+  const generatePDF = async () => {
+    try {
+      const currentDate = new Date();
+      const monthYear = `${currentDate.toLocaleString('default', {
+        month: 'long',
+      })}-${currentDate.getFullYear()}`;
+      const fileName = `ezysplit-${monthYear}`;
+
+      const perPerson = totalAmount / totalUsers.length;
+
+      const htmlContent = `
+    <h1 style="text-align:center;">Your Monthly Expenses</h1>
+    <p><strong>Total Amount:</strong> ₹${totalAmount}</p>
+    <p><strong>Per Person:</strong> ₹${perPerson.toFixed(2)}</p>
+    
+    <h2>User Contributions:</h2>
+    <table border="1" cellspacing="0" cellpadding="5" style="width:100%;">
+      <tr><th>Name</th><th>Total Paid</th></tr>
+      ${totalUsers
+        .map(
+          u =>
+            `<tr><td>${u.displayName}</td><td>₹${
+              userExpenses[u.displayName] || 0
+            }</td></tr>`,
+        )
+        .join('')}
+    </table>
+
+    <h2>User Balances:</h2>
+    <table border="1" cellspacing="0" cellpadding="5" style="width:100%;">
+      <tr><th>Name</th><th>Owes</th></tr>
+      ${Object.keys(userBalances)
+        .map(
+          key =>
+            `<tr><td>${key}</td><td>₹${userBalances[key].toFixed(2)}</td></tr>`,
+        )
+        .join('')}
+    </table>
+        <h3 style="text-align:center;">Created with ❤️ by Arun</h3>
+
+  `;
+
+      const options = {
+        html: htmlContent,
+        fileName: fileName,
+        directory: 'Download',
+      };
+
+      const file = await RNHTMLtoPDF.convert(options);
+      Notifications.displayExportedNotification({
+        title: 'PDF Exported',
+        body: 'Tap to view',
+        filePath: file.filePath,
+        channelId: 'Export',
+      });
+
+      Toast.show({
+        text2Style: {
+          height: 30,
+          flexWrap: 'wrap',
+        },
+        type: 'success',
+        text1: 'PDF Exported Successfully!',
+        text2: `Your File is saved at ${file.filePath}`,
+        onPress: () => {
+          Toast.show({
+            type: 'info',
+            text1: 'Coming Soon!',
+            text2: 'Click to open the PDF feature coming soon.',
+          });
+        },
+      });
+      console.log('PDF saved at:', file.filePath);
+    } catch (error) {
+      console.log('🚀 ~ generatePDF ~ error:', error);
+    }
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.headerContainer}>
@@ -255,13 +363,14 @@ const ExpenseTracker = ({navigation}) => {
 
         <View style={styles.userInfoContainer}>
           <Text style={styles.userCountText}>Users: {totalUsers.length}</Text>
-
-          <TouchableOpacity
-            onPress={() => onShare(groupKey)}
-            style={styles.shareButton}>
-            <Text style={styles.shareButtonText}>Invite</Text>
-            <Icon name="share" size={20} color="black" />
-          </TouchableOpacity>
+          {!hasTransactions && (
+            <TouchableOpacity
+              onPress={() => onShare(groupKey)}
+              style={styles.shareButton}>
+              <Text style={styles.shareButtonText}>Invite</Text>
+              <Icon name="share" size={20} color="black" />
+            </TouchableOpacity>
+          )}
         </View>
       </View>
 
@@ -277,9 +386,14 @@ const ExpenseTracker = ({navigation}) => {
         style={styles.input}
         placeholder="Total Expense"
         placeholderTextColor={'#333'}
-        keyboardType="numeric"
+        keyboardType="decimal-pad"
         value={totalExpense}
-        onChangeText={setTotalExpense}
+        onChangeText={text => {
+          const decimalValue = text
+            .replace(/[^0-9.]/g, '')
+            .replace(/(\..*)\./g, '$1');
+          setTotalExpense(decimalValue);
+        }}
       />
 
       <TouchableOpacity style={styles.saveButton} onPress={onSavePress}>
@@ -287,6 +401,12 @@ const ExpenseTracker = ({navigation}) => {
       </TouchableOpacity>
 
       <View style={{display: showTotal ? 'flex' : 'none'}}>
+        <TouchableOpacity
+          onPress={() => generatePDF()}
+          style={styles.shareButton}>
+          <Text style={styles.shareButtonText}>Export as PDF</Text>
+          <Download />
+        </TouchableOpacity>
         <Text style={styles.totalText}>Total Amount: {totalAmount}</Text>
         <Text style={styles.totalText}>
           Per Person: {totalAmount / totalUsers.length}
@@ -307,8 +427,7 @@ const ExpenseTracker = ({navigation}) => {
         data={expenses}
         keyExtractor={item => item.id}
         renderItem={({item}) => (
-          <View View style={styles.expenseItem}>
-            {console.log(item)}
+          <View style={styles.expenseItem}>
             <Text style={styles.expenseText}>
               Description: {item.description}
             </Text>
@@ -316,8 +435,8 @@ const ExpenseTracker = ({navigation}) => {
               Total Expense: {item.totalExpense}
             </Text>
             <Text style={styles.expenseText}>
-              Paid By: {item.paidBy} on{' '}
-              {moment(item.timestamp).format('DD MMM  YY [at] h:mm a')}
+              Paid By: {item.paidBy === user.displayName ? 'You' : item.paidBy}{' '}
+              on {moment(item.timestamp).format('DD MMM  YY [at] h:mm a')}
             </Text>
             {Object.keys(item).map((key, index) => {
               if (
@@ -329,7 +448,7 @@ const ExpenseTracker = ({navigation}) => {
               ) {
                 return (
                   <Text key={index} style={styles.expenseText}>
-                    {key}'s Share: {item[key]}
+                    {key}'s Share: {item[key].toFixed(2)}
                   </Text>
                 );
               }
@@ -338,6 +457,7 @@ const ExpenseTracker = ({navigation}) => {
           </View>
         )}
       />
+
       <TouchableOpacity
         style={styles.toggleButton}
         onPress={() => setShowTotal(!showTotal)}>

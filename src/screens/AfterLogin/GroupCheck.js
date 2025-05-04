@@ -12,84 +12,115 @@ import {
 import firestore from '@react-native-firebase/firestore';
 import auth from '@react-native-firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import {useFocusEffect} from '@react-navigation/native';
+import {useIsFocused} from '@react-navigation/native';
+import {useExpenseState} from '../../store/useExpenseStore';
 
 const GroupManagement = ({navigation}) => {
-  const [groupKey, setGroupKey] = useState('');
+  const groupKey = useExpenseState(state => state.groupKey);
+  const setGroupKey = useExpenseState(state => state.setGroupKey);
+  const [lastGroupKey, setLastGroupKey] = useState(null);
+
+  const [groupKeyLocal, setgroupKeyLocal] = useState('');
   const [groupList, setGroupList] = useState([]);
   const [selectedGroup, setSelectedGroup] = useState('');
   const [modalVisible, setModalVisible] = useState(false);
   const user = auth().currentUser;
+  const focused = useIsFocused();
 
-  useFocusEffect(
-    useCallback(() => {
-      const fetchGroups = async () => {
-        const userDoc = await firestore()
-          .collection('Esplitusers')
-          .doc(user.uid)
-          .get();
-        if (userDoc.exists) {
-          const userGroups = userDoc.data().groupKeys || [];
-          setGroupList(userGroups);
-        }
-      };
+  useEffect(() => {
+    fetchGroups();
+    lastgroup();
+  }, [focused]);
 
-      fetchGroups();
-    }, [user.uid]),
-  );
+  const fetchGroups = async () => {
+    try {
+      const userDoc = await firestore()
+        .collection('Esplitusers')
+        .doc(user?.uid)
+        .get();
+      if (userDoc?.exists) {
+        const userGroups = userDoc.data().groupKeys || [];
+        setGroupList(userGroups);
+      }
+    } catch (error) {
+      console.log('🚀 ~ fetchGroups ~ error:', error);
+    }
+  };
+  const handleJoinGroup = async joinGroupKey => {
+    try {
+      if (!user || !user.uid) {
+        Alert.alert('Error', 'User not logged in properly.');
+        return;
+      }
 
-  const handleJoinGroup = async () => {
-    const joinGroupKey = selectedGroup || groupKey;
-    if (joinGroupKey) {
+      if (!joinGroupKey) {
+        Alert.alert(
+          'Error',
+          'Please select a group or enter a valid group key.',
+        );
+        return;
+      }
+
       const groupDoc = await firestore()
         .collection('Esplitgroups')
         .doc(joinGroupKey)
         .get();
-      if (groupDoc.exists) {
-        const groupData = groupDoc.data();
-        const members = groupData.members || [];
-        const isUserAlreadyMember = members.some(
-          member => member.id === user.uid,
-        );
 
-        if (!isUserAlreadyMember) {
-          await firestore()
-            .collection('Esplitusers')
-            .doc(user.uid)
-            .set(
-              {groupKeys: firestore.FieldValue.arrayUnion(joinGroupKey)},
-              {merge: true},
-            );
-
-          await firestore()
-            .collection('Esplitgroups')
-            .doc(joinGroupKey)
-            .update({
-              members: firestore.FieldValue.arrayUnion({
-                id: user.uid,
-                displayName: user.displayName,
-                photoUrl: user.photoURL || '',
-                joinDate: new Date().toISOString(),
-              }),
-            });
-
-          await AsyncStorage.setItem('groupKey', joinGroupKey);
-          await AsyncStorage.setItem('hasCheckedGroup', 'true');
-          navigation.navigate('Home');
-        } else {
-          console.log('You are already a member of this group.');
-          await AsyncStorage.setItem('groupKey', joinGroupKey);
-          await AsyncStorage.setItem('hasCheckedGroup', 'true');
-          navigation.navigate('Home');
-        }
-      } else {
+      if (!groupDoc.exists) {
         Alert.alert(
           'Invalid Group Key',
           'The group key you entered does not exist.',
         );
+        await AsyncStorage.removeItem('lastJoinedGroup');
+        setLastGroupKey(null);
+        return;
       }
-    } else {
-      Alert.alert('Error', 'Please select a group or enter a valid group key.');
+
+      const groupData = groupDoc.data();
+      const members = Array.isArray(groupData?.members)
+        ? groupData.members
+        : [];
+
+      const isUserAlreadyMember = members.some(
+        member => member.id === user.uid,
+      );
+
+      if (!isUserAlreadyMember) {
+        if (groupData?.isLocked) {
+          Alert.alert(
+            'Group Locked',
+            'This group has already recorded its first expense. No new members can join.',
+          );
+          return;
+        }
+
+        await firestore()
+          .collection('Esplitusers')
+          .doc(user.uid)
+          .set(
+            {groupKeys: firestore.FieldValue.arrayUnion(joinGroupKey)},
+            {merge: true},
+          );
+
+        await firestore()
+          .collection('Esplitgroups')
+          .doc(joinGroupKey)
+          .update({
+            members: firestore.FieldValue.arrayUnion({
+              id: user.uid,
+              displayName: user.displayName,
+              photoUrl: user.photoURL || '',
+              joinDate: new Date().toISOString(),
+            }),
+          });
+      }
+
+      setGroupKey(joinGroupKey);
+      await AsyncStorage.setItem('groupKey', joinGroupKey);
+      await AsyncStorage.setItem('lastJoinedGroup', joinGroupKey);
+      navigation.navigate('Home');
+    } catch (error) {
+      console.log('🚀 ~ handleJoinGroup ~ error:', error);
     }
   };
 
@@ -124,9 +155,9 @@ const GroupManagement = ({navigation}) => {
           {groupKeys: firestore.FieldValue.arrayUnion(newGroupKey)},
           {merge: true},
         );
-
+      setGroupKey(newGroupKey);
       await AsyncStorage.setItem('groupKey', newGroupKey);
-      await AsyncStorage.setItem('hasCheckedGroup', 'true');
+      await AsyncStorage.setItem('lastJoinedGroup', newGroupKey);
       navigation.navigate('Home');
     } catch (error) {
       console.log('Error:', error);
@@ -140,16 +171,21 @@ const GroupManagement = ({navigation}) => {
   const generateGroupKey = () => {
     return Math.floor(100000 + Math.random() * 900000).toString();
   };
-
+  const lastgroup = async () => {
+    const group = await AsyncStorage.getItem('lastJoinedGroup');
+    if (group) {
+      setLastGroupKey(group);
+    }
+  };
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Join or Create a Group</Text>
+      <Text style={styles.title}>Join or Create a Group </Text>
 
       <TouchableOpacity
         style={styles.input}
         onPress={() => setModalVisible(true)}>
         <Text style={{color: selectedGroup ? '#000' : '#888'}}>
-          {selectedGroup ? selectedGroup : 'Select a group to join'}
+          Select a group to join
         </Text>
       </TouchableOpacity>
 
@@ -158,12 +194,17 @@ const GroupManagement = ({navigation}) => {
         placeholder="Enter 6-digit Group Key"
         keyboardType="numeric"
         maxLength={6}
-        value={groupKey}
-        onChangeText={setGroupKey}
+        value={groupKeyLocal}
+        onFocus={() => setSelectedGroup('')}
+        onChangeText={text => {
+          setgroupKeyLocal(text);
+        }}
         placeholderTextColor="#888"
       />
 
-      <TouchableOpacity style={styles.button} onPress={handleJoinGroup}>
+      <TouchableOpacity
+        style={styles.button}
+        onPress={() => handleJoinGroup(groupKeyLocal)}>
         <Text style={styles.buttonText}>Join Group</Text>
       </TouchableOpacity>
 
@@ -188,7 +229,9 @@ const GroupManagement = ({navigation}) => {
                   style={styles.groupItem}
                   onPress={() => {
                     setSelectedGroup(item);
+                    setgroupKeyLocal('');
                     setModalVisible(false);
+                    handleJoinGroup(item);
                   }}>
                   <Text style={styles.groupText}>{item}</Text>
                 </TouchableOpacity>
@@ -203,6 +246,16 @@ const GroupManagement = ({navigation}) => {
           </View>
         </View>
       </Modal>
+      {lastGroupKey && (
+        <TouchableOpacity
+          onPress={() => handleJoinGroup(lastGroupKey)}
+          style={styles.shareButton}>
+          <Text style={styles.shareButtonText}>
+            Last Joined Group: {lastGroupKey}
+          </Text>
+          {/* <Icon name="share" size={20} color="black" /> */}
+        </TouchableOpacity>
+      )}
     </View>
   );
 };
@@ -213,6 +266,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 30,
     backgroundColor: '#f7f8fa',
+    // backgroundColor: 'red',
   },
   title: {
     fontSize: 26,
@@ -298,6 +352,23 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  shareButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E0E0E0',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 5,
+    position: 'absolute',
+    bottom: 10,
+    width: '100%',
+    alignSelf: 'center',
+  },
+  shareButtonText: {
+    fontSize: 16,
+    color: '#000',
+    marginRight: 5,
   },
 });
 
