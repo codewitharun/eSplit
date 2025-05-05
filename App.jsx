@@ -1,4 +1,4 @@
-import React, {useEffect, useState} from 'react';
+import React, {Suspense, useEffect, useState} from 'react';
 import {
   View,
   ActivityIndicator,
@@ -6,6 +6,8 @@ import {
   Linking,
   Alert,
 } from 'react-native';
+import {navigationRef} from './src/services/NavigationService';
+
 import auth from '@react-native-firebase/auth';
 import messaging from '@react-native-firebase/messaging';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -14,19 +16,39 @@ import ExpenseTracker from './src/screens/AfterLogin/ExpenseTracker';
 import Notifications from './src/screens/Notifications';
 import firestore from '@react-native-firebase/firestore';
 import notifee, {AuthorizationStatus, EventType} from '@notifee/react-native';
-import {NavigationContainer} from '@react-navigation/native';
+import {NavigationContainer, useNavigation} from '@react-navigation/native';
 import Toast from 'react-native-toast-message';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
 import {createDrawerNavigator} from '@react-navigation/drawer';
 import GroupManagement from './src/screens/AfterLogin/GroupCheck';
 import LogoutScreen from './src/screens/AfterLogin/Logout';
-import RNCOpenDoc from '@r4dic4l/react-native-open-doc';
-
+import {useExpenseState} from './src/store/useExpenseStore';
+import {useAuthStore} from './src/store/useAuthStore';
+import SplashScreen from './src/screens/Splash';
 const App = () => {
-  const [user, setUser] = useState(null);
+  const user = useAuthStore(state => state.user);
+  const setUser = useAuthStore(state => state.setUser);
+
   const [loading, setLoading] = useState(true);
   const Stack = createNativeStackNavigator();
-  const Drawer = createDrawerNavigator();
+
+  const linking = {
+    prefixes: ['ezysplit://', 'https://ezysplit.appaura.xyz/app'],
+    config: {
+      screens: {
+        'Group-Check': {
+          path: 'Group-Check/:groupId',
+          parse: {
+            groupId: id => `${id}`,
+          },
+        },
+        Home: 'home',
+        Logout: 'logout',
+      },
+    },
+  };
+
+  const [groupHandled, setGroupHandled] = useState(false);
 
   useEffect(() => {
     messaging().requestPermission();
@@ -36,10 +58,11 @@ const App = () => {
     Notifications.createExportChannel();
     messaging().onMessage(async remoteMessage => {
       console.log('Received notification:', remoteMessage);
-      Notifications.displayNotification(
-        remoteMessage.notification.title,
-        remoteMessage.notification.body,
-      );
+      Toast.show({
+        type: 'success',
+        text1: remoteMessage.notification.title,
+        text2: remoteMessage.notification.body,
+      });
     });
 
     notifee.onForegroundEvent(({type, detail}) => {
@@ -61,6 +84,9 @@ const App = () => {
   useEffect(() => {
     requestUserPermission();
     const subscriber = auth().onAuthStateChanged(onAuthStateChanged);
+    setTimeout(() => {
+      setLoading(false);
+    }, 2500);
     return subscriber;
   }, []);
 
@@ -92,13 +118,12 @@ const App = () => {
   };
 
   const onAuthStateChanged = async user => {
-    setUser(user);
-    setLoading(false);
     if (user) {
       try {
+        setUser(user);
+
         const token = await messaging().getToken();
 
-        // Use merge: true to update the document if it exists, or create it if it doesn't
         await firestore().collection('Esplitusers').doc(user.uid).set(
           {
             uid: user.uid,
@@ -113,11 +138,8 @@ const App = () => {
         await AsyncStorage.setItem('userToken', user.uid);
 
         // Check if the user has already completed group check
-
-        const lastJoinedGroup = await AsyncStorage.getItem('lastJoinedGroup');
       } catch (error) {
         console.error('Error in onAuthStateChanged:', error);
-        setLoading(false);
       }
     } else {
       try {
@@ -129,13 +151,61 @@ const App = () => {
     }
   };
 
-  const AfterLogin = () => (
-    <Drawer.Navigator screenOptions={{headerShown: false}}>
-      <Drawer.Screen name="Group-Check" component={GroupManagement} />
-      <Drawer.Screen name="Home" component={ExpenseTracker} />
-      <Drawer.Screen name="Logout" component={LogoutScreen} />
-    </Drawer.Navigator>
-  );
+  const AfterLogin = () => {
+    const navigation = useNavigation();
+    const user = useAuthStore(state => state.user);
+    const setGroupHandled = useExpenseState(state => state.setGroupHandled);
+    const setIncomingDeeplink = useExpenseState(
+      state => state.setincomingDeeplink,
+    );
+
+    useEffect(() => {
+      const handleDeepLink = async url => {
+        if (!url) return;
+
+        const match = url.match(/Group-Check\/([^/]+)/);
+        const groupId = match?.[1];
+
+        if (groupId) {
+          const alreadyHandled = await AsyncStorage.getItem('groupHandled');
+          if (!JSON.parse(alreadyHandled)) {
+            navigation.navigate('Group-Check', {groupId});
+            setGroupHandled(true);
+            await AsyncStorage.setItem('groupHandled', JSON.stringify(true));
+          }
+        }
+      };
+
+      const init = async () => {
+        if (!user) return;
+        const url = await Linking.getInitialURL();
+        handleDeepLink(url);
+      };
+
+      const listener = Linking.addEventListener('url', ({url}) => {
+        if (user) {
+          console.log('🚀 ~ listener ~ url:', url);
+          AsyncStorage.removeItem('groupHandled');
+          setIncomingDeeplink(true);
+          handleDeepLink(url);
+        }
+      });
+
+      init();
+
+      return () => {
+        listener.remove();
+      };
+    }, [user]);
+
+    return (
+      <Stack.Navigator screenOptions={{headerShown: false}}>
+        <Stack.Screen name="Group-Check" component={GroupManagement} />
+        <Stack.Screen name="Home" component={ExpenseTracker} />
+        <Stack.Screen name="Logout" component={LogoutScreen} />
+      </Stack.Navigator>
+    );
+  };
 
   const BeforeLogin = () => (
     <Stack.Navigator screenOptions={{headerShown: false}}>
@@ -144,16 +214,14 @@ const App = () => {
   );
 
   if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#0000ff" />
-      </View>
-    );
+    return <SplashScreen />;
   }
 
   return (
-    <NavigationContainer>
-      {user ? <AfterLogin /> : <BeforeLogin />}
+    <NavigationContainer linking={linking} ref={navigationRef}>
+      <Suspense fallback={<SplashScreen />}>
+        {user ? <AfterLogin /> : <BeforeLogin />}
+      </Suspense>
       <Toast />
     </NavigationContainer>
   );

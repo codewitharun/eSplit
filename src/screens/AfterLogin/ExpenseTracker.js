@@ -38,6 +38,7 @@ const ExpenseTracker = ({navigation}) => {
   const [totalUsers, setTotalUsers] = useState([]);
   const [hasTransactions, setHasTransactions] = useState(false);
   const groupKey = useExpenseState(state => state.groupKey);
+  const [loader, setLoader] = useState(false);
   const focused = useIsFocused();
 
   useEffect(() => {
@@ -78,8 +79,7 @@ const ExpenseTracker = ({navigation}) => {
 
     return () => unsubscribe();
   }, [focused]);
-  const url =
-    'https://install.appcenter.ms/users/arun4appcenter/apps/esplit/distribution_groups/public';
+  const url = `ezysplit://Group-Check/${groupKey}`;
 
   const getAllTokens = async () => {
     try {
@@ -111,9 +111,10 @@ const ExpenseTracker = ({navigation}) => {
 
       if (!totalUsers.some(u => u.displayName === user.displayName)) {
         Alert.alert('You are not authorized to add expenses');
+        s;
         return;
       }
-
+      setLoader(true);
       // Check if it's the first transaction in the group
       const expensesSnapshot = await firestore()
         .collection('Esplitgroups')
@@ -179,17 +180,20 @@ const ExpenseTracker = ({navigation}) => {
 
           try {
             const response = await axios.post(
-              'https://esplit-backend.vercel.app/send-notification',
+              'https://ezysplit.appaura.xyz/send-notification',
               data,
             );
             console.log('Notification sent successfully:', response.data);
           } catch (error) {
+            setLoader(false);
             console.error(
               'Error sending notification:',
               error.response ? error.response.data : error.message,
             );
           }
         } catch (error) {
+          setLoader(false);
+
           console.log('Error during the transaction process:', error);
           Alert.alert('Error processing the transaction. Please try again.');
         }
@@ -210,6 +214,7 @@ const ExpenseTracker = ({navigation}) => {
         proceedWithTransaction();
       }
     } catch (error) {
+      setLoader(false);
       console.log('Error in onSavePress:', error);
       Alert.alert('An error occurred. Please try again.');
     }
@@ -261,7 +266,7 @@ const ExpenseTracker = ({navigation}) => {
   const onShare = async groupID => {
     try {
       const result = await Share.share({
-        message: `🎉 You're invited to join Esplit! 🎉\n\nManage your expenses and split bills with ease.\n\n🔗 Join Esplit using this link: ${url}\n\nOr, if you're joining my group, use this group key: ${groupID} to be part of our group. Let's simplify splitting expenses together! 💰`,
+        message: `🎉 Join me on Esplit!\n\nManage & split expenses easily.\n\n🔗 Tap to join my group: ${url}\n\nOr use this group key: ${groupID}\n\nLet’s make splitting simple! 💰`,
       });
 
       if (result.action === Share.sharedAction) {

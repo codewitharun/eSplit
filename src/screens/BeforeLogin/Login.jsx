@@ -1,25 +1,64 @@
-import React from 'react';
-import {View, StyleSheet, Image, Text, TouchableOpacity} from 'react-native';
+import React, {useState, useEffect} from 'react';
+import {
+  View,
+  StyleSheet,
+  Image,
+  Text,
+  TouchableOpacity,
+  Animated,
+} from 'react-native';
 import {onGoogleButtonPress} from '../../services/auth';
-import firestore from '@react-native-firebase/firestore';
-import messaging from '@react-native-firebase/messaging';
+import Loader from '../../component/loader';
 
 const LoginScreen = () => {
+  const [loader, setLoader] = useState(false);
+
+  // Animations for the logo, title, and button
+  const logoOpacity = useState(new Animated.Value(0))[0];
+  const titleOpacity = useState(new Animated.Value(0))[0];
+  const buttonY = useState(new Animated.Value(50))[0]; // Button starts offscreen
+
+  useEffect(() => {
+    // Fade in logo and title, slide in button
+    Animated.sequence([
+      Animated.timing(logoOpacity, {
+        toValue: 1,
+        duration: 1000,
+        useNativeDriver: true,
+      }),
+      Animated.timing(titleOpacity, {
+        toValue: 1,
+        duration: 1000,
+        useNativeDriver: true,
+      }),
+      Animated.timing(buttonY, {
+        toValue: 0,
+        duration: 1000,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
+
   const handleLogin = async () => {
     try {
+      setLoader(true);
       const response = await onGoogleButtonPress();
+      setLoader(false);
     } catch (error) {
+      setLoader(false);
       console.log('Google sign-in failed', error);
     }
   };
 
   return (
     <View style={styles.container}>
-      <Image
-        source={require('../../OIG3.Bom2yHofHmS0g_DVe.jpeg')} // Replace with your logo URL
-        style={styles.logo}
+      <Animated.Image
+        source={require('../../OIG3.Bom2yHofHmS0g_DVe.jpeg')}
+        style={[styles.logo, {opacity: logoOpacity}]}
       />
-      <Text style={styles.title}>Welcome to Expense Tracker</Text>
+      <Animated.Text style={[styles.title, {opacity: titleOpacity}]}>
+        Welcome to EzySplit
+      </Animated.Text>
       <TouchableOpacity style={styles.button} onPress={handleLogin}>
         <View style={styles.gradient}>
           <Image
@@ -29,6 +68,13 @@ const LoginScreen = () => {
           <Text style={styles.buttonText}>Google Sign-In</Text>
         </View>
       </TouchableOpacity>
+      <Loader loader={loader} />
+      <Animated.View
+        style={[
+          styles.buttonContainer,
+          {transform: [{translateY: buttonY}]},
+        ]}></Animated.View>
+      <Text style={styles.footer}>Created with ❤️ by Appaura</Text>
     </View>
   );
 };
@@ -78,6 +124,16 @@ const styles = StyleSheet.create({
   buttonText: {
     fontSize: 16,
     fontWeight: 'bold',
+    color: '#000000',
+    textAlign: 'center',
+  },
+  buttonContainer: {
+    marginTop: 16, // Space for the button after animation
+  },
+  footer: {
+    position: 'absolute',
+    bottom: 20,
+    fontSize: 16,
     color: '#000000',
     textAlign: 'center',
   },
