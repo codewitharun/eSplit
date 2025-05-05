@@ -1,41 +1,92 @@
-import React, { useEffect, useState } from 'react';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import React, {Suspense, useEffect, useState} from 'react';
+import {
+  View,
+  ActivityIndicator,
+  StyleSheet,
+  Linking,
+  Alert,
+} from 'react-native';
+import {navigationRef} from './src/services/NavigationService';
+
 import auth from '@react-native-firebase/auth';
 import messaging from '@react-native-firebase/messaging';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import LoginScreen from './src/screens/BeforeLogin/Login';
 import ExpenseTracker from './src/screens/AfterLogin/ExpenseTracker';
 import Notifications from './src/screens/Notifications';
-import { signOut } from './src/services/auth';
 import firestore from '@react-native-firebase/firestore';
-import notifee, { AndroidImportance, AuthorizationStatus } from '@notifee/react-native';
-import { NavigationContainer } from '@react-navigation/native';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { createDrawerNavigator } from '@react-navigation/drawer';
+import notifee, {AuthorizationStatus, EventType} from '@notifee/react-native';
+import {NavigationContainer, useNavigation} from '@react-navigation/native';
+import Toast from 'react-native-toast-message';
+import {createNativeStackNavigator} from '@react-navigation/native-stack';
+import {createDrawerNavigator} from '@react-navigation/drawer';
 import GroupManagement from './src/screens/AfterLogin/GroupCheck';
 import LogoutScreen from './src/screens/AfterLogin/Logout';
-
+import {useExpenseState} from './src/store/useExpenseStore';
+import {useAuthStore} from './src/store/useAuthStore';
+import SplashScreen from './src/screens/Splash';
 const App = () => {
-  const [user, setUser] = useState(null);
+  const user = useAuthStore(state => state.user);
+  const setUser = useAuthStore(state => state.setUser);
+
   const [loading, setLoading] = useState(true);
-  const [hasCheckedGroup, setHasCheckedGroup] = useState("false");
   const Stack = createNativeStackNavigator();
-  const Drawer = createDrawerNavigator();
+
+  const linking = {
+    prefixes: ['ezysplit://', 'https://ezysplit.appaura.xyz/app'],
+    config: {
+      screens: {
+        'Group-Check': {
+          path: 'Group-Check/:groupId',
+          parse: {
+            groupId: id => `${id}`,
+          },
+        },
+        Home: 'home',
+        Logout: 'logout',
+      },
+    },
+  };
+
+  const [groupHandled, setGroupHandled] = useState(false);
 
   useEffect(() => {
     messaging().requestPermission();
     checkPermission();
     messaging().registerDeviceForRemoteMessages();
     Notifications.createChannel();
-    messaging().onMessage(async (remoteMessage) => {
+    Notifications.createExportChannel();
+    messaging().onMessage(async remoteMessage => {
       console.log('Received notification:', remoteMessage);
-      Notifications.displayNotification(remoteMessage.notification.title, remoteMessage.notification.body);
+      Toast.show({
+        type: 'success',
+        text1: remoteMessage.notification.title,
+        text2: remoteMessage.notification.body,
+      });
+    });
+
+    notifee.onForegroundEvent(({type, detail}) => {
+      try {
+        if (type === EventType.PRESS && detail.pressAction.id === 'open-pdf') {
+          const filePath = detail.notification?.data?.filePath;
+          Toast.show({
+            type: 'info',
+            text1: 'Coming Soon!',
+            text2: 'Click to open the PDF feature coming soon.',
+          });
+        }
+      } catch (error) {
+        console.log('🚀 ~ notifee.onForegroundEvent ~ error:', error);
+      }
     });
   }, []);
 
   useEffect(() => {
     requestUserPermission();
     const subscriber = auth().onAuthStateChanged(onAuthStateChanged);
+    setTimeout(() => {
+      setLoading(false);
+    }, 2500);
     return subscriber;
   }, []);
 
@@ -44,84 +95,134 @@ const App = () => {
 
     if (settings.authorizationStatus === AuthorizationStatus.DENIED) {
       console.log('User denied permissions request');
-    } else if (settings.authorizationStatus === AuthorizationStatus.AUTHORIZED) {
+    } else if (
+      settings.authorizationStatus === AuthorizationStatus.AUTHORIZED
+    ) {
       console.log('User granted permissions request');
-    } else if (settings.authorizationStatus === AuthorizationStatus.PROVISIONAL) {
+    } else if (
+      settings.authorizationStatus === AuthorizationStatus.PROVISIONAL
+    ) {
       console.log('User provisionally granted permissions request');
     }
   };
 
   const requestUserPermission = async () => {
     const authStatus = await messaging().requestPermission();
-    if (authStatus === messaging.AuthorizationStatus.AUTHORIZED || authStatus === messaging.AuthorizationStatus.PROVISIONAL) {
+    if (
+      authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
+      authStatus === messaging.AuthorizationStatus.PROVISIONAL
+    ) {
       Notifications.createChannel();
+      Notifications.createExportChannel();
     }
   };
 
-  const onAuthStateChanged = async (user) => {
-    setUser(user);
-    setLoading(false);
+  const onAuthStateChanged = async user => {
     if (user) {
       try {
+        setUser(user);
+
         const token = await messaging().getToken();
 
-        // Use merge: true to update the document if it exists, or create it if it doesn't
-        await firestore().collection('Esplitusers').doc(user.uid).set({
-          uid: user.uid,
-          displayName: user.displayName,
-          email: user.email,
-          photoURL: user.photoURL,
-          tokens: token,
-        }, { merge: true });
+        await firestore().collection('Esplitusers').doc(user.uid).set(
+          {
+            uid: user.uid,
+            displayName: user.displayName,
+            email: user.email,
+            photoURL: user.photoURL,
+            tokens: token,
+          },
+          {merge: true},
+        );
 
         await AsyncStorage.setItem('userToken', user.uid);
 
         // Check if the user has already completed group check
-        const hasChecked = await AsyncStorage.getItem('hasCheckedGroup');
-        setHasCheckedGroup(hasChecked);
-
       } catch (error) {
         console.error('Error in onAuthStateChanged:', error);
       }
     } else {
       try {
         await AsyncStorage.removeItem('userToken');
-        await AsyncStorage.removeItem('hasCheckedGroup');
-        setHasCheckedGroup("false");
+        await AsyncStorage.removeItem('lastJoinedGroup');
       } catch (error) {
         console.error('Error in onAuthStateChanged (logout):', error);
       }
     }
   };
 
-  const AfterLogin = () => (
-    <Drawer.Navigator screenOptions={{ headerShown: false }} initialRouteName={hasCheckedGroup === "true" ? "Home" : " Group-Check"}>
-      <Drawer.Screen name="Group-Check" component={GroupManagement} />
+  const AfterLogin = () => {
+    const navigation = useNavigation();
+    const user = useAuthStore(state => state.user);
+    const setGroupHandled = useExpenseState(state => state.setGroupHandled);
+    const setIncomingDeeplink = useExpenseState(
+      state => state.setincomingDeeplink,
+    );
 
-      <Drawer.Screen name="Home" component={ExpenseTracker} />
-      <Drawer.Screen name="Logout" component={LogoutScreen} />
+    useEffect(() => {
+      const handleDeepLink = async url => {
+        if (!url) return;
 
-    </Drawer.Navigator>
-  );
+        const match = url.match(/Group-Check\/([^/]+)/);
+        const groupId = match?.[1];
+
+        if (groupId) {
+          const alreadyHandled = await AsyncStorage.getItem('groupHandled');
+          if (!JSON.parse(alreadyHandled)) {
+            navigation.navigate('Group-Check', {groupId});
+            setGroupHandled(true);
+            await AsyncStorage.setItem('groupHandled', JSON.stringify(true));
+          }
+        }
+      };
+
+      const init = async () => {
+        if (!user) return;
+        const url = await Linking.getInitialURL();
+        handleDeepLink(url);
+      };
+
+      const listener = Linking.addEventListener('url', ({url}) => {
+        if (user) {
+          console.log('🚀 ~ listener ~ url:', url);
+          AsyncStorage.removeItem('groupHandled');
+          setIncomingDeeplink(true);
+          handleDeepLink(url);
+        }
+      });
+
+      init();
+
+      return () => {
+        listener.remove();
+      };
+    }, [user]);
+
+    return (
+      <Stack.Navigator screenOptions={{headerShown: false}}>
+        <Stack.Screen name="Group-Check" component={GroupManagement} />
+        <Stack.Screen name="Home" component={ExpenseTracker} />
+        <Stack.Screen name="Logout" component={LogoutScreen} />
+      </Stack.Navigator>
+    );
+  };
 
   const BeforeLogin = () => (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Navigator screenOptions={{headerShown: false}}>
       <Stack.Screen name="Login" component={LoginScreen} />
     </Stack.Navigator>
   );
 
-
   if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#0000ff" />
-      </View>
-    );
+    return <SplashScreen />;
   }
 
   return (
-    <NavigationContainer>
-      {user ? <AfterLogin /> : <BeforeLogin />}
+    <NavigationContainer linking={linking} ref={navigationRef}>
+      <Suspense fallback={<SplashScreen />}>
+        {user ? <AfterLogin /> : <BeforeLogin />}
+      </Suspense>
+      <Toast />
     </NavigationContainer>
   );
 };

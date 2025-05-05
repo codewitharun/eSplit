@@ -1,4 +1,4 @@
-package com.esplit
+package com.techtitens.ezysplit
 
 import android.app.Application
 import com.facebook.react.PackageList
