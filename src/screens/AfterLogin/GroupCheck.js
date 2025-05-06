@@ -7,7 +7,6 @@ import {
   StyleSheet,
   Modal,
   FlatList,
-  Alert,
 } from 'react-native';
 import firestore from '@react-native-firebase/firestore';
 import auth from '@react-native-firebase/auth';
@@ -21,6 +20,7 @@ import Icon from 'react-native-vector-icons/FontAwesome';
 import DashedDividerWithText from '../../component/dividerwithdash';
 import DashedDivider from '../../component/divider';
 import {KeyboardAwareScrollView} from 'react-native-keyboard-aware-scroll-view';
+import Toast from 'react-native-toast-message';
 
 const GroupManagement = ({navigation}) => {
   const groupKey = useExpenseState(state => state.groupKey);
@@ -41,6 +41,7 @@ const GroupManagement = ({navigation}) => {
 
   const route = useRoute();
   const {groupId} = route.params || {};
+  console.log('🚀 ~ GroupManagement ~ groupId:', groupId);
 
   useEffect(() => {
     if (groupId) {
@@ -90,15 +91,20 @@ const GroupManagement = ({navigation}) => {
   const handleJoinGroup = async joinGroupKey => {
     try {
       if (!user || !user.uid) {
-        Alert.alert('Error', 'User not logged in properly.');
+        Toast.show({
+          type: 'error',
+          text1: 'error',
+          text2: 'User not logged in properly.',
+        });
         return;
       }
 
       if (!joinGroupKey) {
-        Alert.alert(
-          'Error',
-          'Please select a group or enter a valid group key.',
-        );
+        Toast.show({
+          type: 'error',
+          text1: 'error',
+          text2: 'Please select a group or enter a valid group key.',
+        });
         return;
       }
       const groupDoc = await firestore()
@@ -107,10 +113,11 @@ const GroupManagement = ({navigation}) => {
         .get();
 
       if (!groupDoc.exists) {
-        Alert.alert(
-          'Invalid Group Key',
-          'The group key you entered does not exist.',
-        );
+        Toast.show({
+          type: 'error',
+          text1: 'error',
+          text2: 'The group key you entered does not exist.',
+        });
 
         return;
       }
@@ -126,10 +133,13 @@ const GroupManagement = ({navigation}) => {
 
       if (!isUserAlreadyMember) {
         if (groupData?.isLocked) {
-          Alert.alert(
-            'Group Locked',
-            'This group has already recorded its first expense. No new members can join.',
-          );
+          Toast.show({
+            type: 'error',
+            text1: 'Group Locked',
+            text2:
+              'This group has already recorded its first expense. No new members can join.',
+          });
+
           setLoader(false);
           return;
         }
@@ -207,10 +217,11 @@ const GroupManagement = ({navigation}) => {
     } catch (error) {
       setLoader(false);
       console.log('Error:', error);
-      Alert.alert(
-        'Error',
-        'An error occurred while creating the group. Please try again.',
-      );
+      Toast.show({
+        type: 'error',
+        text1: 'Group Locked',
+        text2: 'An error occurred while creating the group. Please try again.',
+      });
     }
   };
 
@@ -318,8 +329,6 @@ const GroupManagement = ({navigation}) => {
           onClose={() => setGroupNameModal(false)}
           onCreate={handleCreateGroup}
         />
-
-        <Loader loader={loader} />
       </KeyboardAwareScrollView>
       {lastGroupKey && (
         <TouchableOpacity
@@ -331,6 +340,7 @@ const GroupManagement = ({navigation}) => {
           {/* <Icon name="share" size={20} color="black" /> */}
         </TouchableOpacity>
       )}
+      <Loader loader={loader} />
     </View>
   );
 };

@@ -13,6 +13,7 @@ import {signOut} from '../../services/auth';
 
 const Header = () => {
   const user = useAuthStore(state => state.user);
+  const setUser = useAuthStore(state => state.setUser);
   const waveAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -46,6 +47,7 @@ const Header = () => {
   const handleLogout = async () => {
     try {
       await signOut();
+      setUser(null);
     } catch (error) {
       console.log('Logout Error:', error);
     }

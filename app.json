@@ -1,4 +1,7 @@
 {
   "name": "EzySplit",
-  "displayName": "EzySplit"
+  "displayName": "EzySplit",
+  "react-native-google-mobile-ads": {
+    "android_app_id": "ca-app-pub-1001891296778824~5203560568"
+  }
 }

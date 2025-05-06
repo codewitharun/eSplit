@@ -52,6 +52,7 @@ const GroupNameModal: React.FC<GroupNameModalProps> = ({
             style={styles.input}
             value={groupName}
             onChangeText={setGroupName}
+            placeholderTextColor={'grey'}
           />
           <View style={styles.buttonContainer}>
             <TouchableOpacity onPress={onClose} style={styles.cancelButton}>
@@ -98,6 +99,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 10,
     marginBottom: 16,
+    color: 'black',
   },
   buttonContainer: {
     flexDirection: 'row',

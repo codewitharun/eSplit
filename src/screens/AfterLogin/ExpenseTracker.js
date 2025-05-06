@@ -79,8 +79,8 @@ const ExpenseTracker = ({navigation}) => {
 
     return () => unsubscribe();
   }, [focused]);
-  const url = `ezysplit://Group-Check/${groupKey}`;
-
+  // const url = `ezysplit://Group-Check/${groupKey}`;
+  const url = `https://ezysplit.appaura.xyz/app/Group-Check/${groupKey}`;
   const getAllTokens = async () => {
     try {
       const snapshot = await firestore().collection('Esplitusers').get();
@@ -105,13 +105,20 @@ const ExpenseTracker = ({navigation}) => {
   const onSavePress = async () => {
     try {
       if (!description || !totalExpense) {
-        Alert.alert('Please fill all fields');
+        Toast.show({
+          type: 'info',
+          text1: 'Field Incomplete',
+          text2: 'Please fill all fields',
+        });
         return;
       }
 
       if (!totalUsers.some(u => u.displayName === user.displayName)) {
-        Alert.alert('You are not authorized to add expenses');
-        s;
+        Toast.show({
+          type: 'error',
+          text1: 'Unauthorize Member',
+          text2: 'You are not authorized to add expenses',
+        });
         return;
       }
       setLoader(true);
@@ -193,9 +200,12 @@ const ExpenseTracker = ({navigation}) => {
           }
         } catch (error) {
           setLoader(false);
-
+          Toast.show({
+            type: 'error',
+            text1: 'Error ',
+            text2: 'Error processing the transaction. Please try again.',
+          });
           console.log('Error during the transaction process:', error);
-          Alert.alert('Error processing the transaction. Please try again.');
         }
       };
 
@@ -216,7 +226,6 @@ const ExpenseTracker = ({navigation}) => {
     } catch (error) {
       setLoader(false);
       console.log('Error in onSavePress:', error);
-      Alert.alert('An error occurred. Please try again.');
     }
   };
 
@@ -279,7 +288,11 @@ const ExpenseTracker = ({navigation}) => {
         console.log('Share dismissed');
       }
     } catch (error) {
-      Alert.alert('Sharing failed', error.message);
+      Toast.show({
+        type: 'error',
+        text1: 'Sharing failed',
+        text2: error.message,
+      });
     }
   };
 
