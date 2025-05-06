@@ -190,11 +190,11 @@ const App = () => {
         }
       };
 
-      const init = async () => {
-        if (!user) return;
-        const url = await Linking.getInitialURL();
-        handleDeepLink(url);
-      };
+      // const init = async () => {
+      //   if (!user) return;
+      //   const url = await Linking.getInitialURL();
+      //   handleDeepLink(url);
+      // };
 
       const listener = Linking.addEventListener('url', ({url}) => {
         if (user) {
@@ -205,7 +205,7 @@ const App = () => {
         }
       });
 
-      init();
+      // init();
 
       return () => {
         listener.remove();
