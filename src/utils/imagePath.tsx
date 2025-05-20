@@ -1,0 +1,18 @@
+export default {
+  usernameSocial: require('../assets/images/userSocial.png'),
+  loginVerification: require('../assets/images/loginVerification.png'),
+  phoneVerification: require('../assets/images/phoneVerification.png'),
+  usernameHeader: require('../assets/images/usernameHeder.png'),
+  header: require('../assets/images/background.png'),
+  logo: require('../assets/images/logo/logo.png'),
+  cash: require('../assets/images/bill.png'),
+  split: require('../assets/images/circle-arrow-move-up-right-duotone-rounded.png'),
+  bnpl: require('../assets/images/bnpl.png'),
+  invoice: require('../assets/images/invoice.png'),
+  qrcode: require('../assets/images/qrcode.png'),
+  flash: require('../assets/images/flashlight.png'),
+  gallary: require('../assets/images/image.png'),
+  info: require('../assets/images/info.png'),
+  calender: require('../assets/images/calendar.png'),
+  user: require('../assets/images/user.png'),
+};

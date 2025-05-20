@@ -181,7 +181,7 @@ const ExpenseTracker = ({navigation}) => {
           const tokens = await getAllTokens();
           const data = {
             title: 'Expense added',
-            body: `New expense of ${totalExpenseValue} added by ${user.displayName}`,
+            body: `New expense of ${totalExpenseValue} added by ${user.displayName} to ${groupKey}`,
             tokens,
           };
 
