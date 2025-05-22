@@ -12,6 +12,7 @@ const Notifications = {
       name: 'Split Notifications',
       importance: AndroidImportance.HIGH,
       sound: 'default',
+      vibration: true,
     });
   },
   createExportChannel: async () => {
@@ -49,8 +50,6 @@ const Notifications = {
       body,
       android: {
         channelId: 'Transaction',
-        importance: AndroidImportance.DEFAULT,
-        sound: 'default',
       },
     });
   },

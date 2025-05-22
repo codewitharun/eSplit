@@ -20,6 +20,8 @@ import {useExpenseState} from './src/store/useExpenseStore';
 import {useAuthStore} from './src/store/useAuthStore';
 import SplashScreen from './src/screens/Splash';
 import MobileAds from 'react-native-google-mobile-ads';
+import FileViewer from 'react-native-file-viewer';
+
 const App = () => {
   const user = useAuthStore(state => state.user);
   const setUser = useAuthStore(state => state.setUser);
@@ -60,15 +62,13 @@ const App = () => {
       });
     });
 
-    notifee.onForegroundEvent(({type, detail}) => {
+    notifee.onForegroundEvent(async ({type, detail}) => {
       try {
         if (type === EventType.PRESS && detail.pressAction.id === 'open-pdf') {
           const filePath = detail.notification?.data?.filePath;
-          Toast.show({
-            type: 'info',
-            text1: 'Coming Soon!',
-            text2: 'Click to open the PDF feature coming soon.',
-          });
+          if (filePath) {
+            await FileViewer.open(filePath, {showOpenWithDialog: true});
+          }
         }
       } catch (error) {
         console.log('🚀 ~ notifee.onForegroundEvent ~ error:', error);

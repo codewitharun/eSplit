@@ -5796,6 +5796,7 @@ __metadata:
     react: 18.2.0
     react-native: 0.74.3
     react-native-calendars: ^1.1307.0
+    react-native-file-viewer: ^2.1.5
     react-native-fs: ^2.20.0
     react-native-gesture-handler: ^2.18.1
     react-native-google-mobile-ads: 13.6.0
@@ -9272,6 +9273,15 @@ __metadata:
     moment:
       optional: true
   checksum: 1fc559d66bf0c687c09ba9462f243051127154efb4e0e293ddbabdfe8a64523ca114c905d853a2b911626b32c2f25abdb1de39cd07e8865d8c6a970991175195
+  languageName: node
+  linkType: hard
+
+"react-native-file-viewer@npm:^2.1.5":
+  version: 2.1.5
+  resolution: "react-native-file-viewer@npm:2.1.5"
+  peerDependencies:
+    react-native: ">=0.47"
+  checksum: 390e1e3ce20c3b2fb7d2394d6bedf1c6c5d25f799fb5b344c7ecb72267327403caf2528916a7419e094caecccf41dac8b62dd0d31fa5991725e36dcdd24b725e
   languageName: node
   linkType: hard
 

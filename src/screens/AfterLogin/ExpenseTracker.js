@@ -26,6 +26,7 @@ import RNHTMLtoPDF from 'react-native-html-to-pdf';
 import notifee from '@notifee/react-native';
 import Notifications from '../Notifications';
 import {Download} from 'lucide-react-native';
+import FileViewer from 'react-native-file-viewer';
 
 const ExpenseTracker = ({navigation}) => {
   const user = auth().currentUser;
@@ -302,7 +303,7 @@ const ExpenseTracker = ({navigation}) => {
       const monthYear = `${currentDate.toLocaleString('default', {
         month: 'long',
       })}-${currentDate.getFullYear()}`;
-      const fileName = `ezysplit-${monthYear}`;
+      const fileName = `ezysplit-${groupKey}-${monthYear}`;
 
       const perPerson = totalAmount / totalUsers.length;
 
@@ -337,40 +338,52 @@ const ExpenseTracker = ({navigation}) => {
         <h3 style="text-align:center;">Created with ❤️ by Arun</h3>
 
   `;
-
-      const options = {
+      const file = await RNHTMLtoPDF.convert({
         html: htmlContent,
-        fileName: fileName,
+        fileName,
         directory: 'Download',
-      };
+      });
 
-      const file = await RNHTMLtoPDF.convert(options);
-      Notifications.displayExportedNotification({
+      const internalPath = file.filePath;
+
+      const publicPath = `${RNFS.DownloadDirectoryPath}/${fileName}.pdf`;
+
+      await RNFS.copyFile(internalPath, publicPath);
+      await RNFS.unlink(internalPath);
+
+      await Notifications.displayExportedNotification({
         title: 'PDF Exported',
         body: 'Tap to view',
-        filePath: file.filePath,
+        filePath: publicPath,
         channelId: 'Export',
       });
 
       Toast.show({
-        text2Style: {
-          height: 30,
-          flexWrap: 'wrap',
-        },
         type: 'success',
         text1: 'PDF Exported Successfully!',
-        text2: `Your File is saved at ${file.filePath}`,
-        onPress: () => {
-          Toast.show({
-            type: 'info',
-            text1: 'Coming Soon!',
-            text2: 'Click to open the PDF feature coming soon.',
-          });
+        text2: `Your file is saved at Downloads/${fileName}`,
+        onPress: async () => {
+          try {
+            await FileViewer.open(publicPath, {showOpenWithDialog: true});
+          } catch (error) {
+            Toast.show({
+              type: 'error',
+              text1: 'Could not open PDF',
+              text2:
+                error.message || 'Please make sure a PDF viewer is installed.',
+            });
+          }
         },
       });
+
       console.log('PDF saved at:', file.filePath);
     } catch (error) {
       console.log('🚀 ~ generatePDF ~ error:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'PDF Export Failed',
+        text2: error.message || 'Something went wrong.',
+      });
     }
   };
 
