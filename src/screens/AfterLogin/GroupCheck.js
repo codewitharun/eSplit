@@ -335,7 +335,7 @@ const GroupManagement = ({navigation}) => {
           onPress={() => handleJoinGroup(lastGroupKey)}
           style={styles.shareButton}>
           <Text style={styles.shareButtonText}>
-            Last Joined Group: {lastGroupKey}
+            Last Joined Group: {lastGroupKey.replace(/-\d+$/, '')}
           </Text>
           {/* <Icon name="share" size={20} color="black" /> */}
         </TouchableOpacity>

@@ -1,9 +1,5 @@
 // Notifications.js
-import notifee, {
-  AndroidImportance,
-  AndroidVisibility,
-} from '@notifee/react-native';
-import messaging from '@react-native-firebase/messaging';
+import notifee, {AndroidImportance} from '@notifee/react-native';
 
 const Notifications = {
   createChannel: async () => {
