@@ -1,0 +1,16 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls",
+      "delegate_permission/common.get_login_creds"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.techtitens.ezysplit",
+      "sha256_cert_fingerprints": [
+        "30:EC:6A:5D:A2:B1:81:D5:C2:9B:77:59:6A:9D:CD:E7:DD:B3:5D:01:4F:60:73:28:FA:52:90:C0:E0:16:F4:96",
+        "6E:C0:9E:88:EA:E9:31:3B:F0:84:09:71:C5:4C:46:83:80:7E:5B:4E:F7:AB:F8:AF:FF:8C:D6:31:65:89:1B:79"
+      ]
+    }
+  }
+]

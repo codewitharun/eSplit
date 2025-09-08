@@ -1,11 +1,5 @@
 import React, {Suspense, useEffect, useState} from 'react';
-import {
-  View,
-  ActivityIndicator,
-  StyleSheet,
-  Linking,
-  Alert,
-} from 'react-native';
+import {View, ActivityIndicator, StyleSheet, Linking} from 'react-native';
 import {navigationRef} from './src/services/NavigationService';
 
 import auth from '@react-native-firebase/auth';
@@ -25,6 +19,9 @@ import LogoutScreen from './src/screens/AfterLogin/Logout';
 import {useExpenseState} from './src/store/useExpenseStore';
 import {useAuthStore} from './src/store/useAuthStore';
 import SplashScreen from './src/screens/Splash';
+import MobileAds from 'react-native-google-mobile-ads';
+import FileViewer from 'react-native-file-viewer';
+
 const App = () => {
   const user = useAuthStore(state => state.user);
   const setUser = useAuthStore(state => state.setUser);
@@ -33,7 +30,7 @@ const App = () => {
   const Stack = createNativeStackNavigator();
 
   const linking = {
-    prefixes: ['ezysplit://', 'https://ezysplit.appaura.xyz/app'],
+    prefixes: ['ezysplit://', 'https://ezysplit.appaura.xyz/app/'], // note the trailing slash
     config: {
       screens: {
         'Group-Check': {
@@ -65,15 +62,13 @@ const App = () => {
       });
     });
 
-    notifee.onForegroundEvent(({type, detail}) => {
+    notifee.onForegroundEvent(async ({type, detail}) => {
       try {
         if (type === EventType.PRESS && detail.pressAction.id === 'open-pdf') {
           const filePath = detail.notification?.data?.filePath;
-          Toast.show({
-            type: 'info',
-            text1: 'Coming Soon!',
-            text2: 'Click to open the PDF feature coming soon.',
-          });
+          if (filePath) {
+            await FileViewer.open(filePath, {showOpenWithDialog: true});
+          }
         }
       } catch (error) {
         console.log('🚀 ~ notifee.onForegroundEvent ~ error:', error);
@@ -83,11 +78,20 @@ const App = () => {
 
   useEffect(() => {
     requestUserPermission();
-    const subscriber = auth().onAuthStateChanged(onAuthStateChanged);
-    setTimeout(() => {
-      setLoading(false);
-    }, 2500);
-    return subscriber;
+
+    // Manually check current user on app load
+    const currentUser = auth().currentUser;
+    if (currentUser) {
+      onAuthStateChanged(currentUser);
+    }
+
+    // Set up listener for real-time changes
+    const unsubscribe = auth().onAuthStateChanged(user => {
+      console.log('🚀 ~ unsubscribe ~ user:', user);
+      onAuthStateChanged(user);
+    });
+
+    return unsubscribe;
   }, []);
 
   const checkPermission = async () => {
@@ -116,14 +120,21 @@ const App = () => {
       Notifications.createExportChannel();
     }
   };
+  // useEffect(() => {
+  //   MobileAds().initialize();
+  // }, []);
 
   const onAuthStateChanged = async user => {
+    console.log('Inside onAuthStateChanged, user:', user);
+
     if (user) {
+      console.log('if block runing');
       try {
-        setUser(user);
-
         const token = await messaging().getToken();
-
+        setTimeout(() => {
+          setLoading(false);
+          setUser(user);
+        }, 2500);
         await firestore().collection('Esplitusers').doc(user.uid).set(
           {
             uid: user.uid,
@@ -143,8 +154,11 @@ const App = () => {
       }
     } else {
       try {
+        console.log('else block runing');
+
         await AsyncStorage.removeItem('userToken');
         await AsyncStorage.removeItem('lastJoinedGroup');
+        setLoading(false);
       } catch (error) {
         console.error('Error in onAuthStateChanged (logout):', error);
       }
@@ -176,11 +190,11 @@ const App = () => {
         }
       };
 
-      const init = async () => {
-        if (!user) return;
-        const url = await Linking.getInitialURL();
-        handleDeepLink(url);
-      };
+      // const init = async () => {
+      //   if (!user) return;
+      //   const url = await Linking.getInitialURL();
+      //   handleDeepLink(url);
+      // };
 
       const listener = Linking.addEventListener('url', ({url}) => {
         if (user) {
@@ -191,7 +205,7 @@ const App = () => {
         }
       });
 
-      init();
+      // init();
 
       return () => {
         listener.remove();
@@ -219,9 +233,8 @@ const App = () => {
 
   return (
     <NavigationContainer linking={linking} ref={navigationRef}>
-      <Suspense fallback={<SplashScreen />}>
-        {user ? <AfterLogin /> : <BeforeLogin />}
-      </Suspense>
+      {user ? <AfterLogin /> : <BeforeLogin />}
+
       <Toast />
     </NavigationContainer>
   );

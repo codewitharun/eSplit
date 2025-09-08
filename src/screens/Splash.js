@@ -1,5 +1,12 @@
 import React, {useEffect, useRef} from 'react';
-import {View, StyleSheet, Animated, Easing, Dimensions} from 'react-native';
+import {
+  View,
+  StyleSheet,
+  Animated,
+  Easing,
+  Dimensions,
+  StatusBar,
+} from 'react-native';
 
 const {width, height} = Dimensions.get('window');
 
@@ -38,6 +45,7 @@ const SplashScreen = ({onAnimationEnd}) => {
 
   return (
     <View style={styles.container}>
+      <StatusBar hidden={true} />
       <Animated.View
         style={[
           styles.circle,
