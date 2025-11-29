@@ -1,0 +1,72 @@
+name: Android Build & Release
+
+on:
+  # Trigger on push to tags (e.g., v1.0.0)
+  push:
+    branches:
+      - main
+  # Allow manual trigger from GitHub Actions tab
+  workflow_dispatch:
+
+jobs:
+  android-build:
+    name: Build & Release Android
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: "zulu"
+          java-version: "17" # React Native 0.73+ uses Java 17
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: "npm"
+
+      - name: Install Dependencies
+        run: npm ci
+
+      # --- KEYSTORE DECODING ---
+      # This step takes the base64 secret and saves it as a physical file
+      # for the build server to use.
+      - name: Decode Keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          echo $ANDROID_KEYSTORE_BASE64 | base64 --decode > android/app/release.keystore
+
+      # --- BUILD ---
+      - name: Build Release Bundle (AAB)
+        env:
+          # Pass secrets to the Gradle environment
+          ANDROID_KEYSTORE_PATH: release.keystore
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          cd android
+          ./gradlew bundleRelease --no-daemon
+
+      # --- UPLOAD TO GOOGLE PLAY ---
+      # Uses the popular r0adkll/upload-google-play action
+      - name: Upload to Google Play
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.ANDROID_SERVICE_ACCOUNT_JSON }}
+          packageName: com.techtitens.ezysplit # REPLACE THIS with your package name
+          releaseFiles: android/app/build/outputs/bundle/release/app-release.aab
+          track: internal # Options: internal, alpha, beta, production
+          status: draft # Start as a draft so you can review before release
+
+      # (Optional) Upload Artifact to GitHub for manual download
+      - name: Upload AAB to GitHub Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-bundle
+          path: android/app/build/outputs/bundle/release/app-release.aab
