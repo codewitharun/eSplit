@@ -1,32 +1,28 @@
-import React, {useState, useCallback, useEffect} from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  Alert,
-  FlatList,
-  StyleSheet,
-  TouchableOpacity,
-  Share,
-  Button,
-  ToastAndroid,
-} from 'react-native';
-import Toast from 'react-native-toast-message';
-import RNFS from 'react-native-fs';
-import firestore from '@react-native-firebase/firestore';
-import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import auth from '@react-native-firebase/auth';
-import moment from 'moment';
-import Icon from 'react-native-vector-icons/MaterialIcons';
-import DatePicker from './DatePicker';
+import firestore from '@react-native-firebase/firestore';
 import {useIsFocused} from '@react-navigation/native';
-import {useExpenseState} from '../../store/useExpenseStore';
-import RNHTMLtoPDF from 'react-native-html-to-pdf';
-import notifee from '@notifee/react-native';
-import Notifications from '../Notifications';
+import axios from 'axios';
 import {Download} from 'lucide-react-native';
+import moment from 'moment';
+import React, {useEffect, useState} from 'react';
+import {
+  Alert,
+  FlatList,
+  Share,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import FileViewer from 'react-native-file-viewer';
+import RNFS from 'react-native-fs';
+import RNHTMLtoPDF from 'react-native-html-to-pdf';
+import Toast from 'react-native-toast-message';
+import Icon from 'react-native-vector-icons/MaterialIcons';
+import {useExpenseState} from '../../store/useExpenseStore';
+import Notifications from '../Notifications';
 
 const ExpenseTracker = ({navigation}) => {
   const user = auth().currentUser;
@@ -79,9 +75,9 @@ const ExpenseTracker = ({navigation}) => {
       );
 
     return () => unsubscribe();
-  }, [focused]);
+  }, [focused, groupKey]);
   // const url = `ezysplit://Group-Check/${groupKey}`;
-  const url = `https://ezysplit.appaura.xyz/app/Group-Check/${groupKey}`;
+  const url = `https://ezysplit.arun.codes/app/Group-Check/${groupKey}`;
   const getAllTokens = async () => {
     try {
       const snapshot = await firestore().collection('Esplitusers').get();
@@ -188,7 +184,7 @@ const ExpenseTracker = ({navigation}) => {
 
           try {
             const response = await axios.post(
-              'https://ezysplit.appaura.xyz/send-notification',
+              'https://ezysplit.arun.codes/send-notification',
               data,
             );
             console.log('Notification sent successfully:', response.data);
