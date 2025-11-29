@@ -1,26 +1,24 @@
-import React, {Suspense, useEffect, useState} from 'react';
-import {View, ActivityIndicator, StyleSheet, Linking} from 'react-native';
+import React, {useEffect, useState} from 'react';
+import {Linking, StyleSheet} from 'react-native';
 import {navigationRef} from './src/services/NavigationService';
 
-import auth from '@react-native-firebase/auth';
-import messaging from '@react-native-firebase/messaging';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import LoginScreen from './src/screens/BeforeLogin/Login';
-import ExpenseTracker from './src/screens/AfterLogin/ExpenseTracker';
-import Notifications from './src/screens/Notifications';
-import firestore from '@react-native-firebase/firestore';
 import notifee, {AuthorizationStatus, EventType} from '@notifee/react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import auth from '@react-native-firebase/auth';
+import firestore from '@react-native-firebase/firestore';
+import messaging from '@react-native-firebase/messaging';
 import {NavigationContainer, useNavigation} from '@react-navigation/native';
-import Toast from 'react-native-toast-message';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
-import {createDrawerNavigator} from '@react-navigation/drawer';
+import FileViewer from 'react-native-file-viewer';
+import Toast from 'react-native-toast-message';
+import ExpenseTracker from './src/screens/AfterLogin/ExpenseTracker';
 import GroupManagement from './src/screens/AfterLogin/GroupCheck';
 import LogoutScreen from './src/screens/AfterLogin/Logout';
-import {useExpenseState} from './src/store/useExpenseStore';
-import {useAuthStore} from './src/store/useAuthStore';
+import LoginScreen from './src/screens/BeforeLogin/Login';
+import Notifications from './src/screens/Notifications';
 import SplashScreen from './src/screens/Splash';
-import MobileAds from 'react-native-google-mobile-ads';
-import FileViewer from 'react-native-file-viewer';
+import {useAuthStore} from './src/store/useAuthStore';
+import {useExpenseState} from './src/store/useExpenseStore';
 
 const App = () => {
   const user = useAuthStore(state => state.user);
@@ -30,7 +28,7 @@ const App = () => {
   const Stack = createNativeStackNavigator();
 
   const linking = {
-    prefixes: ['ezysplit://', 'https://ezysplit.appaura.xyz/app/'], // note the trailing slash
+    prefixes: ['ezysplit://', 'https://ezysplit.arun.codes/app/'], // note the trailing slash
     config: {
       screens: {
         'Group-Check': {
@@ -175,7 +173,9 @@ const App = () => {
 
     useEffect(() => {
       const handleDeepLink = async url => {
-        if (!url) return;
+        if (!url) {
+          return;
+        }
 
         const match = url.match(/Group-Check\/([^/]+)/);
         const groupId = match?.[1];

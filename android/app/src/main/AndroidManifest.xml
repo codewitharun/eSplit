@@ -51,13 +51,13 @@
     <!-- HTTPS support -->
     <data
         android:scheme="https"
-        android:host="ezysplit.appaura.xyz"
+        android:host="ezysplit.arun.codes"
         android:pathPrefix="/app" />
 
     <!-- HTTP support -->
     <data
         android:scheme="http"
-        android:host="ezysplit.appaura.xyz"
+        android:host="ezysplit.arun.codes"
         android:pathPrefix="/app" />
 </intent-filter>
 
