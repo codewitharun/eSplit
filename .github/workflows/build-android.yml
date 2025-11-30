@@ -44,6 +44,9 @@ jobs:
       # --- BUILD ---
       - name: Build Release Bundle (AAB)
         env:
+          # --- CRITICAL FIX: Pass the GitHub run number to Gradle ---
+          BUILD_NUMBER: ${{ github.run_number }}
+
           # Pass secrets to the Gradle environment
           ANDROID_KEYSTORE_PATH: release.keystore
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
@@ -61,8 +64,8 @@ jobs:
           serviceAccountJsonPlainText: ${{ secrets.ANDROID_SERVICE_ACCOUNT_JSON }}
           packageName: com.techtitens.ezysplit # REPLACE THIS with your package name
           releaseFiles: android/app/build/outputs/bundle/release/app-release.aab
-          track: internal # Options: internal, alpha, beta, production
-          status: draft # Start as a draft so you can review before release
+          track: production # Options: internal, alpha, beta, production
+          status: completed # Start as a draft so you can review before release
 
       # (Optional) Upload Artifact to GitHub for manual download
       - name: Upload AAB to GitHub Artifacts
