@@ -73,14 +73,14 @@ def jscFlavor = 'org.webkit:android-jsc:+'
 
 android {
     ndkVersion rootProject.ext.ndkVersion
-    buildToolsVersion rootProject.ext.buildToolsVersion
-compileSdkVersion 34
+    buildToolsVersion "35.0.0"
+    compileSdkVersion 35
     namespace "com.techtitens.ezysplit"
     defaultConfig {
         applicationId "com.techtitens.ezysplit"
         
-         minSdkVersion 23
-        targetSdkVersion 34 
+        minSdkVersion 24
+        targetSdkVersion 35 
         versionCode Integer.valueOf(System.getenv("BUILD_NUMBER") ?: "1") + 11
         versionName "1.1"
     }
