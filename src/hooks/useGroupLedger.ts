@@ -28,6 +28,11 @@ export interface GroupLedger {
   loading: boolean;
   group: Group | null;
   members: GroupMember[];
+  // Members who left (active: false on their groups/{id}/members/{uid}
+  // doc) - kept separate from `members` so counts/balances/split pickers
+  // only ever see current members, while the UI can still surface who's
+  // gone (see Activity's "N people, M left").
+  pastMembers: GroupMember[];
   expenses: Expense[];
   settlements: Settlement[];
   totalSpent: number;
@@ -38,7 +43,10 @@ export interface GroupLedger {
 
 export function useGroupLedger(groupId: string | null): GroupLedger {
   const [group, setGroup] = useState<Group | null>(null);
-  const [members, setMembers] = useState<GroupMember[]>([]);
+  // Raw subcollection contents - both current and departed members, since
+  // memberName() needs to resolve names for both (an old expense can still
+  // be `paidBy` someone who's since left).
+  const [allMembers, setAllMembers] = useState<GroupMember[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [settlements, setSettlements] = useState<Settlement[]>([]);
   const [loading, setLoading] = useState(true);
@@ -46,7 +54,7 @@ export function useGroupLedger(groupId: string | null): GroupLedger {
   useEffect(() => {
     if (!groupId) {
       setGroup(null);
-      setMembers([]);
+      setAllMembers([]);
       setExpenses([]);
       setSettlements([]);
       setLoading(false);
@@ -54,7 +62,7 @@ export function useGroupLedger(groupId: string | null): GroupLedger {
     }
     setLoading(true);
     const unsubGroup = subscribeGroup(groupId, setGroup);
-    const unsubMembers = subscribeGroupMembers(groupId, setMembers);
+    const unsubMembers = subscribeGroupMembers(groupId, setAllMembers);
     const unsubExpenses = subscribeExpenses(groupId, list => {
       setExpenses(list);
       setLoading(false);
@@ -67,6 +75,15 @@ export function useGroupLedger(groupId: string | null): GroupLedger {
       unsubSettlements();
     };
   }, [groupId]);
+
+  const members = useMemo(
+    () => allMembers.filter(m => m.active !== false),
+    [allMembers],
+  );
+  const pastMembers = useMemo(
+    () => allMembers.filter(m => m.active === false),
+    [allMembers],
+  );
 
   const memberIds = useMemo(() => members.map(m => m.uid), [members]);
 
@@ -96,12 +113,13 @@ export function useGroupLedger(groupId: string | null): GroupLedger {
   );
 
   const memberName = (uid: string) =>
-    members.find(m => m.uid === uid)?.displayName || 'Someone';
+    allMembers.find(m => m.uid === uid)?.displayName || 'Someone';
 
   return {
     loading,
     group,
     members,
+    pastMembers,
     expenses,
     settlements,
     totalSpent,

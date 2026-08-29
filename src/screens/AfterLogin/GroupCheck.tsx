@@ -9,7 +9,7 @@
 import auth from '@react-native-firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {useIsFocused, useRoute} from '@react-navigation/native';
-import React, {useEffect, useState} from 'react';
+import React, {useEffect, useRef, useState} from 'react';
 import {
   ActivityIndicator,
   StyleSheet,
@@ -20,14 +20,17 @@ import {
 } from 'react-native';
 import {KeyboardAwareScrollView} from 'react-native-keyboard-aware-scroll-view';
 import {ChevronRight, Search} from 'lucide-react-native';
-import Toast from 'react-native-toast-message';
+import Toast from '../../services/toast';
+import AppAlert from '../../services/appAlert';
 import BalanceDonut from '../../component/glass/BalanceDonut';
 import GlassCard from '../../component/glass/GlassCard';
 import GradientMesh from '../../component/glass/GradientMesh';
+import SwipeableRow from '../../component/glass/SwipeableRow';
 import GroupNameModal from '../../component/groupNameModal';
 import Header from '../../component/header';
 import {useGroups} from '../../hooks/useGroups';
 import {useGroupsOverview} from '../../hooks/useGroupsOverview';
+import {leaveGroup} from '../../services/ledger/firestoreLedger';
 import {useExpenseState} from '../../store/useExpenseStore';
 import {haptics} from '../../utils/haptics';
 import theme from '../../utils/theme';
@@ -36,11 +39,15 @@ const GroupManagement = ({navigation}: any) => {
   const setGroupKey = useExpenseState(state => state.setGroupKey);
   const currentGroupKey = useExpenseState(state => state.groupKey);
   const [loader, setLoader] = useState(false);
-  const incomingDeeplink = useExpenseState(state => state.incomingDeeplink);
-  const setincomingDeeplink = useExpenseState(
-    state => state.setincomingDeeplink,
-  );
   const [groupNameModal, setGroupNameModal] = useState(false);
+  // Separate from `loader` (which also covers join-by-id/join-by-code and
+  // drives the full-screen overlay) so the modal gets its own precise
+  // loading signal - `loader` is a native RN Modal, rendered on a separate
+  // top-level surface above everything else, so the full-screen overlay
+  // was invisible behind it while the modal was open. Without visible
+  // feedback inside the modal itself, a user could tap "Create" again
+  // before the first request finished.
+  const [creatingGroup, setCreatingGroup] = useState(false);
   const [joinCodeInput, setJoinCodeInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const user = auth().currentUser;
@@ -69,15 +76,24 @@ const GroupManagement = ({navigation}: any) => {
 
   const route = useRoute<any>();
   const {groupId} = route.params || {};
+  // Tracks the last deep-linked groupId this screen actually acted on, so
+  // a second link tap for a genuinely NEW group still triggers the join
+  // even while Group-Check is already mounted and focused (native-stack
+  // updates route.params on the existing screen instance instead of
+  // remounting it, so a plain "run once on mount" effect would miss it).
+  // This replaces an earlier version keyed on a Zustand boolean flag that
+  // React Navigation's own built-in `linking` handling raced against,
+  // which is why deep links landing on an already-open Group-Check screen
+  // would intermittently do nothing at all.
+  const handledGroupIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (groupId) {
+    if (groupId && handledGroupIdRef.current !== groupId) {
+      handledGroupIdRef.current = groupId;
       handleJoinById(groupId);
-      AsyncStorage.setItem('groupHandled', JSON.stringify(true));
-      setincomingDeeplink(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [incomingDeeplink]);
+  }, [groupId]);
 
   useEffect(() => {
     if (focused) {
@@ -138,7 +154,82 @@ const GroupManagement = ({navigation}: any) => {
     }
   };
 
+  const handleLeaveGroup = (leaveGroupId: string) => {
+    // Same "settle up first" guard as the in-group Profile screen's leave
+    // action, but computed from the groups-list overview so a user can
+    // leave a cluttering group without having to enter it first - this is
+    // the low-risk declutter option (vs. a full destructive admin
+    // "delete group", which would need recursive Firestore subcollection
+    // cleanup and its own confirmation flow).
+    if (!user) {
+      return;
+    }
+    // CRITICAL: overview.perGroupBalance is filled in by a one-time fetch
+    // that takes a beat after the group list itself renders (right after
+    // app launch especially). Right in that window, this group's entry
+    // simply isn't in the map yet - `balance != null` was treating
+    // "unknown" the same as "zero", which let someone swipe-leave with a
+    // real, unsettled debt as long as they were fast enough to act before
+    // the balance had loaded. Block instead of guessing whenever we don't
+    // yet have a real answer.
+    if (overview.loading || !(leaveGroupId in overview.perGroupBalance)) {
+      Toast.show({
+        type: 'info',
+        text1: 'Still checking your balance',
+        text2: 'Give it a second, then try again.',
+      });
+      return;
+    }
+    const balance = overview.perGroupBalance[leaveGroupId];
+    if (Math.abs(balance) > 0.01) {
+      Toast.show({
+        type: 'error',
+        text1: 'Settle up first',
+        text2: `You still have an open balance of ₹${Math.abs(balance).toFixed(
+          2,
+        )} in this group.`,
+      });
+      return;
+    }
+    // This is reached by a swipe gesture, which is easier to trigger by
+    // accident than a deliberate button tap (the Profile screen's leave
+    // button) - a confirmation matters more here, not less.
+    const groupName =
+      groups.find(g => g.id === leaveGroupId)?.name || 'this group';
+    AppAlert.alert(
+      'Leave this group?',
+      `You'll need the join code or a new invite to get back into "${groupName}".`,
+      [
+        {text: 'Cancel', style: 'cancel'},
+        {
+          text: 'Leave',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await leaveGroup(leaveGroupId, user.uid);
+              if (leaveGroupId === currentGroupKey) {
+                setGroupKey(null);
+              }
+              haptics.tap();
+              Toast.show({type: 'success', text1: 'Left group'});
+            } catch (error: any) {
+              Toast.show({
+                type: 'error',
+                text1: 'Could not leave group',
+                text2: error?.message,
+              });
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const handleCreateGroup = async (groupName: string) => {
+    if (creatingGroup) {
+      return;
+    }
+    setCreatingGroup(true);
     setLoader(true);
     try {
       const group = await createGroup(groupName);
@@ -157,6 +248,7 @@ const GroupManagement = ({navigation}: any) => {
       });
     } finally {
       setLoader(false);
+      setCreatingGroup(false);
     }
   };
 
@@ -254,6 +346,12 @@ const GroupManagement = ({navigation}: any) => {
           </View>
         )}
 
+        {groups.length > 0 && (
+          <Text style={styles.hintText}>
+            Tap a group to open it, swipe left to leave one.
+          </Text>
+        )}
+
         {loading && (
           <ActivityIndicator
             color={theme.color.blue}
@@ -274,43 +372,53 @@ const GroupManagement = ({navigation}: any) => {
         )}
 
         {filteredGroups.map(g => (
-          <TouchableOpacity
+          <SwipeableRow
             key={g.id}
-            onPress={() => enterGroup(g.id)}
-            activeOpacity={0.85}>
-            <GlassCard
-              style={StyleSheet.flatten([
-                styles.groupCard,
-                g.id === currentGroupKey && styles.groupCardActive,
-              ])}>
-              <View style={{flex: 1}}>
-                <Text style={styles.groupName}>{g.name}</Text>
-                <Text style={styles.groupMeta}>
-                  Code: {g.joinCode} · {g.memberIds.length} member
-                  {g.memberIds.length === 1 ? '' : 's'}
-                </Text>
-                {overview.perGroupBalance[g.id] != null &&
-                  Math.abs(overview.perGroupBalance[g.id]) > 0.01 && (
-                    <Text
-                      style={[
-                        styles.groupBalance,
-                        {
-                          color:
-                            overview.perGroupBalance[g.id] >= 0
-                              ? theme.color.green
-                              : theme.color.rose,
-                        },
-                      ]}>
-                      {overview.perGroupBalance[g.id] >= 0
-                        ? "You're owed "
-                        : 'You owe '}
-                      ₹{Math.abs(overview.perGroupBalance[g.id]).toFixed(2)}
-                    </Text>
-                  )}
-              </View>
-              <ChevronRight size={18} color={theme.color.inkFaint} />
-            </GlassCard>
-          </TouchableOpacity>
+            actionLabel="Leave"
+            actionColor={theme.color.rose}
+            onAction={() => handleLeaveGroup(g.id)}>
+            <TouchableOpacity
+              onPress={() => enterGroup(g.id)}
+              activeOpacity={0.85}>
+              <GlassCard
+                style={StyleSheet.flatten([
+                  styles.groupCard,
+                  g.id === currentGroupKey && styles.groupCardActive,
+                ])}>
+                <View style={{flex: 1}}>
+                  <Text style={styles.groupName}>{g.name}</Text>
+                  <Text style={styles.groupMeta}>
+                    Code: {g.joinCode} · {g.memberIds.length} member
+                    {g.memberIds.length === 1 ? '' : 's'}
+                    {g.createdAt &&
+                      ` · Created ${new Date(g.createdAt).toLocaleDateString(
+                        'en-IN',
+                        {day: '2-digit', month: 'short', year: 'numeric'},
+                      )}`}
+                  </Text>
+                  {overview.perGroupBalance[g.id] != null &&
+                    Math.abs(overview.perGroupBalance[g.id]) > 0.01 && (
+                      <Text
+                        style={[
+                          styles.groupBalance,
+                          {
+                            color:
+                              overview.perGroupBalance[g.id] >= 0
+                                ? theme.color.green
+                                : theme.color.rose,
+                          },
+                        ]}>
+                        {overview.perGroupBalance[g.id] >= 0
+                          ? "You're owed "
+                          : 'You owe '}
+                        ₹{Math.abs(overview.perGroupBalance[g.id]).toFixed(2)}
+                      </Text>
+                    )}
+                </View>
+                <ChevronRight size={18} color={theme.color.inkFaint} />
+              </GlassCard>
+            </TouchableOpacity>
+          </SwipeableRow>
         ))}
       </KeyboardAwareScrollView>
 
@@ -318,6 +426,7 @@ const GroupManagement = ({navigation}: any) => {
         visible={groupNameModal}
         onClose={() => setGroupNameModal(false)}
         onCreate={handleCreateGroup}
+        loading={creatingGroup}
       />
       {loader && (
         <View style={styles.loaderOverlay}>
@@ -348,6 +457,12 @@ const styles = StyleSheet.create({
   groupCard: {flexDirection: 'row', alignItems: 'center', marginBottom: 10},
   groupCardActive: {borderColor: theme.color.blue, borderWidth: 1.5},
   groupName: {color: theme.color.ink, fontSize: 15.5, fontWeight: '700'},
+  hintText: {
+    color: theme.color.inkFaint,
+    fontSize: 11.5,
+    marginTop: 8,
+    marginBottom: 4,
+  },
   groupMeta: {color: theme.color.inkFaint, fontSize: 12, marginTop: 3},
   groupBalance: {fontSize: 12.5, fontWeight: '700', marginTop: 6},
   dashboardCard: {

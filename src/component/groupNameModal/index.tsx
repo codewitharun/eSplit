@@ -4,6 +4,7 @@
 
 import React, {useState} from 'react';
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -14,7 +15,7 @@ import {
   TouchableWithoutFeedback,
   View,
 } from 'react-native';
-import Toast from 'react-native-toast-message';
+import Toast from '../../services/toast';
 import GlassCard from '../glass/GlassCard';
 import theme from '../../utils/theme';
 
@@ -22,16 +23,26 @@ interface GroupNameModalProps {
   visible: boolean;
   onClose: () => void;
   onCreate: (groupName: string) => void;
+  loading?: boolean;
 }
 
 const GroupNameModal: React.FC<GroupNameModalProps> = ({
   visible,
   onClose,
   onCreate,
+  loading = false,
 }) => {
   const [groupName, setGroupName] = useState('');
 
   const handleCreate = () => {
+    // Guard against a second tap landing while the first Create is still
+    // in flight (Firestore write) - previously nothing here disabled the
+    // button or showed feedback inside the modal itself, so a user could
+    // fire off a duplicate createGroup() before the modal had a chance to
+    // close.
+    if (loading) {
+      return;
+    }
     const trimmed = groupName.trim();
     if (trimmed.length < 3) {
       Toast.show({
@@ -50,12 +61,12 @@ const GroupNameModal: React.FC<GroupNameModalProps> = ({
       visible={visible}
       animationType="slide"
       transparent
-      onRequestClose={onClose}>
+      onRequestClose={loading ? undefined : onClose}>
       <KeyboardAvoidingView
         style={styles.modalContainer}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 0}>
-        <TouchableWithoutFeedback onPress={onClose}>
+        <TouchableWithoutFeedback onPress={loading ? undefined : onClose}>
           <View style={StyleSheet.absoluteFill} />
         </TouchableWithoutFeedback>
         <GlassCard opaque style={styles.modalContent}>
@@ -67,15 +78,24 @@ const GroupNameModal: React.FC<GroupNameModalProps> = ({
             onChangeText={setGroupName}
             placeholderTextColor={theme.color.inkFaint}
             autoFocus
+            editable={!loading}
           />
           <View style={styles.buttonContainer}>
-            <TouchableOpacity onPress={onClose} style={styles.cancelButton}>
+            <TouchableOpacity
+              onPress={onClose}
+              disabled={loading}
+              style={[styles.cancelButton, loading && styles.buttonDisabled]}>
               <Text style={styles.cancelText}>Cancel</Text>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={handleCreate}
-              style={styles.createButton}>
-              <Text style={styles.createText}>Create</Text>
+              disabled={loading}
+              style={[styles.createButton, loading && styles.buttonDisabled]}>
+              {loading ? (
+                <ActivityIndicator color={theme.color.onAccent} size="small" />
+              ) : (
+                <Text style={styles.createText}>Create</Text>
+              )}
             </TouchableOpacity>
           </View>
         </GlassCard>
@@ -131,6 +151,9 @@ const styles = StyleSheet.create({
     color: theme.color.onAccent,
     textAlign: 'center',
     fontWeight: '700',
+  },
+  buttonDisabled: {
+    opacity: 0.6,
   },
 });
 

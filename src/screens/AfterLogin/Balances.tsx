@@ -6,8 +6,12 @@
 
 import auth from '@react-native-firebase/auth';
 import firestore from '@react-native-firebase/firestore';
-import React, {useEffect, useState} from 'react';
+import {useFocusEffect, useNavigation} from '@react-navigation/native';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {
+  AppState,
+  BackHandler,
   Linking,
   ScrollView,
   StyleSheet,
@@ -15,7 +19,8 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import Toast from 'react-native-toast-message';
+import Toast from '../../services/toast';
+import AppAlert from '../../services/appAlert';
 import AnimatedNumber from '../../component/glass/AnimatedNumber';
 import GlassCard from '../../component/glass/GlassCard';
 import GroupSwitcherPill from '../../component/GroupSwitcherPill';
@@ -28,15 +33,37 @@ import {
   exportGroupPdf,
 } from '../../services/ledger/exportReport';
 import {buildUpiPayUri} from '../../services/ledger/upi';
+import {Routes} from '../../navigator/constants';
 import {useExpenseState} from '../../store/useExpenseStore';
 import {haptics} from '../../utils/haptics';
 import theme from '../../utils/theme';
 
 const BalancesScreen: React.FC = () => {
   const user = auth().currentUser;
+  const navigation = useNavigation<any>();
+  const insets = useSafeAreaInsets();
   const groupKey = useExpenseState(state => state.groupKey);
   const ledger = useGroupLedger(groupKey);
   const [upiIds, setUpiIds] = useState<Record<string, string>>({});
+
+  // Balances is a secondary tab, so the hardware back button should first
+  // return the user to the home tab (Activity) rather than exiting the
+  // app - matching how most tabbed Android apps treat back on a non-home
+  // tab. See Activity.tsx for the home-tab handler that takes over once
+  // the user is back there.
+  useFocusEffect(
+    useCallback(() => {
+      const onBackPress = () => {
+        navigation.navigate(Routes.TabTransaction);
+        return true;
+      };
+      const sub = BackHandler.addEventListener(
+        'hardwareBackPress',
+        onBackPress,
+      );
+      return () => sub.remove();
+    }, [navigation]),
+  );
 
   useEffect(() => {
     if (!ledger.members.length) {
@@ -78,6 +105,46 @@ const BalancesScreen: React.FC = () => {
     }
   };
 
+  // A UPI intent has no way to report payment completion back to the app
+  // (that would need a native PSP SDK, not just Linking) - so this used to
+  // just fire `settle()` unconditionally, in the same breath as opening the
+  // UPI app. Firestore was recording the debt as paid before the user had
+  // even reached the PIN screen, which read as "tapping Settle instantly
+  // settles it" rather than "go pay, then it's settled". Fixed by deferring
+  // the actual settle() until the app is foregrounded again (i.e. the user
+  // came back from the UPI app) and asking them to confirm they paid.
+  const pendingSettlementRef = useRef<{
+    fromUid: string;
+    toUid: string;
+    amount: number;
+  } | null>(null);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', nextState => {
+      if (nextState !== 'active' || !pendingSettlementRef.current) {
+        return;
+      }
+      const pending = pendingSettlementRef.current;
+      pendingSettlementRef.current = null;
+      AppAlert.alert(
+        'Mark as paid?',
+        `Did you complete the ₹${pending.amount.toFixed(
+          2,
+        )} payment to ${ledger.memberName(pending.toUid)}?`,
+        [
+          {text: 'Not yet', style: 'cancel'},
+          {
+            text: 'Yes, paid',
+            onPress: () =>
+              settle(pending.fromUid, pending.toUid, pending.amount),
+          },
+        ],
+      );
+    });
+    return () => sub.remove();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ledger]);
+
   const handleSettlePress = (
     fromUid: string,
     toUid: string,
@@ -89,26 +156,50 @@ const BalancesScreen: React.FC = () => {
           payeeVpa: vpa,
           payeeName: ledger.memberName(toUid),
           amount,
-          note: 'EzySplit settle-up',
+          // Group name in the note, not just "EzySplit settle-up", so this
+          // shows up distinguishably in both people's UPI app history when
+          // they're splitting across more than one group at a time.
+          note: `${ledger.group?.name || 'EzySplit'} settle-up`,
         })
       : null;
 
+    // Every path here asks before writing to Firestore, not just the
+    // "opened the UPI app" one - a blind "click Settle -> balance goes to
+    // zero" with no confirmation isn't honest about whether money actually
+    // moved, whichever of the three situations below it is.
     if (uri) {
-      Linking.openURL(uri).catch(() =>
-        Toast.show({
-          type: 'info',
-          text1: 'No UPI app found',
-          text2: 'Recording the settlement anyway.',
-        }),
-      );
-    } else {
-      Toast.show({
-        type: 'info',
-        text1: `${ledger.memberName(toUid)} hasn't added a UPI ID`,
-        text2: 'Recording as settled — pay them however you normally would.',
+      pendingSettlementRef.current = {fromUid, toUid, amount};
+      Linking.openURL(uri).catch(() => {
+        pendingSettlementRef.current = null;
+        AppAlert.alert(
+          'No UPI app found',
+          `Mark the ₹${amount.toFixed(2)} payment to ${ledger.memberName(
+            toUid,
+          )} as settled anyway? Pay them however you normally would.`,
+          [
+            {text: 'Not yet', style: 'cancel'},
+            {
+              text: 'Mark as settled',
+              onPress: () => settle(fromUid, toUid, amount),
+            },
+          ],
+        );
       });
+    } else {
+      AppAlert.alert(
+        `${ledger.memberName(toUid)} hasn't added a UPI ID`,
+        `Mark the ₹${amount.toFixed(
+          2,
+        )} payment as settled anyway? Pay them however you normally would.`,
+        [
+          {text: 'Not yet', style: 'cancel'},
+          {
+            text: 'Mark as settled',
+            onPress: () => settle(fromUid, toUid, amount),
+          },
+        ],
+      );
     }
-    settle(fromUid, toUid, amount);
   };
 
   const onExportPdf = async () => {
@@ -124,8 +215,10 @@ const BalancesScreen: React.FC = () => {
         ledger.totalSpent,
         ledger.settlements,
       );
+      haptics.success();
       Toast.show({type: 'success', text1: 'PDF exported', text2: path});
     } catch (error: any) {
+      haptics.warning();
       Toast.show({
         type: 'error',
         text1: 'PDF export failed',
@@ -147,8 +240,10 @@ const BalancesScreen: React.FC = () => {
         ledger.totalSpent,
         ledger.settlements,
       );
+      haptics.success();
       Toast.show({type: 'success', text1: 'Excel exported', text2: path});
     } catch (error: any) {
+      haptics.warning();
       Toast.show({
         type: 'error',
         text1: 'Excel export failed',
@@ -171,7 +266,8 @@ const BalancesScreen: React.FC = () => {
   return (
     <View style={styles.flex}>
       <GradientMesh />
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView
+        contentContainerStyle={[styles.content, {paddingTop: insets.top + 24}]}>
         <Text style={styles.heading}>Balances</Text>
         <GroupSwitcherPill />
 
@@ -199,35 +295,43 @@ const BalancesScreen: React.FC = () => {
         )}
         {ledger.transfers.map((t, i) => {
           const isMine = t.fromUid === user?.uid;
-          return (
+          const key = `${t.fromUid}-${t.toUid}-${i}`;
+          const card = (
+            <GlassCard style={styles.transferRow}>
+              <Text style={styles.transferText}>
+                {t.fromUid === user?.uid ? 'You' : ledger.memberName(t.fromUid)}{' '}
+                owe
+                {t.fromUid === user?.uid ? '' : 's'}{' '}
+                {t.toUid === user?.uid ? 'you' : ledger.memberName(t.toUid)}
+              </Text>
+              <Text style={styles.transferAmount}>₹{t.amount.toFixed(2)}</Text>
+              {isMine && (
+                <TouchableOpacity
+                  style={styles.settleBtn}
+                  onPress={() =>
+                    handleSettlePress(t.fromUid, t.toUid, t.amount)
+                  }>
+                  <Text style={styles.settleBtnText}>Settle</Text>
+                </TouchableOpacity>
+              )}
+            </GlassCard>
+          );
+          // Only the member who owes can settle their own debt. The swipe
+          // gesture used to wrap every row unconditionally and fire
+          // handleSettlePress() regardless of who was looking at it - in a
+          // 3+ person group, that let anyone swipe-settle a debt between
+          // two OTHER members. The inline "Settle" button was already
+          // isMine-gated; the swipe wrapper wasn't, until now.
+          return isMine ? (
             <SwipeableRow
-              key={`${t.fromUid}-${t.toUid}-${i}`}
+              key={key}
               actionLabel="Settle"
               actionColor={theme.color.green}
               onAction={() => handleSettlePress(t.fromUid, t.toUid, t.amount)}>
-              <GlassCard style={styles.transferRow}>
-                <Text style={styles.transferText}>
-                  {t.fromUid === user?.uid
-                    ? 'You'
-                    : ledger.memberName(t.fromUid)}{' '}
-                  owe
-                  {t.fromUid === user?.uid ? '' : 's'}{' '}
-                  {t.toUid === user?.uid ? 'you' : ledger.memberName(t.toUid)}
-                </Text>
-                <Text style={styles.transferAmount}>
-                  ₹{t.amount.toFixed(2)}
-                </Text>
-                {isMine && (
-                  <TouchableOpacity
-                    style={styles.settleBtn}
-                    onPress={() =>
-                      handleSettlePress(t.fromUid, t.toUid, t.amount)
-                    }>
-                    <Text style={styles.settleBtnText}>Settle</Text>
-                  </TouchableOpacity>
-                )}
-              </GlassCard>
+              {card}
             </SwipeableRow>
+          ) : (
+            <View key={key}>{card}</View>
           );
         })}
 
@@ -268,7 +372,10 @@ const BalancesScreen: React.FC = () => {
 
 const styles = StyleSheet.create({
   flex: {flex: 1, backgroundColor: theme.color.ground},
-  content: {padding: 20, paddingTop: 60, paddingBottom: 60},
+  // paddingTop is overridden per-render with the safe-area inset above -
+  // a flat 60 here only happened to clear the status bar on devices
+  // where the OS forces edge-to-edge (Android 15+).
+  content: {padding: 20, paddingBottom: 60},
   heading: {
     color: theme.color.ink,
     fontSize: 24,

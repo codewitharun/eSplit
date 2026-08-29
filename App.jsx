@@ -1,6 +1,7 @@
 import React, {useEffect, useState} from 'react';
-import {Linking, StyleSheet} from 'react-native';
+import {StyleSheet} from 'react-native';
 import {GestureHandlerRootView} from 'react-native-gesture-handler';
+import {SafeAreaProvider} from 'react-native-safe-area-context';
 import {navigationRef} from './src/services/NavigationService';
 
 import notifee, {AuthorizationStatus, EventType} from '@notifee/react-native';
@@ -8,10 +9,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import auth from '@react-native-firebase/auth';
 import firestore from '@react-native-firebase/firestore';
 import messaging from '@react-native-firebase/messaging';
-import {NavigationContainer, useNavigation} from '@react-navigation/native';
+import {NavigationContainer} from '@react-navigation/native';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
 import FileViewer from 'react-native-file-viewer';
-import Toast from 'react-native-toast-message';
+import Toast from './src/services/toast';
+import ToastHost from './src/component/glass/ToastHost';
+import AppAlertHost from './src/component/glass/AppAlertHost';
 import MainTabs from './src/navigator/BottomTabNavigator';
 import GroupManagement from './src/screens/AfterLogin/GroupCheck';
 import LogoutScreen from './src/screens/AfterLogin/Logout';
@@ -19,7 +22,6 @@ import LoginScreen from './src/screens/BeforeLogin/Login';
 import Notifications from './src/screens/Notifications';
 import SplashScreen from './src/screens/Splash';
 import {useAuthStore} from './src/store/useAuthStore';
-import {useExpenseState} from './src/store/useExpenseStore';
 
 const App = () => {
   const user = useAuthStore(state => state.user);
@@ -28,6 +30,16 @@ const App = () => {
   const [loading, setLoading] = useState(true);
   const Stack = createNativeStackNavigator();
 
+  // Deep links (Group-Check/:groupId) are handled entirely by React
+  // Navigation's own `linking` mechanism below - it parses the URL into
+  // route params on the Group-Check screen itself (see GroupCheck.tsx).
+  // This used to be double-handled: a second, hand-rolled
+  // `Linking.addEventListener` + AsyncStorage "already handled" flag lived
+  // in AfterLogin below, racing against this exact mechanism for the same
+  // incoming URL. That was the root cause of deep links intermittently
+  // doing nothing when tapped while the app was merely backgrounded on
+  // Group-Check (already-mounted screen, stuck de-dupe flag, no remount to
+  // reset it) - removed in favor of this single source of truth.
   const linking = {
     prefixes: ['ezysplit://', 'https://ezysplit.arun.codes/app/'], // note the trailing slash
     config: {
@@ -43,8 +55,6 @@ const App = () => {
       },
     },
   };
-
-  const [groupHandled, setGroupHandled] = useState(false);
 
   useEffect(() => {
     messaging().requestPermission();
@@ -86,7 +96,7 @@ const App = () => {
 
     // Set up listener for real-time changes
     const unsubscribe = auth().onAuthStateChanged(user => {
-      console.log('🚀 ~ unsubscribe ~ user:', user);
+      // console.log('🚀 ~ unsubscribe ~ user:', user);
       onAuthStateChanged(user);
     });
 
@@ -101,7 +111,7 @@ const App = () => {
     } else if (
       settings.authorizationStatus === AuthorizationStatus.AUTHORIZED
     ) {
-      console.log('User granted permissions request');
+      // console.log('User granted permissions request');
     } else if (
       settings.authorizationStatus === AuthorizationStatus.PROVISIONAL
     ) {
@@ -124,10 +134,7 @@ const App = () => {
   // }, []);
 
   const onAuthStateChanged = async user => {
-    console.log('Inside onAuthStateChanged, user:', user);
-
     if (user) {
-      console.log('if block runing');
       try {
         const token = await messaging().getToken();
         setTimeout(() => {
@@ -170,63 +177,13 @@ const App = () => {
     }
   };
 
-  const AfterLogin = () => {
-    const navigation = useNavigation();
-    const user = useAuthStore(state => state.user);
-    const setGroupHandled = useExpenseState(state => state.setGroupHandled);
-    const setIncomingDeeplink = useExpenseState(
-      state => state.setincomingDeeplink,
-    );
-
-    useEffect(() => {
-      const handleDeepLink = async url => {
-        if (!url) {
-          return;
-        }
-
-        const match = url.match(/Group-Check\/([^/]+)/);
-        const groupId = match?.[1];
-
-        if (groupId) {
-          const alreadyHandled = await AsyncStorage.getItem('groupHandled');
-          if (!JSON.parse(alreadyHandled)) {
-            navigation.navigate('Group-Check', {groupId});
-            setGroupHandled(true);
-            await AsyncStorage.setItem('groupHandled', JSON.stringify(true));
-          }
-        }
-      };
-
-      // const init = async () => {
-      //   if (!user) return;
-      //   const url = await Linking.getInitialURL();
-      //   handleDeepLink(url);
-      // };
-
-      const listener = Linking.addEventListener('url', ({url}) => {
-        if (user) {
-          console.log('🚀 ~ listener ~ url:', url);
-          AsyncStorage.removeItem('groupHandled');
-          setIncomingDeeplink(true);
-          handleDeepLink(url);
-        }
-      });
-
-      // init();
-
-      return () => {
-        listener.remove();
-      };
-    }, [user]);
-
-    return (
-      <Stack.Navigator screenOptions={{headerShown: false}}>
-        <Stack.Screen name="Group-Check" component={GroupManagement} />
-        <Stack.Screen name="Home" component={MainTabs} />
-        <Stack.Screen name="Logout" component={LogoutScreen} />
-      </Stack.Navigator>
-    );
-  };
+  const AfterLogin = () => (
+    <Stack.Navigator screenOptions={{headerShown: false}}>
+      <Stack.Screen name="Group-Check" component={GroupManagement} />
+      <Stack.Screen name="Home" component={MainTabs} />
+      <Stack.Screen name="Logout" component={LogoutScreen} />
+    </Stack.Navigator>
+  );
 
   const BeforeLogin = () => (
     <Stack.Navigator screenOptions={{headerShown: false}}>
@@ -236,20 +193,25 @@ const App = () => {
 
   if (loading) {
     return (
-      <GestureHandlerRootView style={styles.flex}>
-        <SplashScreen />
-      </GestureHandlerRootView>
+      <SafeAreaProvider>
+        <GestureHandlerRootView style={styles.flex}>
+          <SplashScreen />
+        </GestureHandlerRootView>
+      </SafeAreaProvider>
     );
   }
 
   return (
-    <GestureHandlerRootView style={styles.flex}>
-      <NavigationContainer linking={linking} ref={navigationRef}>
-        {user ? <AfterLogin /> : <BeforeLogin />}
+    <SafeAreaProvider>
+      <GestureHandlerRootView style={styles.flex}>
+        <NavigationContainer linking={linking} ref={navigationRef}>
+          {user ? <AfterLogin /> : <BeforeLogin />}
 
-        <Toast />
-      </NavigationContainer>
-    </GestureHandlerRootView>
+          <ToastHost />
+        </NavigationContainer>
+        <AppAlertHost />
+      </GestureHandlerRootView>
+    </SafeAreaProvider>
   );
 };
 

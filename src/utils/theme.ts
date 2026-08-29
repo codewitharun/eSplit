@@ -10,7 +10,15 @@ export const theme = {
   color: {
     ground: '#0A0F1C', // deep blue-black glass world, matches the icon's background
     groundAlt: '#0F1626',
-    surface: 'rgba(255,255,255,0.08)',
+    // Was a translucent white overlay (0.08 alpha) over GradientMesh - on
+    // every ordinary GlassCard (group rows, expense rows, balance rows...)
+    // that let the mesh's blue/green glow bleed through strongly enough to
+    // read as "a glowing gradient patch sitting inside a card", which
+    // users didn't like. Tinted dark and mostly opaque instead, so the
+    // mesh only shows as a faint hint of depth - the one card meant to
+    // stand out (Balances' hero "You're owed" card) still uses
+    // `surfaceStrong` below, unchanged.
+    surface: 'rgba(14,20,34,0.88)',
     surfaceStrong: 'rgba(255,255,255,0.14)',
     // Near-opaque surface for modal sheets/dialogs - unlike `surface` and
     // `surfaceStrong` (deliberately see-through for cards sitting over the

@@ -171,3 +171,13 @@ Roughly in priority order, balancing impact against how much of it is pure-JS (s
 16. iOS (needs your Mac regardless of anything else)
 
 Let me know which of these you want to take on next and I'll start on them the same way as this session's work.
+
+---
+
+## 5. Post-v2.0.0 UI/design backlog (not scoped yet)
+
+Flagged during v2.0.0 launch-prep feedback (Aug 2026), deliberately held back rather than rushed into this release:
+
+- **Dashboard/header feel too basic for 2026.** Feedback was that both the Groups overview and the per-screen headers (currently just avatar, name, and a logout button) read as "old-fashioned" — wants real visual creativity: modern motion (something like a "drop"-in entrance for cards/content instead of a static appear), a more designed header treatment across every screen, and generally more personality than the current flat glass-card look.
+- Needs its own scoping pass with mockups before building, rather than guessing at "modern feel" - this is a real design project (touches every screen's header plus new animation work), not a quick fix, and isn't worth the risk of introducing right before/right after a launch without a proper look first.
+- Revisit once v2.0.0 has shipped and settled.

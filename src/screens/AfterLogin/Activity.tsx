@@ -4,9 +4,13 @@
 // recurring-expense due banner, and the new AddExpenseModal.
 
 import auth from '@react-native-firebase/auth';
-import React, {useState} from 'react';
+import {useFocusEffect, useNavigation} from '@react-navigation/native';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import React, {useCallback, useRef, useState} from 'react';
 import {
+  BackHandler,
   FlatList,
+  Modal,
   Share,
   StyleSheet,
   Text,
@@ -14,7 +18,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import Toast from 'react-native-toast-message';
+import Toast from '../../services/toast';
 import AddExpenseModal from '../../component/AddExpenseModal';
 import GroupSwitcherPill from '../../component/GroupSwitcherPill';
 import Chip from '../../component/glass/Chip';
@@ -40,21 +44,75 @@ const ActivityScreen: React.FC = () => {
   const ledger = useGroupLedger(groupKey);
   const [modalVisible, setModalVisible] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+  const [showPastMembers, setShowPastMembers] = useState(false);
   const addExpenseSignal = useExpenseState(state => state.addExpenseSignal);
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<ExpenseCategory | null>(
     null,
   );
 
+  // `addExpenseSignal` is a persistent counter bumped by the floating "+"
+  // above the tab bar - it never resets. Reacting to "is it > 0" meant
+  // this fired on every mount of this screen too (switching tabs and
+  // back, changing groups, anything that remounts Activity), reopening
+  // the modal even though nobody tapped "+" this time. A ref seeded from
+  // the value at mount only reacts to a genuine *change* afterwards.
+  const lastAddSignalRef = useRef(addExpenseSignal);
   React.useEffect(() => {
-    if (addExpenseSignal > 0 && groupKey) {
-      setEditingExpense(null);
-      setModalVisible(true);
+    if (addExpenseSignal !== lastAddSignalRef.current) {
+      lastAddSignalRef.current = addExpenseSignal;
+      if (groupKey) {
+        setEditingExpense(null);
+        setModalVisible(true);
+      }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [addExpenseSignal]);
+  }, [addExpenseSignal, groupKey]);
+
+  const navigation = useNavigation<any>();
+  const insets = useSafeAreaInsets();
+
+  // Activity is the first/home tab, so it's the natural floor for the
+  // Android hardware back button - without this, pressing back here fell
+  // straight through react-navigation's default handling (bottom-tabs
+  // nested inside a native-stack screen doesn't reliably bubble an
+  // unhandled back press up to the stack) and closed the app entirely,
+  // even though Group-Check is sitting right there underneath on the
+  // stack. Send it there explicitly instead, and only fall back to the
+  // OS default (exit) if there's genuinely nowhere to go back to.
+  useFocusEffect(
+    useCallback(() => {
+      const onBackPress = () => {
+        const parent = navigation.getParent();
+        if (parent?.canGoBack()) {
+          parent.goBack();
+          return true;
+        }
+        return false;
+      };
+      const sub = BackHandler.addEventListener(
+        'hardwareBackPress',
+        onBackPress,
+      );
+      return () => sub.remove();
+    }, [navigation]),
+  );
 
   const openEditExpense = (expense: Expense) => {
+    // Firestore rules only allow the member who created an expense to
+    // update or delete it (previously any group member could edit/delete
+    // any expense - tightened alongside this). Mirror that here so tapping
+    // someone else's expense gives a clear reason instead of a silent
+    // permission-denied write once they hit Save.
+    if (expense.createdBy !== user?.uid) {
+      Toast.show({
+        type: 'info',
+        text1: 'Only the person who added this can edit it',
+        text2: `Ask ${ledger.memberName(
+          expense.createdBy,
+        )} to make the change.`,
+      });
+      return;
+    }
     haptics.tap();
     setEditingExpense(expense);
     setModalVisible(true);
@@ -122,9 +180,30 @@ const ActivityScreen: React.FC = () => {
       return;
     }
     try {
-      await Share.share({
-        message: `🎉 Join me on EzySplit!\n\nManage & split expenses easily.\n\n🔗 https://ezysplit.arun.codes/app/Group-Check/${groupKey}`,
-      });
+      const groupName = ledger.group?.name || 'my group';
+      const joinCode = ledger.group?.joinCode;
+      // The link alone used to be the whole message. Bring back the
+      // typeable join code alongside it (like the old share format did,
+      // just with the new 6-character code instead of exposing the raw
+      // Firestore doc ID) so someone can still get in by hand from
+      // "Join with a code" on Group-Check if the link itself doesn't
+      // redirect cleanly for them.
+      const message = joinCode
+        ? `🎉 Join me on EzySplit!
+
+Manage & split expenses easily on "${groupName}".
+
+🔗 Tap to join: https://ezysplit.arun.codes/app/Group-Check/${groupKey}
+
+Or open EzySplit and use this join code: ${joinCode}
+
+Let's make splitting simple! 💰`
+        : `🎉 Join me on EzySplit!
+
+Manage & split expenses easily.
+
+🔗 https://ezysplit.arun.codes/app/Group-Check/${groupKey}`;
+      await Share.share({message});
     } catch (error: any) {
       Toast.show({
         type: 'error',
@@ -136,6 +215,15 @@ const ActivityScreen: React.FC = () => {
 
   const onDelete = (expenseId: string) => {
     if (!groupKey) {
+      return;
+    }
+    const expense = ledger.expenses.find(e => e.id === expenseId);
+    if (expense && expense.createdBy !== user?.uid) {
+      Toast.show({
+        type: 'info',
+        text1: 'Only the person who added this can delete it',
+        text2: `Ask ${ledger.memberName(expense.createdBy)} to remove it.`,
+      });
       return;
     }
     deleteExpense(groupKey, expenseId).catch(error =>
@@ -163,14 +251,32 @@ const ActivityScreen: React.FC = () => {
   return (
     <View style={styles.flex}>
       <GradientMesh />
-      <View style={styles.header}>
-        <View>
+      <View style={[styles.header, {paddingTop: insets.top + 24}]}>
+        <View style={styles.headerLeft}>
           <Text style={styles.eyebrow}>ACTIVITY</Text>
           <Text style={styles.title}>{ledger.group?.name || 'Loading…'}</Text>
-          <GroupSwitcherPill />
-          <Text style={styles.subtitle}>
-            ₹{ledger.totalSpent.toFixed(2)} spent · {ledger.members.length}{' '}
-            people
+          <View style={styles.switchRow}>
+            <GroupSwitcherPill style={styles.switchPillInline} />
+            <Text style={styles.spentInline}>
+              ₹{ledger.totalSpent.toFixed(2)} spent
+            </Text>
+          </View>
+          <Text style={[styles.subtitle, styles.subtitleSecondLine]}>
+            {ledger.members.length} people
+            {ledger.pastMembers.length > 0 && (
+              <Text>
+                ,{' '}
+                <Text
+                  style={styles.pastMembersLink}
+                  onPress={() => setShowPastMembers(true)}>
+                  {ledger.pastMembers.length} left
+                </Text>
+              </Text>
+            )}
+            {'  ·  Created by '}
+            {ledger.group?.createdBy === user?.uid
+              ? 'you'
+              : ledger.memberName(ledger.group?.createdBy || '')}
           </Text>
         </View>
         {/* This used to be gated on "no expenses yet", back when a group
@@ -182,9 +288,21 @@ const ActivityScreen: React.FC = () => {
             someone logs an expense, and toggling the lock does nothing to
             it either way, which is the bug being fixed here. */}
         {!ledger.group?.isLocked && (
-          <TouchableOpacity onPress={onShareInvite} style={styles.inviteBtn}>
-            <Text style={styles.inviteText}>Invite</Text>
-          </TouchableOpacity>
+          <View style={styles.inviteColumn}>
+            <TouchableOpacity onPress={onShareInvite} style={styles.inviteBtn}>
+              <Text style={styles.inviteText}>Invite</Text>
+            </TouchableOpacity>
+            {!!ledger.group?.joinCode && (
+              // Plain, selectable text rather than a copy icon + clipboard
+              // library - `selectable` still gives a native long-press
+              // "Copy" on both platforms with no new native dependency,
+              // and the code is readable at a glance for anyone typing it
+              // in manually.
+              <Text style={styles.joinCodeText} selectable>
+                Code: {ledger.group.joinCode}
+              </Text>
+            )}
+          </View>
         )}
       </View>
 
@@ -291,6 +409,26 @@ const ActivityScreen: React.FC = () => {
           editingExpense={editingExpense}
         />
       )}
+
+      <Modal
+        visible={showPastMembers}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowPastMembers(false)}>
+        <TouchableOpacity
+          style={styles.pastMembersOverlay}
+          activeOpacity={1}
+          onPress={() => setShowPastMembers(false)}>
+          <GlassCard opaque style={styles.pastMembersCard}>
+            <Text style={styles.pastMembersTitle}>Left the group</Text>
+            {ledger.pastMembers.map(m => (
+              <Text key={m.uid} style={styles.pastMembersName}>
+                {m.displayName}
+              </Text>
+            ))}
+          </GlassCard>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 };
@@ -302,9 +440,19 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     paddingHorizontal: 20,
-    paddingTop: 60,
+    // paddingTop comes from the safe-area inset above, computed at render
+    // time - a flat 60 here only happened to clear the status bar on
+    // devices where the OS forces edge-to-edge (Android 15+).
     paddingBottom: 16,
   },
+  // The left column used to have no width constraint, so the subtitle
+  // line just grew as long as its content needed - fine for "₹X spent · Y
+  // people", but adding "· Created by NAME" (and, before that, the past-
+  // members note) made it long enough to push the Invite button/join-code
+  // column straight off the right edge of the screen instead of wrapping.
+  // `flex: 1` bounds it to the space actually left after that column, so
+  // the text wraps onto a second line instead.
+  headerLeft: {flex: 1, paddingRight: 12},
   eyebrow: {
     color: theme.color.inkFaint,
     fontSize: 11,
@@ -318,6 +466,34 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   subtitle: {color: theme.color.inkSoft, fontSize: 13, marginTop: 4},
+  subtitleSecondLine: {marginTop: 2},
+  switchRow: {flexDirection: 'row', alignItems: 'center', gap: 10},
+  // GroupSwitcherPill normally sits alone below a title, where its default
+  // marginTop gives it breathing room - inline next to text in a row, that
+  // same margin just pushed it down and off-center. Zeroed here; the
+  // row's own `alignItems: 'center'` does the vertical centering instead.
+  switchPillInline: {marginTop: 0},
+  spentInline: {color: theme.color.inkSoft, fontSize: 13},
+  pastMembersLink: {
+    color: theme.color.rose,
+    fontWeight: '700',
+    textDecorationLine: 'underline',
+  },
+  pastMembersOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(6,5,12,0.72)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  pastMembersCard: {width: '100%', maxWidth: 340},
+  pastMembersTitle: {
+    color: theme.color.ink,
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 10,
+  },
+  pastMembersName: {color: theme.color.inkSoft, fontSize: 14, marginTop: 6},
   inviteBtn: {
     backgroundColor: theme.color.surface,
     borderWidth: 1,
@@ -327,6 +503,13 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   inviteText: {color: theme.color.ink, fontWeight: '600', fontSize: 13},
+  inviteColumn: {alignItems: 'flex-end', gap: 6, flexShrink: 0},
+  joinCodeText: {
+    color: theme.color.inkFaint,
+    fontSize: 11.5,
+    fontWeight: '600',
+    letterSpacing: 0.4,
+  },
   recurringBanner: {
     marginHorizontal: 20,
     marginBottom: 12,

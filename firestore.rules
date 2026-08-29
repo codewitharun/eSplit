@@ -54,7 +54,13 @@ service cloud.firestore {
         allow read: if isGroupMember(groupId);
         allow create: if isGroupMember(groupId) &&
           request.resource.data.createdBy == request.auth.uid;
-        allow update, delete: if isGroupMember(groupId);
+        // Only the member who originally added an expense may edit or
+        // delete it - previously any group member could, which let anyone
+        // silently change what someone else logged. createdBy is set once
+        // on create and never touched by editExpense(), so resource.data
+        // (the pre-write doc) is the right source of truth here.
+        allow update, delete: if isGroupMember(groupId) &&
+          resource.data.createdBy == request.auth.uid;
       }
 
       match /settlements/{settlementId} {

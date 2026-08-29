@@ -4,6 +4,7 @@
 // to say who you are and offer a way out, out of the way.
 
 import React from 'react';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {Image, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {LogOut, User} from 'lucide-react-native';
 import {useAuthStore} from '../../store/useAuthStore';
@@ -13,6 +14,7 @@ import theme from '../../utils/theme';
 const Header = () => {
   const user = useAuthStore(state => state.user);
   const setUser = useAuthStore(state => state.setUser);
+  const insets = useSafeAreaInsets();
 
   const handleLogout = async () => {
     try {
@@ -26,7 +28,7 @@ const Header = () => {
   const firstName = (user?.displayName || '').split(' ')[0];
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, {paddingTop: insets.top + 16}]}>
       {user?.photoURL ? (
         <Image source={{uri: user.photoURL}} style={styles.avatar} />
       ) : (
@@ -52,7 +54,11 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingTop: 56,
+    // paddingTop comes from the safe-area inset above, computed at render
+    // time - it used to be a flat 56 here, which happened to clear the
+    // status bar on devices where the OS forces the app to draw behind it
+    // (Android 15+) but left too little room, or the wrong amount, on
+    // devices/OS versions where it doesn't.
     paddingHorizontal: 20,
     paddingBottom: 8,
   },

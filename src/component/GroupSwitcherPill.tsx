@@ -5,16 +5,23 @@
 import {useNavigation} from '@react-navigation/native';
 import {ArrowLeftRight} from 'lucide-react-native';
 import React from 'react';
-import {StyleSheet, Text, TouchableOpacity} from 'react-native';
+import {StyleSheet, Text, TouchableOpacity, ViewStyle} from 'react-native';
 import theme from '../utils/theme';
 import {haptics} from '../utils/haptics';
 
-const GroupSwitcherPill: React.FC = () => {
+interface Props {
+  // Lets a caller override layout-only props (e.g. zero out the default
+  // marginTop when this sits inline next to other text instead of alone
+  // below a title).
+  style?: ViewStyle;
+}
+
+const GroupSwitcherPill: React.FC<Props> = ({style}) => {
   const navigation = useNavigation<any>();
 
   return (
     <TouchableOpacity
-      style={styles.pill}
+      style={[styles.pill, style]}
       onPress={() => {
         haptics.tap();
         navigation.getParent()?.navigate('Group-Check');

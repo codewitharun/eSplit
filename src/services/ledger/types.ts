@@ -14,6 +14,7 @@ export type SplitType = 'equal' | 'exact' | 'percentage' | 'shares';
 
 export type ExpenseCategory =
   | 'food'
+  | 'groceries'
   | 'travel'
   | 'rent'
   | 'utilities'
@@ -38,6 +39,7 @@ export interface GroupMember {
   joinedAt: string; // ISO timestamp
   role: 'admin' | 'member';
   active: boolean;
+  leftAt?: string; // ISO timestamp, set when active is flipped to false
 }
 
 export interface Group {
@@ -108,6 +110,7 @@ export const EXPENSE_CATEGORIES: {
   icon: string;
 }[] = [
   {key: 'food', label: 'Food', icon: '🍔'},
+  {key: 'groceries', label: 'Groceries', icon: '🛒'},
   {key: 'travel', label: 'Travel', icon: '🚗'},
   {key: 'rent', label: 'Rent', icon: '🏠'},
   {key: 'utilities', label: 'Utilities', icon: '💡'},

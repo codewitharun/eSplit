@@ -66,6 +66,15 @@ jobs:
           releaseFiles: android/app/build/outputs/bundle/release/app-release.aab
           track: production # Options: internal, alpha, beta, production
           status: completed # Start as a draft so you can review before release
+          # "What's new" for this release, read from a plain-text file
+          # instead of typed into the Play Console by hand. The action
+          # requires one file per locale, named whatsnew-<BCP-47 locale>,
+          # inside this directory - see distribution/whatsnew/whatsnew-en-US.
+          # Before each release, edit that file's contents to describe
+          # what's actually new in THIS build - the action just uploads
+          # whatever it finds there at build time, so a stale file silently
+          # ships last release's notes again.
+          whatsNewDirectory: distribution/whatsnew
 
       # (Optional) Upload Artifact to GitHub for manual download
       - name: Upload AAB to GitHub Artifacts

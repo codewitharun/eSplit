@@ -8,6 +8,7 @@ import firestore, {
 } from '@react-native-firebase/firestore';
 import {computeSplits, validateSplitInput} from './splitEngine';
 import {stripUndefined} from './firestoreUtils';
+import {sendPushNotification} from '../notifications';
 import {
   Expense,
   ExpenseCategory,
@@ -140,6 +141,26 @@ export async function joinGroup(
       .collection('users')
       .doc(user.uid)
       .set({groupIds: firestore.FieldValue.arrayUnion(groupId)}, {merge: true});
+
+    // Let the group's creator know someone joined - only on a genuinely
+    // new join (not a re-entry via deep link into a group you're already
+    // in), and only the creator, per the feedback that asked for this
+    // specifically rather than notifying the whole group.
+    if (group.createdBy && group.createdBy !== user.uid) {
+      try {
+        const creatorDoc = await db()
+          .collection('users')
+          .doc(group.createdBy)
+          .get();
+        await sendPushNotification(
+          [creatorDoc.data()?.fcmToken],
+          group.name || 'EzySplit',
+          `${user.displayName || 'Someone'} joined your group "${group.name}"`,
+        );
+      } catch (error) {
+        console.log('🚀 ~ joinGroup notify ~ error:', error);
+      }
+    }
   }
 
   return {
@@ -278,6 +299,36 @@ export async function addExpense(input: AddExpenseInput): Promise<void> {
   await expenseRef.set(
     stripUndefined(expense as unknown as Record<string, unknown>),
   );
+
+  // Notify every other group member - see src/services/notifications.ts
+  // for why this goes through the separate backend rather than sending
+  // FCM directly from the client. Never let a notification hiccup surface
+  // as an "could not add expense" error - the expense is already saved.
+  try {
+    const [groupSnap, creatorDoc] = await Promise.all([
+      groupRef.get(),
+      db().collection('users').doc(input.createdBy).get(),
+    ]);
+    const group = groupSnap.data() as Group | undefined;
+    const creatorName = creatorDoc.data()?.displayName || 'Someone';
+    const recipientIds = (group?.memberIds || []).filter(
+      id => id !== input.createdBy,
+    );
+    if (recipientIds.length) {
+      const memberDocs = await Promise.all(
+        recipientIds.map(id => db().collection('users').doc(id).get()),
+      );
+      await sendPushNotification(
+        memberDocs.map(d => d.data()?.fcmToken),
+        group?.name || 'EzySplit',
+        `${creatorName} added ₹${input.amount.toFixed(2)} for ${
+          input.description
+        }`,
+      );
+    }
+  } catch (error) {
+    console.log('🚀 ~ addExpense notify ~ error:', error);
+  }
 }
 
 // Admin-only: lock or unlock a group against new members. Locking used to
@@ -415,9 +466,30 @@ export function subscribeSettlements(
 // --- Leave group guard -----------------------------------------------------
 
 export async function leaveGroup(groupId: string, uid: string): Promise<void> {
-  await groupsRef()
-    .doc(groupId)
-    .update({memberIds: firestore.FieldValue.arrayRemove(uid)});
+  // Previously this only removed `uid` from the group's `memberIds` array -
+  // the per-member doc at groups/{groupId}/members/{uid} was never touched,
+  // so it sat there forever with `active: true`. Every screen that reads
+  // "who's in this group" via subscribeGroupMembers() (Activity's member
+  // count, per-person totals, etc.) reads that subcollection, not
+  // `memberIds` - so a departed member kept showing up everywhere except
+  // the Group-Check list, which happens to read `memberIds` directly.
+  // Both writes below go in one batch rather than two sequential updates:
+  // firestore.rules' isGroupMember() check re-reads the group doc, and a
+  // batch is evaluated against the state *before* any write in it lands,
+  // so the leaving member still passes that check for their own
+  // members/{uid} write. Two separate .update() calls would have the
+  // second one evaluated after the first already dropped them from
+  // memberIds, failing permission-denied.
+  const batch = db().batch();
+  batch.update(groupsRef().doc(groupId), {
+    memberIds: firestore.FieldValue.arrayRemove(uid),
+  });
+  batch.update(groupsRef().doc(groupId).collection('members').doc(uid), {
+    active: false,
+    leftAt: nowIso(),
+  });
+  await batch.commit();
+
   await db()
     .collection('users')
     .doc(uid)

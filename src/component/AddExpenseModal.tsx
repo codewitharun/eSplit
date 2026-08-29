@@ -18,7 +18,7 @@ import {
   View,
 } from 'react-native';
 import {KeyboardAwareScrollView} from 'react-native-keyboard-aware-scroll-view';
-import Toast from 'react-native-toast-message';
+import Toast from '../services/toast';
 import {addExpense, editExpense} from '../services/ledger/firestoreLedger';
 import {validateSplitInput} from '../services/ledger/splitEngine';
 import {

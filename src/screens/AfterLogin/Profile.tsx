@@ -5,9 +5,11 @@
 
 import auth from '@react-native-firebase/auth';
 import firestore from '@react-native-firebase/firestore';
-import {useNavigation} from '@react-navigation/native';
-import React, {useEffect, useState} from 'react';
+import {useFocusEffect, useNavigation} from '@react-navigation/native';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import React, {useCallback, useEffect, useState} from 'react';
 import {
+  BackHandler,
   Image,
   StyleSheet,
   Switch,
@@ -17,7 +19,8 @@ import {
   View,
 } from 'react-native';
 import {KeyboardAwareScrollView} from 'react-native-keyboard-aware-scroll-view';
-import Toast from 'react-native-toast-message';
+import Toast from '../../services/toast';
+import AppAlert from '../../services/appAlert';
 import GlassCard from '../../component/glass/GlassCard';
 import GradientMesh from '../../component/glass/GradientMesh';
 import {useGroupLedger} from '../../hooks/useGroupLedger';
@@ -25,6 +28,7 @@ import {
   leaveGroup,
   setGroupLocked,
 } from '../../services/ledger/firestoreLedger';
+import {Routes} from '../../navigator/constants';
 import {isValidUpiVpa} from '../../services/ledger/upi';
 import {signOut} from '../../services/auth';
 import {useExpenseState} from '../../store/useExpenseStore';
@@ -34,10 +38,27 @@ import {EPSILON} from '../../services/ledger/types';
 
 const ProfileScreen: React.FC = () => {
   const navigation = useNavigation<any>();
+  const insets = useSafeAreaInsets();
   const user = auth().currentUser;
   const groupKey = useExpenseState(state => state.groupKey);
   const setGroupKey = useExpenseState(state => state.setGroupKey);
   const ledger = useGroupLedger(groupKey);
+
+  // Same reasoning as Balances.tsx: "You" is a secondary tab, so back
+  // should return to the home tab first rather than exiting the app.
+  useFocusEffect(
+    useCallback(() => {
+      const onBackPress = () => {
+        navigation.navigate(Routes.TabTransaction);
+        return true;
+      };
+      const sub = BackHandler.addEventListener(
+        'hardwareBackPress',
+        onBackPress,
+      );
+      return () => sub.remove();
+    }, [navigation]),
+  );
   const [upiId, setUpiId] = useState('');
   const [saving, setSaving] = useState(false);
   const [togglingLock, setTogglingLock] = useState(false);
@@ -114,10 +135,29 @@ const ProfileScreen: React.FC = () => {
     }
   };
 
-  const handleLeaveGroup = async () => {
+  const handleLeaveGroup = () => {
     if (!groupKey || !user) {
       return;
     }
+    // CRITICAL: while ledger.loading is true, expenses/settlements haven't
+    // arrived from Firestore yet, so netBalances is computed from empty
+    // arrays and myBalance reads as 0 no matter what the real balance is -
+    // "we don't know yet" was being treated the same as "definitely
+    // zero", which could let someone leave with a real unsettled debt if
+    // they acted fast enough after opening this screen. Block instead of
+    // guessing whenever the real balance isn't in yet.
+    if (ledger.loading) {
+      Toast.show({
+        type: 'info',
+        text1: 'Still checking your balance',
+        text2: 'Give it a second, then try again.',
+      });
+      return;
+    }
+    // Settle-up-first stays a hard block, checked again here (not just via
+    // the button's `disabled`) since ledger.netBalances is live and could
+    // have changed between renders - this re-reads the current value right
+    // before acting on it.
     if (hasOpenBalance) {
       Toast.show({
         type: 'error',
@@ -128,17 +168,32 @@ const ProfileScreen: React.FC = () => {
       });
       return;
     }
-    try {
-      await leaveGroup(groupKey, user.uid);
-      setGroupKey(null);
-      navigation.getParent()?.navigate('Group-Check');
-    } catch (error: any) {
-      Toast.show({
-        type: 'error',
-        text1: 'Could not leave group',
-        text2: error?.message,
-      });
-    }
+    AppAlert.alert(
+      'Leave this group?',
+      `You'll need the join code or a new invite to get back into "${
+        ledger.group?.name || 'this group'
+      }".`,
+      [
+        {text: 'Cancel', style: 'cancel'},
+        {
+          text: 'Leave',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await leaveGroup(groupKey, user.uid);
+              setGroupKey(null);
+              navigation.getParent()?.navigate('Group-Check');
+            } catch (error: any) {
+              Toast.show({
+                type: 'error',
+                text1: 'Could not leave group',
+                text2: error?.message,
+              });
+            }
+          },
+        },
+      ],
+    );
   };
 
   const handleSwitchGroup = () => {
@@ -157,7 +212,7 @@ const ProfileScreen: React.FC = () => {
     <View style={styles.flex}>
       <GradientMesh />
       <KeyboardAwareScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, {paddingTop: insets.top + 24}]}
         enableOnAndroid
         extraScrollHeight={20}
         keyboardShouldPersistTaps="handled">
@@ -271,7 +326,10 @@ const ProfileScreen: React.FC = () => {
 
 const styles = StyleSheet.create({
   flex: {flex: 1, backgroundColor: theme.color.ground},
-  content: {padding: 20, paddingTop: 60, paddingBottom: 60},
+  // paddingTop is overridden per-render with the safe-area inset above -
+  // a flat 60 here only happened to clear the status bar on devices
+  // where the OS forces edge-to-edge (Android 15+).
+  content: {padding: 20, paddingBottom: 60},
   heading: {
     color: theme.color.ink,
     fontSize: 24,
