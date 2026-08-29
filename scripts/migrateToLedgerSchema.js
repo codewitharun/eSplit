@@ -19,6 +19,10 @@
  * Esplitusers/Esplitgroups untouched, so the old app keeps working until
  * you cut the screens over.
  */
+
+
+cd /Users/arunkumar/Work/Personal/ESplit_App               
+// GOOGLE_APPLICATION_CREDENTIALS=/Users/arunkumar/Work/Personal/esplit-backend/esplit-d362c-firebase-adminsdk-tq8kq-1ae3860b80.json node scripts/migrateToLedgerSchema.js --dry-run
 const admin = require('firebase-admin');
 
 admin.initializeApp({credential: admin.credential.applicationDefault()});
