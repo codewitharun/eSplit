@@ -1,150 +1,115 @@
 /* eslint-disable react/no-unstable-nested-components */
-import React from 'react';
-import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
-import {Home as HomeIcon, ArrowLeftRight, PlusIcon} from 'lucide-react-native';
-import {
-  Text,
-  View,
-  StyleSheet,
-  Animated,
-  Pressable,
-  Platform,
-} from 'react-native';
+// src/navigator/BottomTabNavigator.tsx
+// Three real destinations - Activity / Balances / You - in a translucent
+// glass bar. The "add expense" action used to live as a 4th, label-less
+// tab slot with a raised circle breaking the top of the bar; with only
+// three real destinations that circle could never sit at the bar's true
+// center (it has to occupy one of four equal columns), which read as
+// lopsided. It's now a persistent floating button layered above the tab
+// bar instead - reachable from any of the three tabs exactly like before
+// (same addExpenseSignal store, same listener in Activity.tsx), but
+// styled as a standard floating action button rather than forcing the
+// tab bar into an asymmetric 4-column layout.
 
+import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
+import {ArrowLeftRight, ListChecks, PlusIcon, User} from 'lucide-react-native';
+import React from 'react';
+import {Platform, StyleSheet, TouchableOpacity, View} from 'react-native';
+import ActivityScreen from '../screens/AfterLogin/Activity';
+import BalancesScreen from '../screens/AfterLogin/Balances';
+import ProfileScreen from '../screens/AfterLogin/Profile';
+import {useExpenseState} from '../store/useExpenseStore';
+import {haptics} from '../utils/haptics';
+import theme from '../utils/theme';
 import {Routes} from './constants';
-import colors from '../utils/colors';
-import GroupManagement from '../screens/AfterLogin/GroupCheck'; // replace with actual screens
+
 const Tab = createBottomTabNavigator();
 
-export default function MyTabs() {
+function AddFab() {
+  const triggerAddExpense = useExpenseState(state => state.triggerAddExpense);
   return (
-    <Tab.Navigator
-      screenOptions={({route}) => ({
-        tabBarIcon: ({focused}) => {
-          const animatedScale = new Animated.Value(focused ? 1.2 : 1);
+    <TouchableOpacity
+      style={styles.fab}
+      activeOpacity={0.85}
+      onPress={() => {
+        haptics.tap();
+        triggerAddExpense();
+      }}>
+      <PlusIcon size={26} color={theme.color.onAccent} />
+    </TouchableOpacity>
+  );
+}
 
-          Animated.timing(animatedScale, {
-            toValue: focused ? 1.2 : 1,
-            duration: 300,
-            useNativeDriver: true,
-          }).start();
-
-          let iconComponent;
-          if (route.name === Routes.Home) {
-            iconComponent = <HomeIcon color={colors.grayDark} size={20} />;
-          } else if (route.name === Routes.TabTransaction) {
-            iconComponent = (
-              <ArrowLeftRight color={colors.grayDark} size={20} />
-            );
-          } else if (route.name === 'ScanQR') {
-            iconComponent = <PlusIcon size={32} color={colors.white} />;
-          }
-
-          return (
-            <View style={{alignItems: 'center'}}>
-              {route.name !== 'ScanQR' && focused && (
-                <View
-                  style={{
-                    width: 50,
-                    height: 2,
-                    backgroundColor: colors.headerColor,
-                    borderRadius: 2,
-                    marginBottom: 6,
-                    position: 'absolute',
-                    top: -10,
-                  }}
-                />
-              )}
-              <Animated.View
-                style={{
-                  transform: [{scale: animatedScale}],
-                }}>
-                {route.name === 'ScanQR' ? (
-                  <View style={styles.qrInnerCircle}>{iconComponent}</View>
-                ) : (
-                  iconComponent
-                )}
-              </Animated.View>
-            </View>
-          );
-        },
-        tabBarLabel: ({focused}) => (
-          <Text style={[styles.tabBarLabel, focused && styles.activeLabel]}>
-            {route.name === 'ScanQR'
-              ? 'Scan QR'
-              : route.name === Routes.Home
-              ? 'Group Management'
-              : 'Profile'}
-          </Text>
-        ),
-        tabBarShowLabel: true,
-        tabBarActiveTintColor: colors.grayDark,
-        tabBarInactiveTintColor: colors.grayDark,
-        tabBarStyle: styles.tabBarStyle,
-        headerShown: false,
-      })}>
-      <Tab.Screen name={Routes.Home} component={GroupManagement} options={{}} />
-
-      <Tab.Screen
-        name="ScanQR"
-        component={GroupManagement} // Replace with your QR Scanner Screen
-        options={{
-          tabBarButton: props => (
-            <Pressable style={styles.qrButtonWrapper} {...props} />
-          ),
-        }}
-      />
-
-      <Tab.Screen
-        name={Routes.TabTransaction}
-        component={GroupManagement}
-        options={{}}
-      />
-    </Tab.Navigator>
+export default function MainTabs() {
+  return (
+    <View style={styles.flex}>
+      <Tab.Navigator
+        screenOptions={({route}) => ({
+          headerShown: false,
+          tabBarShowLabel: true,
+          tabBarActiveTintColor: theme.color.ink,
+          tabBarInactiveTintColor: theme.color.inkFaint,
+          tabBarStyle: styles.tabBar,
+          tabBarLabelStyle: styles.tabLabel,
+          tabBarIcon: ({color, focused}) => {
+            if (route.name === Routes.TabTransaction) {
+              return <ListChecks color={color} size={focused ? 22 : 20} />;
+            }
+            if (route.name === Routes.BalanceHistory) {
+              return <ArrowLeftRight color={color} size={focused ? 22 : 20} />;
+            }
+            if (route.name === Routes.Profile) {
+              return <User color={color} size={focused ? 22 : 20} />;
+            }
+            return null;
+          },
+        })}>
+        <Tab.Screen
+          name={Routes.TabTransaction}
+          component={ActivityScreen}
+          options={{title: 'Activity'}}
+        />
+        <Tab.Screen
+          name={Routes.BalanceHistory}
+          component={BalancesScreen}
+          options={{title: 'Balances'}}
+        />
+        <Tab.Screen
+          name={Routes.Profile}
+          component={ProfileScreen}
+          options={{title: 'You'}}
+        />
+      </Tab.Navigator>
+      <AddFab />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  tabBarStyle: {
-    backgroundColor: colors.white,
-    height: 70,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+  flex: {flex: 1},
+  tabBar: {
+    backgroundColor: 'rgba(19,16,25,0.92)',
+    borderTopWidth: 1,
+    borderTopColor: theme.color.border,
+    height: 76,
+    paddingBottom: Platform.OS === 'ios' ? 22 : 10,
+    paddingTop: 8,
+  },
+  tabLabel: {fontSize: 11, fontWeight: '600'},
+  fab: {
     position: 'absolute',
-    bottom: 0,
-    paddingBottom: Platform.OS === 'ios' ? 20 : 10,
+    right: 20,
+    bottom: 92,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: theme.color.blue,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: theme.color.blue,
+    shadowOpacity: 0.5,
+    shadowRadius: 14,
+    shadowOffset: {width: 0, height: 8},
     elevation: 10,
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: -1},
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  tabBarLabel: {
-    fontSize: 12,
-    color: colors.grayDark,
-    marginBottom: 20,
-    textAlign: 'center',
-  },
-  activeLabel: {
-    color: colors.grayDark,
-    fontWeight: '600',
-  },
-  qrButtonWrapper: {
-    top: -25,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  qrInnerCircle: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: colors.headerColor,
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
   },
 });

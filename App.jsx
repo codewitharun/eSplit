@@ -1,5 +1,6 @@
 import React, {useEffect, useState} from 'react';
 import {Linking, StyleSheet} from 'react-native';
+import {GestureHandlerRootView} from 'react-native-gesture-handler';
 import {navigationRef} from './src/services/NavigationService';
 
 import notifee, {AuthorizationStatus, EventType} from '@notifee/react-native';
@@ -11,7 +12,7 @@ import {NavigationContainer, useNavigation} from '@react-navigation/native';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
 import FileViewer from 'react-native-file-viewer';
 import Toast from 'react-native-toast-message';
-import ExpenseTracker from './src/screens/AfterLogin/ExpenseTracker';
+import MainTabs from './src/navigator/BottomTabNavigator';
 import GroupManagement from './src/screens/AfterLogin/GroupCheck';
 import LogoutScreen from './src/screens/AfterLogin/Logout';
 import LoginScreen from './src/screens/BeforeLogin/Login';
@@ -133,13 +134,19 @@ const App = () => {
           setLoading(false);
           setUser(user);
         }, 2500);
-        await firestore().collection('Esplitusers').doc(user.uid).set(
+        // New ledger schema (src/services/ledger) - this is what
+        // getUserGroups()/useGroups() reads. photoUrl/fcmToken names match
+        // the AppUser type; groupIds is left untouched here so an existing
+        // membership list from the old flow (or the migration script)
+        // survives repeated logins.
+        await firestore().collection('users').doc(user.uid).set(
           {
             uid: user.uid,
             displayName: user.displayName,
             email: user.email,
-            photoURL: user.photoURL,
-            tokens: token,
+            photoUrl: user.photoURL,
+            defaultCurrency: 'INR',
+            fcmToken: token,
           },
           {merge: true},
         );
@@ -215,7 +222,7 @@ const App = () => {
     return (
       <Stack.Navigator screenOptions={{headerShown: false}}>
         <Stack.Screen name="Group-Check" component={GroupManagement} />
-        <Stack.Screen name="Home" component={ExpenseTracker} />
+        <Stack.Screen name="Home" component={MainTabs} />
         <Stack.Screen name="Logout" component={LogoutScreen} />
       </Stack.Navigator>
     );
@@ -228,19 +235,26 @@ const App = () => {
   );
 
   if (loading) {
-    return <SplashScreen />;
+    return (
+      <GestureHandlerRootView style={styles.flex}>
+        <SplashScreen />
+      </GestureHandlerRootView>
+    );
   }
 
   return (
-    <NavigationContainer linking={linking} ref={navigationRef}>
-      {user ? <AfterLogin /> : <BeforeLogin />}
+    <GestureHandlerRootView style={styles.flex}>
+      <NavigationContainer linking={linking} ref={navigationRef}>
+        {user ? <AfterLogin /> : <BeforeLogin />}
 
-      <Toast />
-    </NavigationContainer>
+        <Toast />
+      </NavigationContainer>
+    </GestureHandlerRootView>
   );
 };
 
 const styles = StyleSheet.create({
+  flex: {flex: 1},
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',

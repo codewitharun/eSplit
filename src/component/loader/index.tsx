@@ -30,7 +30,9 @@ const Loader: React.FC<LoaderProps> = ({loader}) => {
     transform: [{rotate: `${rotation.value}deg`}],
   }));
 
-  if (!loader) return null;
+  if (!loader) {
+    return null;
+  }
 
   return (
     <GestureHandlerRootView style={StyleSheet.absoluteFill}>

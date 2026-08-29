@@ -1,48 +1,18 @@
-import React, {useEffect, useRef} from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  Image,
-  Animated,
-  TouchableOpacity,
-} from 'react-native';
-import {User, LogOut} from 'lucide-react-native';
+// src/component/header/index.tsx
+// A slim identity bar - no "Welcome back" greeting card, no waving emoji.
+// The Groups screen's dashboard is the visual focus now; this just needs
+// to say who you are and offer a way out, out of the way.
+
+import React from 'react';
+import {Image, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import {LogOut, User} from 'lucide-react-native';
 import {useAuthStore} from '../../store/useAuthStore';
 import {signOut} from '../../services/auth';
+import theme from '../../utils/theme';
 
 const Header = () => {
   const user = useAuthStore(state => state.user);
   const setUser = useAuthStore(state => state.setUser);
-  const waveAnim = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    // Start waving animation with bigger wave
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(waveAnim, {
-          toValue: 1,
-          duration: 500,
-          useNativeDriver: true,
-        }),
-        Animated.timing(waveAnim, {
-          toValue: -1,
-          duration: 500,
-          useNativeDriver: true,
-        }),
-        Animated.timing(waveAnim, {
-          toValue: 0,
-          duration: 500,
-          useNativeDriver: true,
-        }),
-      ]),
-    ).start();
-  }, []);
-
-  const rotate = waveAnim.interpolate({
-    inputRange: [-1, 0, 1],
-    outputRange: ['-30deg', '0deg', '30deg'], // Bigger wave
-  });
 
   const handleLogout = async () => {
     try {
@@ -53,100 +23,55 @@ const Header = () => {
     }
   };
 
+  const firstName = (user?.displayName || '').split(' ')[0];
+
   return (
     <View style={styles.container}>
-      <View style={styles.card}>
-        {/* Avatar */}
-        {user?.photoURL ? (
-          <Image source={{uri: user.photoURL}} style={styles.avatar} />
-        ) : (
-          <View style={styles.avatarFallback}>
-            <User color="#555" size={26} />
-          </View>
-        )}
-
-        {/* Center Welcome */}
-        <View style={styles.textContainer}>
-          <Text style={styles.welcome}>Welcome back,</Text>
-          <View style={styles.nameRow}>
-            <Text style={styles.name}>{user?.displayName || 'Guest'}</Text>
-            <Animated.Text style={[styles.hand, {transform: [{rotate}]}]}>
-              👋
-            </Animated.Text>
-          </View>
-          <Text style={styles.tagline}>Ready to manage your tasks?</Text>
+      {user?.photoURL ? (
+        <Image source={{uri: user.photoURL}} style={styles.avatar} />
+      ) : (
+        <View style={styles.avatarFallback}>
+          <User color={theme.color.inkSoft} size={18} />
         </View>
-
-        {/* Logout */}
-        <TouchableOpacity onPress={handleLogout} style={styles.logoutBtn}>
-          <LogOut color="#fff" size={20} />
-        </TouchableOpacity>
-      </View>
+      )}
+      <Text style={styles.name} numberOfLines={1}>
+        {firstName || 'You'}
+      </Text>
+      <View style={{flex: 1}} />
+      <TouchableOpacity
+        onPress={handleLogout}
+        style={styles.logoutBtn}
+        hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
+        <LogOut color={theme.color.inkFaint} size={17} />
+      </TouchableOpacity>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    paddingVertical: 20,
-  },
-  card: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#E0E0E0',
-    borderRadius: 20,
-    padding: 16,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowOffset: {width: 0, height: 2},
-    shadowRadius: 4,
+    paddingTop: 56,
+    paddingHorizontal: 20,
+    paddingBottom: 8,
   },
-  avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-  },
+  avatar: {width: 30, height: 30, borderRadius: 15},
   avatarFallback: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#ccc',
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: theme.color.surfaceStrong,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  textContainer: {
-    flex: 1,
-    marginLeft: 16,
-  },
-  welcome: {
-    color: '#555',
-    fontSize: 14,
-  },
-  nameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
   name: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#000',
-    marginRight: 6,
+    color: theme.color.inkSoft,
+    fontSize: 13.5,
+    fontWeight: '600',
+    marginLeft: 9,
   },
-  hand: {
-    fontSize: 20,
-    color: '#333', // Darker hand color
-  },
-  tagline: {
-    fontSize: 12,
-    color: '#777',
-    marginTop: 2,
-  },
-  logoutBtn: {
-    backgroundColor: '#444',
-    padding: 8,
-    borderRadius: 16,
-  },
+  logoutBtn: {padding: 4},
 });
 
 export default Header;

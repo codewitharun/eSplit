@@ -1,13 +1,22 @@
+// src/component/groupNameModal/index.tsx
+// Restyled to the glass theme + wrapped in KeyboardAvoidingView so the
+// keyboard never covers the single text field on smaller phones.
+
 import React, {useState} from 'react';
 import {
+  KeyboardAvoidingView,
   Modal,
-  View,
+  Platform,
+  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  StyleSheet,
+  TouchableWithoutFeedback,
+  View,
 } from 'react-native';
 import Toast from 'react-native-toast-message';
+import GlassCard from '../glass/GlassCard';
+import theme from '../../utils/theme';
 
 interface GroupNameModalProps {
   visible: boolean;
@@ -30,12 +39,10 @@ const GroupNameModal: React.FC<GroupNameModalProps> = ({
         text1: 'Group name too short',
         text2: 'Please enter at least 3 characters.',
       });
-      setGroupName('');
       return;
     }
     onCreate(trimmed);
     setGroupName('');
-    onClose();
   };
 
   return (
@@ -44,15 +51,22 @@ const GroupNameModal: React.FC<GroupNameModalProps> = ({
       animationType="slide"
       transparent
       onRequestClose={onClose}>
-      <View style={styles.modalContainer}>
-        <View style={styles.modalContent}>
-          <Text style={styles.title}>Enter Group Name</Text>
+      <KeyboardAvoidingView
+        style={styles.modalContainer}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 0}>
+        <TouchableWithoutFeedback onPress={onClose}>
+          <View style={StyleSheet.absoluteFill} />
+        </TouchableWithoutFeedback>
+        <GlassCard opaque style={styles.modalContent}>
+          <Text style={styles.title}>Name your group</Text>
           <TextInput
             placeholder="e.g. Trip to Goa"
             style={styles.input}
             value={groupName}
             onChangeText={setGroupName}
-            placeholderTextColor={'grey'}
+            placeholderTextColor={theme.color.inkFaint}
+            autoFocus
           />
           <View style={styles.buttonContainer}>
             <TouchableOpacity onPress={onClose} style={styles.cancelButton}>
@@ -64,68 +78,60 @@ const GroupNameModal: React.FC<GroupNameModalProps> = ({
               <Text style={styles.createText}>Create</Text>
             </TouchableOpacity>
           </View>
-        </View>
-      </View>
+        </GlassCard>
+      </KeyboardAvoidingView>
     </Modal>
   );
 };
 
-export default GroupNameModal;
-
 const styles = StyleSheet.create({
   modalContainer: {
     flex: 1,
-    backgroundColor: '#00000099',
+    backgroundColor: 'rgba(6,5,12,0.72)',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  modalContent: {
-    width: '85%',
-    backgroundColor: '#fff',
-    padding: 20,
-    borderRadius: 12,
-    elevation: 5,
-  },
+  modalContent: {width: '85%'},
   title: {
     fontSize: 18,
-    marginBottom: 12,
-    fontWeight: 'bold',
+    marginBottom: 14,
+    fontWeight: '700',
     textAlign: 'center',
-    color: 'black',
+    color: theme.color.ink,
   },
   input: {
-    borderColor: '#ccc',
+    backgroundColor: 'rgba(255,255,255,0.06)',
     borderWidth: 1,
-    borderRadius: 8,
-    padding: 10,
-    marginBottom: 16,
-    color: 'black',
+    borderColor: theme.color.border,
+    borderRadius: theme.radius.md,
+    padding: 12,
+    marginBottom: 18,
+    color: theme.color.ink,
   },
-  buttonContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
+  buttonContainer: {flexDirection: 'row', gap: 10},
   cancelButton: {
-    backgroundColor: '#ccc',
-    padding: 10,
-    borderRadius: 8,
     flex: 1,
-    marginRight: 5,
+    borderWidth: 1,
+    borderColor: theme.color.border,
+    padding: 12,
+    borderRadius: theme.radius.md,
   },
   createButton: {
-    backgroundColor: '#2ecc71',
-    padding: 10,
-    borderRadius: 8,
     flex: 1,
-    marginLeft: 5,
+    backgroundColor: theme.color.blue,
+    padding: 12,
+    borderRadius: theme.radius.md,
   },
   cancelText: {
-    color: '#333',
+    color: theme.color.inkSoft,
     textAlign: 'center',
+    fontWeight: '600',
   },
   createText: {
-    color: '#fff',
+    color: theme.color.onAccent,
     textAlign: 'center',
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
 });
+
+export default GroupNameModal;

@@ -1,0 +1,68 @@
+rules_version = '2';
+
+// Schema:
+//   users/{uid}
+//   groups/{groupId}                          memberIds: [uid,...], joinCode
+//   groups/{groupId}/members/{uid}
+//   groups/{groupId}/expenses/{expenseId}      shares: { uid: amount }
+//   groups/{groupId}/settlements/{settlementId}
+//
+// Deploy with: firebase deploy --only firestore:rules
+// (Not deployed automatically from here.)
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isGroupMember(groupId) {
+      return signedIn() &&
+        request.auth.uid in
+          get(/databases/$(database)/documents/groups/$(groupId)).data.memberIds;
+    }
+
+    function isGroupAdmin(groupId) {
+      return signedIn() &&
+        get(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    match /users/{uid} {
+      allow read: if signedIn();
+      allow write: if signedIn() && request.auth.uid == uid;
+    }
+
+    match /groups/{groupId} {
+      allow read: if isGroupMember(groupId);
+      allow create: if signedIn() &&
+        request.auth.uid in request.resource.data.memberIds;
+      // Any member can update the group doc (e.g. memberIds on join/leave),
+      // but only an admin member may flip `isLocked` - the one field that
+      // gates who else can join.
+      allow update: if isGroupMember(groupId) &&
+        (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['isLocked']) ||
+          isGroupAdmin(groupId));
+      allow delete: if false;
+
+      match /members/{uid} {
+        allow read: if isGroupMember(groupId);
+        allow write: if isGroupMember(groupId);
+      }
+
+      match /expenses/{expenseId} {
+        allow read: if isGroupMember(groupId);
+        allow create: if isGroupMember(groupId) &&
+          request.resource.data.createdBy == request.auth.uid;
+        allow update, delete: if isGroupMember(groupId);
+      }
+
+      match /settlements/{settlementId} {
+        allow read: if isGroupMember(groupId);
+        allow create: if isGroupMember(groupId) &&
+          request.resource.data.fromUid == request.auth.uid;
+        allow update, delete: if false; // append-only
+      }
+    }
+  }
+}
