@@ -1,8 +1,13 @@
 import React, {useEffect, useRef, useState} from 'react';
-import {StyleSheet} from 'react-native';
+import {Platform, StyleSheet} from 'react-native';
 import {GestureHandlerRootView} from 'react-native-gesture-handler';
 import {SafeAreaProvider} from 'react-native-safe-area-context';
 import {navigationRef} from './src/services/NavigationService';
+
+// Own app version, read straight from package.json - same source
+// src/services/appConfig.ts already uses for the force-update check,
+// so there's exactly one place this ever needs to be bumped by hand.
+const pkg = require('./package.json');
 
 import notifee, {AuthorizationStatus, EventType} from '@notifee/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -12,17 +17,17 @@ import messaging from '@react-native-firebase/messaging';
 import {NavigationContainer} from '@react-navigation/native';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
 import FileViewer from 'react-native-file-viewer';
-import Toast from './src/services/toast';
-import ToastHost from './src/component/glass/ToastHost';
 import AppAlertHost from './src/component/glass/AppAlertHost';
 import ForceUpdateGate from './src/component/glass/ForceUpdateGate';
-import {identifyUser, trackScreenView} from './src/services/crashReporting';
+import ToastHost from './src/component/glass/ToastHost';
 import MainTabs from './src/navigator/BottomTabNavigator';
 import GroupManagement from './src/screens/AfterLogin/GroupCheck';
 import LogoutScreen from './src/screens/AfterLogin/Logout';
 import LoginScreen from './src/screens/BeforeLogin/Login';
 import Notifications from './src/screens/Notifications';
 import SplashScreen from './src/screens/Splash';
+import {identifyUser, trackScreenView} from './src/services/crashReporting';
+import Toast from './src/services/toast';
 import {useAuthStore} from './src/store/useAuthStore';
 
 const App = () => {
@@ -152,6 +157,18 @@ const App = () => {
         // the AppUser type; groupIds is left untouched here so an existing
         // membership list from the old flow (or the migration script)
         // survives repeated logins.
+        // App/OS version + last-seen, for the admin panel's device view
+        // (support: "who's still on 2.0.1?"). Purely additive fields on
+        // the same merge write that already runs for every user on every
+        // login and every cold launch - no new write, no new listener,
+        // and every other field on this doc (groupIds, upiId, ...) is
+        // untouched since {merge: true} only overwrites the keys listed
+        // here. Existing users just won't have these fields until they
+        // next open a build that includes this code.
+        const osVersion =
+          Platform.OS === 'android'
+            ? String(Platform.constants?.Release ?? Platform.Version)
+            : String(Platform.Version);
         await firestore().collection('users').doc(user.uid).set(
           {
             uid: user.uid,
@@ -160,6 +177,10 @@ const App = () => {
             photoUrl: user.photoURL,
             defaultCurrency: 'INR',
             fcmToken: token,
+            appVersion: pkg.version,
+            platform: Platform.OS,
+            osVersion,
+            lastSeenAt: firestore.FieldValue.serverTimestamp(),
           },
           {merge: true},
         );
