@@ -40,5 +40,28 @@ target 'EzySplit' do
       config[:reactNativePath],
       :mac_catalyst_enabled => false
     )
+
+    # Workaround for a Clang regression in newer Xcode (16.3+, including the
+    # 26.x toolchain) that rejects gRPC-Core's old dependent-template syntax:
+    #   "a template argument list is expected after a name prefixed by the
+    #   template keyword" in basic_seq.h. This is fixed in newer gRPC-Core
+    #   releases, but the firebase-ios-sdk version pinned by
+    #   @react-native-firebase 20.x still bundles the broken one.
+    #   Tracked upstream: https://github.com/grpc/grpc/issues/39364 and
+    #   https://github.com/firebase/firebase-ios-sdk/issues/15347.
+    # Runs every `pod install`/`pod update` since CocoaPods re-vendors this
+    # file from scratch each time.
+    grpc_seq_file = "#{installer.sandbox.root}/gRPC-Core/src/core/lib/promise/detail/basic_seq.h"
+    if File.exist?(grpc_seq_file)
+      contents = File.read(grpc_seq_file)
+      patched = contents.gsub(
+        'Traits::template CallSeqFactory(f_, *cur_, std::move(arg))',
+        'Traits::template CallSeqFactory<>(f_, *cur_, std::move(arg))'
+      )
+      if patched != contents
+        File.write(grpc_seq_file, patched)
+        Pod::UI.puts "Patched gRPC-Core basic_seq.h for Xcode 16.3+/26.x template-arg-list fix".green
+      end
+    end
   end
 end

@@ -16,7 +16,8 @@ export interface SplitValidationResult {
   error?: string;
 }
 
-const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+export const round2 = (n: number) =>
+  Math.round((n + Number.EPSILON) * 100) / 100;
 
 /**
  * Distributes `total` across `weights` (uid -> weight, any positive numbers)
@@ -91,12 +92,19 @@ export function validateSplitInput(
         };
       }
       const sum = participantUids.reduce((s, uid) => s + amounts[uid], 0);
-      if (Math.abs(sum - totalAmount) > EPSILON) {
+      const diff = round2(totalAmount - sum);
+      if (Math.abs(diff) > EPSILON) {
+        // Phrased as "how much is left" rather than "sum X, expected Y" -
+        // the latter reads as a raw equation non-technical users have to
+        // decode; this reads as a to-do they can act on directly.
         return {
           valid: false,
-          error: `Exact amounts add up to ${round2(sum)}, not ${round2(
-            totalAmount,
-          )}.`,
+          error:
+            diff > 0
+              ? `₹${diff} left to assign (of ₹${round2(totalAmount)} total).`
+              : `₹${Math.abs(diff)} over the ₹${round2(
+                  totalAmount,
+                )} total — remove some.`,
         };
       }
       return {valid: true};
@@ -115,10 +123,14 @@ export function validateSplitInput(
         return {valid: false, error: 'Every participant needs a percentage.'};
       }
       const sum = participantUids.reduce((s, uid) => s + percentages[uid], 0);
-      if (Math.abs(sum - 100) > 0.01) {
+      const diff = round2(100 - sum);
+      if (Math.abs(diff) > 0.01) {
         return {
           valid: false,
-          error: `Percentages add up to ${round2(sum)}%, not 100%.`,
+          error:
+            diff > 0
+              ? `${diff}% left to assign (of 100%).`
+              : `${Math.abs(diff)}% over 100% — remove some.`,
         };
       }
       return {valid: true};

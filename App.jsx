@@ -1,4 +1,4 @@
-import React, {useEffect, useState} from 'react';
+import React, {useEffect, useRef, useState} from 'react';
 import {StyleSheet} from 'react-native';
 import {GestureHandlerRootView} from 'react-native-gesture-handler';
 import {SafeAreaProvider} from 'react-native-safe-area-context';
@@ -15,6 +15,8 @@ import FileViewer from 'react-native-file-viewer';
 import Toast from './src/services/toast';
 import ToastHost from './src/component/glass/ToastHost';
 import AppAlertHost from './src/component/glass/AppAlertHost';
+import ForceUpdateGate from './src/component/glass/ForceUpdateGate';
+import {identifyUser, trackScreenView} from './src/services/crashReporting';
 import MainTabs from './src/navigator/BottomTabNavigator';
 import GroupManagement from './src/screens/AfterLogin/GroupCheck';
 import LogoutScreen from './src/screens/AfterLogin/Logout';
@@ -29,6 +31,10 @@ const App = () => {
 
   const [loading, setLoading] = useState(true);
   const Stack = createNativeStackNavigator();
+  // Tracks the previously-active screen name so onStateChange below only
+  // logs a screen_view when the route actually changed, not on every
+  // navigation state update (which fires more often than screens change).
+  const routeNameRef = useRef();
 
   // Deep links (Group-Check/:groupId) are handled entirely by React
   // Navigation's own `linking` mechanism below - it parses the URL into
@@ -159,6 +165,7 @@ const App = () => {
         );
 
         await AsyncStorage.setItem('userToken', user.uid);
+        identifyUser(user.uid);
 
         // Check if the user has already completed group check
       } catch (error) {
@@ -170,6 +177,7 @@ const App = () => {
 
         await AsyncStorage.removeItem('userToken');
         await AsyncStorage.removeItem('lastJoinedGroup');
+        identifyUser(null);
         setLoading(false);
       } catch (error) {
         console.error('Error in onAuthStateChanged (logout):', error);
@@ -204,12 +212,26 @@ const App = () => {
   return (
     <SafeAreaProvider>
       <GestureHandlerRootView style={styles.flex}>
-        <NavigationContainer linking={linking} ref={navigationRef}>
+        <NavigationContainer
+          linking={linking}
+          ref={navigationRef}
+          onReady={() => {
+            routeNameRef.current = navigationRef.getCurrentRoute()?.name;
+          }}
+          onStateChange={() => {
+            const previousRouteName = routeNameRef.current;
+            const currentRouteName = navigationRef.getCurrentRoute()?.name;
+            if (currentRouteName && previousRouteName !== currentRouteName) {
+              trackScreenView(currentRouteName);
+            }
+            routeNameRef.current = currentRouteName;
+          }}>
           {user ? <AfterLogin /> : <BeforeLogin />}
 
           <ToastHost />
         </NavigationContainer>
         <AppAlertHost />
+        <ForceUpdateGate />
       </GestureHandlerRootView>
     </SafeAreaProvider>
   );

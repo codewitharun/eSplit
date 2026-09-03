@@ -70,17 +70,33 @@ export async function createGroup(
     memberIds: [user.uid],
   };
 
-  const batch = db().batch();
-  batch.set(groupRef, group);
-  batch.set(groupRef.collection('members').doc(user.uid), {
-    uid: user.uid,
-    displayName: user.displayName || 'Member',
-    photoUrl: user.photoURL || '',
-    joinedAt: nowIso(),
-    role: 'admin',
-    active: true,
-  } as GroupMember);
-  await batch.commit();
+  // The members/{uid} security rule gates every write on isGroupMember(),
+  // which get()s this group doc to check its memberIds. Firestore's rules
+  // engine evaluates get() against the database state *before* the current
+  // request - it can't see a sibling write earlier in the same batch - so
+  // writing the group doc and its first member doc together in one batch
+  // always failed that check (the group doc looks like it doesn't exist
+  // yet). Writing the group doc first and awaiting it, then writing the
+  // member doc as a separate request, lets the second write's rules see
+  // the group as it actually is. If the member write fails, the group doc
+  // is rolled back so we don't leave a group with no members at all.
+  await groupRef.set(group);
+  try {
+    await groupRef
+      .collection('members')
+      .doc(user.uid)
+      .set({
+        uid: user.uid,
+        displayName: user.displayName || 'Member',
+        photoUrl: user.photoURL || '',
+        joinedAt: nowIso(),
+        role: 'admin',
+        active: true,
+      } as GroupMember);
+  } catch (error) {
+    await groupRef.delete().catch(() => {});
+    throw error;
+  }
 
   await db()
     .collection('users')
@@ -123,19 +139,36 @@ export async function joinGroup(
         'This group is locked by its admin and is not accepting new members right now.',
       );
     }
-    const batch = db().batch();
-    batch.update(groupDoc.ref, {
+    // Same reasoning as createGroup(): the members/{uid} write's security
+    // rule get()s this group doc to check memberIds, and that get() can't
+    // see a sibling write earlier in the same batch - so adding the joiner
+    // to memberIds and creating their member doc in one batch always
+    // failed the member doc's permission check. Awaiting the memberIds
+    // update first lets the second write's rules see the joiner as an
+    // actual member. If the member doc write fails, the memberIds add is
+    // rolled back so no one is left counted as a member with no member
+    // doc.
+    await groupDoc.ref.update({
       memberIds: firestore.FieldValue.arrayUnion(user.uid),
     });
-    batch.set(groupDoc.ref.collection('members').doc(user.uid), {
-      uid: user.uid,
-      displayName: user.displayName || 'Member',
-      photoUrl: user.photoURL || '',
-      joinedAt: nowIso(),
-      role: 'member',
-      active: true,
-    } as GroupMember);
-    await batch.commit();
+    try {
+      await groupDoc.ref
+        .collection('members')
+        .doc(user.uid)
+        .set({
+          uid: user.uid,
+          displayName: user.displayName || 'Member',
+          photoUrl: user.photoURL || '',
+          joinedAt: nowIso(),
+          role: 'member',
+          active: true,
+        } as GroupMember);
+    } catch (error) {
+      await groupDoc.ref
+        .update({memberIds: firestore.FieldValue.arrayRemove(user.uid)})
+        .catch(() => {});
+      throw error;
+    }
 
     await db()
       .collection('users')

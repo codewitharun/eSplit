@@ -4,9 +4,26 @@
 // message's own <Toast /> used to be. Slides down from the top, themed to
 // match the rest of the app's dark glass cards instead of the library's
 // default white banner.
+//
+// Wrapped in a transparent Modal (added after a report that a toast fired
+// while AddExpenseModal was open rendered wrong, half-hidden behind its
+// backdrop) - a plain absolutely-positioned view lives in the normal view
+// hierarchy, which a real native Modal (like AddExpenseModal or
+// GroupNameModal) always renders above regardless of zIndex/elevation, so
+// a toast could never reliably show on top of one. Putting the toast in
+// its own Modal puts it in the same native stacking layer, where the most
+// recently shown Modal reliably wins - same reason AppAlertHost already
+// works correctly over other open modals.
 
 import React, {useEffect, useRef} from 'react';
-import {Animated, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import {
+  Animated,
+  Modal,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {CircleCheck, CircleX, Info} from 'lucide-react-native';
 import {useToastStore} from '../../services/toast';
@@ -71,27 +88,34 @@ const ToastHost: React.FC = () => {
   const accent = ACCENTS[toast.type];
 
   return (
-    <Animated.View
-      pointerEvents="box-none"
-      style={[
-        styles.wrap,
-        {
-          paddingTop: insets.top + 8,
-          opacity,
-          transform: [{translateY}],
-        },
-      ]}>
-      <TouchableOpacity
-        activeOpacity={0.9}
-        onPress={() => useToastStore.setState({toast: null})}
-        style={[styles.card, {borderLeftColor: accent}]}>
-        <Icon size={20} color={accent} />
-        <View style={styles.textCol}>
-          {!!toast.text1 && <Text style={styles.text1}>{toast.text1}</Text>}
-          {!!toast.text2 && <Text style={styles.text2}>{toast.text2}</Text>}
-        </View>
-      </TouchableOpacity>
-    </Animated.View>
+    <Modal
+      transparent
+      visible
+      animationType="none"
+      statusBarTranslucent
+      onRequestClose={() => {}}>
+      <Animated.View
+        pointerEvents="box-none"
+        style={[
+          styles.wrap,
+          {
+            paddingTop: insets.top + 8,
+            opacity,
+            transform: [{translateY}],
+          },
+        ]}>
+        <TouchableOpacity
+          activeOpacity={0.9}
+          onPress={() => useToastStore.setState({toast: null})}
+          style={[styles.card, {borderLeftColor: accent}]}>
+          <Icon size={20} color={accent} />
+          <View style={styles.textCol}>
+            {!!toast.text1 && <Text style={styles.text1}>{toast.text1}</Text>}
+            {!!toast.text2 && <Text style={styles.text2}>{toast.text2}</Text>}
+          </View>
+        </TouchableOpacity>
+      </Animated.View>
+    </Modal>
   );
 };
 

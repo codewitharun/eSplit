@@ -7,6 +7,7 @@
 // header pill or the You tab's "Switch or create a group".
 
 import auth from '@react-native-firebase/auth';
+import firestore from '@react-native-firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {useIsFocused, useRoute} from '@react-navigation/native';
 import React, {useEffect, useRef, useState} from 'react';
@@ -31,6 +32,7 @@ import Header from '../../component/header';
 import {useGroups} from '../../hooks/useGroups';
 import {useGroupsOverview} from '../../hooks/useGroupsOverview';
 import {leaveGroup} from '../../services/ledger/firestoreLedger';
+import UpiPromptModal from '../../component/UpiPromptModal';
 import {useExpenseState} from '../../store/useExpenseStore';
 import {haptics} from '../../utils/haptics';
 import theme from '../../utils/theme';
@@ -102,12 +104,47 @@ const GroupManagement = ({navigation}: any) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focused]);
 
+  // Fires at most once per app session (not once per screen mount - a
+  // user bouncing between several groups shouldn't see this on every
+  // single one) so a "Later" tap doesn't turn into a nag loop, while
+  // still catching the moment that actually matters: someone opening a
+  // group. This is the root fix for settle-up silently falling back to
+  // "mark as settled manually" for so many pairs right now - that
+  // fallback path was already correct (see Balances.tsx), it just fires
+  // far more than it should because so many members never set a UPI ID
+  // in the first place. Checked in the background so it can never delay
+  // getting into the group.
+  const upiPromptShownRef = useRef(false);
+  const [upiPromptVisible, setUpiPromptVisible] = useState(false);
+
+  const promptForUpiIfMissing = async (currentUser: typeof user) => {
+    if (!currentUser || upiPromptShownRef.current) {
+      return;
+    }
+    try {
+      const doc = await firestore()
+        .collection('users')
+        .doc(currentUser.uid)
+        .get();
+      const hasUpiId = !!(doc.exists && doc.data()?.upiId);
+      if (hasUpiId) {
+        return;
+      }
+      upiPromptShownRef.current = true;
+      setUpiPromptVisible(true);
+    } catch {
+      // Best-effort nudge only - a failed check shouldn't block entry to
+      // the group or alarm the user with an error they can't act on.
+    }
+  };
+
   const enterGroup = async (groupKey: string) => {
     setGroupKey(groupKey);
     await AsyncStorage.setItem('groupKey', groupKey);
     await AsyncStorage.setItem('lastJoinedGroup', groupKey);
     haptics.success();
     navigation.navigate('Home');
+    promptForUpiIfMissing(user);
   };
 
   const handleJoinById = async (id: string) => {
@@ -427,6 +464,12 @@ const GroupManagement = ({navigation}: any) => {
         onClose={() => setGroupNameModal(false)}
         onCreate={handleCreateGroup}
         loading={creatingGroup}
+      />
+      <UpiPromptModal
+        visible={upiPromptVisible}
+        uid={user?.uid || ''}
+        onSkip={() => setUpiPromptVisible(false)}
+        onSaved={() => setUpiPromptVisible(false)}
       />
       {loader && (
         <View style={styles.loaderOverlay}>

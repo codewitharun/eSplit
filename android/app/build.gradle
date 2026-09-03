@@ -2,6 +2,15 @@ apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 apply plugin: 'com.google.gms.google-services'
+// Must be applied after com.google.gms.google-services (order matters).
+// Native (NDK) symbol upload is deliberately left off for now - it needs a
+// firebaseCrashlytics { nativeSymbolUploadEnabled true } block pointing at
+// an AGP-version-specific intermediates path that's shifted across AGP
+// releases before, and this build has had enough native-toolchain
+// fragility this year to not add another moving part without testing it
+// in isolation first. JS crashes and unstripped native crashes still
+// report fine without it.
+apply plugin: 'com.google.firebase.crashlytics'
 apply from: file("../../node_modules/react-native-vector-icons/fonts.gradle")
 
 /**

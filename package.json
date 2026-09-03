@@ -13,8 +13,10 @@
     "@notifee/react-native": "^7.8.2",
     "@r4dic4l/react-native-open-doc": "^2.1.6",
     "@react-native-async-storage/async-storage": "^1.24.0",
+    "@react-native-firebase/analytics": "^20.3.0",
     "@react-native-firebase/app": "^20.3.0",
     "@react-native-firebase/auth": "^20.3.0",
+    "@react-native-firebase/crashlytics": "^20.3.0",
     "@react-native-firebase/firestore": "^20.3.0",
     "@react-native-firebase/functions": "^20.3.0",
     "@react-native-firebase/messaging": "^20.3.0",
@@ -67,5 +69,8 @@
   "engines": {
     "node": ">=18"
   },
-  "packageManager": "yarn@3.6.4"
+  "packageManager": "yarn@3.6.4",
+  "resolutions": {
+    "regexpu-core": "^5.3.1"
+  }
 }

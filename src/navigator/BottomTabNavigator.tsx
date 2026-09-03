@@ -14,7 +14,8 @@
 import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import {ArrowLeftRight, ListChecks, PlusIcon, User} from 'lucide-react-native';
 import React from 'react';
-import {Platform, StyleSheet, TouchableOpacity, View} from 'react-native';
+import {StyleSheet, TouchableOpacity, View} from 'react-native';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import ActivityScreen from '../screens/AfterLogin/Activity';
 import BalancesScreen from '../screens/AfterLogin/Balances';
 import ProfileScreen from '../screens/AfterLogin/Profile';
@@ -25,11 +26,11 @@ import {Routes} from './constants';
 
 const Tab = createBottomTabNavigator();
 
-function AddFab() {
+function AddFab({bottom}: {bottom: number}) {
   const triggerAddExpense = useExpenseState(state => state.triggerAddExpense);
   return (
     <TouchableOpacity
-      style={styles.fab}
+      style={[styles.fab, {bottom}]}
       activeOpacity={0.85}
       onPress={() => {
         haptics.tap();
@@ -40,7 +41,24 @@ function AddFab() {
   );
 }
 
+// Content height of the bar itself (icons + labels + top padding),
+// independent of whatever the device's own system bar needs below it.
+const TAB_BAR_CONTENT_HEIGHT = 56;
+const TAB_BAR_TOP_PADDING = 8;
+
 export default function MainTabs() {
+  // Real, per-device answer to "how much room does the current navigation
+  // mode need at the bottom" - larger under gesture navigation's floating
+  // handle, smaller (sometimes ~0) under 3-button nav's own opaque bar.
+  // This app draws edge-to-edge on every Android version (see
+  // MainActivity.kt), so nothing else accounts for that space
+  // automatically - it has to be read here and added on top of the bar's
+  // own content height, rather than guessed with a fixed number.
+  const insets = useSafeAreaInsets();
+  const bottomInset = Math.max(insets.bottom, 10);
+  const tabBarHeight =
+    TAB_BAR_CONTENT_HEIGHT + TAB_BAR_TOP_PADDING + bottomInset;
+
   return (
     <View style={styles.flex}>
       <Tab.Navigator
@@ -49,7 +67,10 @@ export default function MainTabs() {
           tabBarShowLabel: true,
           tabBarActiveTintColor: theme.color.ink,
           tabBarInactiveTintColor: theme.color.inkFaint,
-          tabBarStyle: styles.tabBar,
+          tabBarStyle: [
+            styles.tabBar,
+            {height: tabBarHeight, paddingBottom: bottomInset},
+          ],
           tabBarLabelStyle: styles.tabLabel,
           tabBarIcon: ({color, focused}) => {
             if (route.name === Routes.TabTransaction) {
@@ -80,7 +101,7 @@ export default function MainTabs() {
           options={{title: 'You'}}
         />
       </Tab.Navigator>
-      <AddFab />
+      <AddFab bottom={tabBarHeight + 16} />
     </View>
   );
 }
@@ -91,15 +112,12 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(19,16,25,0.92)',
     borderTopWidth: 1,
     borderTopColor: theme.color.border,
-    height: 76,
-    paddingBottom: Platform.OS === 'ios' ? 22 : 10,
     paddingTop: 8,
   },
   tabLabel: {fontSize: 11, fontWeight: '600'},
   fab: {
     position: 'absolute',
     right: 20,
-    bottom: 92,
     width: 56,
     height: 56,
     borderRadius: 28,

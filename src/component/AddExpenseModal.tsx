@@ -18,9 +18,12 @@ import {
   View,
 } from 'react-native';
 import {KeyboardAwareScrollView} from 'react-native-keyboard-aware-scroll-view';
-import Toast from '../services/toast';
 import {addExpense, editExpense} from '../services/ledger/firestoreLedger';
-import {validateSplitInput} from '../services/ledger/splitEngine';
+import {
+  computeSplits,
+  round2,
+  validateSplitInput,
+} from '../services/ledger/splitEngine';
 import {
   EXPENSE_CATEGORIES,
   Expense,
@@ -28,10 +31,11 @@ import {
   GroupMember,
   SplitType,
 } from '../services/ledger/types';
+import Toast from '../services/toast';
+import {haptics} from '../utils/haptics';
+import theme from '../utils/theme';
 import Chip from './glass/Chip';
 import GlassCard from './glass/GlassCard';
-import theme from '../utils/theme';
-import {haptics} from '../utils/haptics';
 
 interface Props {
   visible: boolean;
@@ -115,6 +119,42 @@ function buildChangeSummary(
   return parts.length ? parts.join('; ') : 'Edited expense';
 }
 
+// Caps a single per-member exact/percentage entry so it can never be
+// typed as more than what's actually left to assign - not just the whole
+// expense total, but the total minus whatever the *other* free-input
+// people already have entered. Example: a ₹2000 expense where someone
+// already has ₹1600 typed in only leaves ₹400 of room for everyone else,
+// so a stray "2000" in the next field snaps to ₹400 instead of silently
+// accepting a number that could never fit. Shares have no such ceiling
+// (they're relative weights, not an absolute amount), so those pass
+// through untouched.
+function clampPerMemberValue(
+  uid: string,
+  raw: string,
+  splitType: SplitType,
+  cap: number,
+  otherFreeUids: string[],
+  inputs: Record<string, string>,
+): string {
+  const cleaned = raw.replace(/[^0-9.]/g, '');
+  if (splitType === 'shares') {
+    return cleaned;
+  }
+  const othersSum = otherFreeUids
+    .filter(id => id !== uid)
+    .reduce((sum, id) => sum + (parseFloat(inputs[id]) || 0), 0);
+  const remainingCap = Math.max(round2(cap - othersSum), 0);
+  const parsed = parseFloat(cleaned);
+  if (!cap || Number.isNaN(parsed) || parsed <= remainingCap) {
+    return cleaned;
+  }
+  // Reformat to whatever's actually left, but only once the number is
+  // complete enough to compare (avoids clobbering "40." mid-type) -
+  // parseFloat already ignores a trailing ".", so this only fires once
+  // the typed number itself exceeds what's left.
+  return String(remainingCap % 1 === 0 ? remainingCap : round2(remainingCap));
+}
+
 const AddExpenseModal: React.FC<Props> = ({
   visible,
   onClose,
@@ -145,14 +185,51 @@ const AddExpenseModal: React.FC<Props> = ({
     );
   };
 
+  // For exact/percentage splits, whether the payer is one of the people
+  // this expense is shared with. When they are, we don't ask "what's the
+  // payer's share" at all - that's the exact question that reads to a
+  // non-technical user as "who does this money belong to", and gets
+  // answered backwards ("Manvi paid, so it's hers, so mine is zero").
+  // Instead we only ask what *everyone else* owes back, and fill the
+  // payer's own share in automatically as whatever's left - matching how
+  // people actually think about a bill ("I owe Manvi ₹60"), not how the
+  // ledger stores it (a share of the total cost).
+  const payerIsParticipant = participantUids.includes(paidBy);
+  const usesOwedToPayerFraming =
+    (splitType === 'exact' || splitType === 'percentage') && payerIsParticipant;
+  const nonPayerUids = usesOwedToPayerFraming
+    ? participantUids.filter(uid => uid !== paidBy)
+    : participantUids;
+  const splitCap = splitType === 'percentage' ? 100 : amountValue;
+  const nonPayerSum = nonPayerUids.reduce(
+    (sum, uid) => sum + (parseFloat(perMemberInput[uid]) || 0),
+    0,
+  );
+  // What the payer's own share works out to once everyone else's amount
+  // is subtracted from the total - can go negative if the others add up
+  // to more than the whole expense, which is exactly the case liveCheck
+  // below blocks Save on.
+  const derivedPayerValue = round2(splitCap - nonPayerSum);
+  const payerName =
+    paidBy === currentUid
+      ? 'you'
+      : members.find(m => m.uid === paidBy)?.displayName || 'the payer';
+
   const buildSplitParams = () => {
     if (splitType === 'equal') {
       return undefined;
     }
     const values: Record<string, number> = {};
-    participantUids.forEach(uid => {
-      values[uid] = parseFloat(perMemberInput[uid]) || 0;
-    });
+    if (usesOwedToPayerFraming) {
+      nonPayerUids.forEach(uid => {
+        values[uid] = parseFloat(perMemberInput[uid]) || 0;
+      });
+      values[paidBy] = derivedPayerValue;
+    } else {
+      participantUids.forEach(uid => {
+        values[uid] = parseFloat(perMemberInput[uid]) || 0;
+      });
+    }
     if (splitType === 'exact') {
       return {exactAmounts: values};
     }
@@ -166,6 +243,32 @@ const AddExpenseModal: React.FC<Props> = ({
     if (!amountValue || participantUids.length === 0) {
       return {valid: false};
     }
+    if (usesOwedToPayerFraming) {
+      const missing = nonPayerUids.some(
+        uid => !perMemberInput[uid] && perMemberInput[uid] !== '0',
+      );
+      if (missing) {
+        return {
+          valid: false,
+          error:
+            splitType === 'percentage'
+              ? 'Enter a % for everyone except the payer.'
+              : 'Enter an amount for everyone except the payer.',
+        };
+      }
+      if (derivedPayerValue < -0.004) {
+        const unit = splitType === 'percentage' ? '%' : '₹';
+        return {
+          valid: false,
+          error: `${unit}${Math.abs(
+            derivedPayerValue,
+          )} more than the ${unit}${round2(
+            splitCap,
+          )} total — lower someone's amount.`,
+        };
+      }
+      return {valid: true};
+    }
     return validateSplitInput(
       amountValue,
       splitType,
@@ -173,7 +276,63 @@ const AddExpenseModal: React.FC<Props> = ({
       buildSplitParams(),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [amountValue, splitType, participantUids, perMemberInput]);
+  }, [amountValue, splitType, participantUids, perMemberInput, paidBy]);
+
+  // The actual per-person rupee shares for the current input, reusing the
+  // exact function the save path calls - so the "who owes whom" preview
+  // and the per-row ₹ conversions below can never show something
+  // different from what pressing Save would actually record.
+  const splitPreview = useMemo(() => {
+    if (!liveCheck.valid || !amountValue || participantUids.length === 0) {
+      return null;
+    }
+    try {
+      return computeSplits(
+        amountValue,
+        splitType,
+        participantUids,
+        buildSplitParams(),
+      );
+    } catch {
+      return null;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    liveCheck.valid,
+    amountValue,
+    splitType,
+    participantUids,
+    perMemberInput,
+  ]);
+
+  // Turns the computed shares into plain-English "who owes whom" lines -
+  // this is the actual outcome of paidBy + the split, made visible before
+  // saving instead of something people have to go check the Balances tab
+  // to discover (or, worse, get wrong without ever noticing).
+  const owesLines = useMemo(() => {
+    if (!splitPreview) {
+      return [];
+    }
+    const nameOf = (uid: string) =>
+      uid === currentUid
+        ? 'You'
+        : members.find(m => m.uid === uid)?.displayName || 'Someone';
+    const lines: string[] = [];
+    participantUids.forEach(uid => {
+      if (uid === paidBy) {
+        return;
+      }
+      const share = splitPreview[uid] || 0;
+      if (share <= 0.004) {
+        return;
+      }
+      const debtor = nameOf(uid);
+      const payerLabel = paidBy === currentUid ? 'you' : nameOf(paidBy);
+      const verb = uid === currentUid ? 'owe' : 'owes';
+      lines.push(`${debtor} ${verb} ${payerLabel} ₹${share.toFixed(2)}`);
+    });
+    return lines;
+  }, [splitPreview, participantUids, paidBy, currentUid, members]);
 
   const reset = () => {
     setDescription('');
@@ -347,9 +506,14 @@ const AddExpenseModal: React.FC<Props> = ({
                   onPress={() => setSplitType(s.key)}
                 />
               ))}
+              {/* <Text style={styles.hintText}>
+                Equally split between everyone by default, or tap to remove/add
+                participants.
+              </Text> */}
             </View>
 
             <Text style={styles.sectionLabel}>Between</Text>
+
             <View style={styles.rowWrap}>
               {members.map(m => (
                 <Chip
@@ -363,40 +527,120 @@ const AddExpenseModal: React.FC<Props> = ({
 
             {splitType !== 'equal' && (
               <View style={styles.perMemberBlock}>
-                {participantUids.map(uid => {
+                <Text style={styles.hintText}>
+                  {splitType === 'exact' &&
+                    (usesOwedToPayerFraming
+                      ? `Enter how much of this expense was for each person. ${
+                          paidBy === currentUid ? 'Your' : `${payerName}'s`
+                        } own part fills in automatically below.`
+                      : 'Enter how much of this expense was for each person.')}
+                  {splitType === 'percentage' &&
+                    (usesOwedToPayerFraming
+                      ? `Enter what % of this expense was for each person. ${
+                          paidBy === currentUid ? 'Your' : `${payerName}'s`
+                        } own part fills in automatically below.`
+                      : 'Enter what % of this expense was for each person.')}
+                  {splitType === 'shares' &&
+                    'Give each person a weight — bigger number, bigger share of the cost. The ₹ amount that comes out of it is shown below.'}
+                </Text>
+                {nonPayerUids.map(uid => {
                   const member = members.find(m => m.uid === uid);
+                  const converted =
+                    splitType !== 'exact' && splitPreview
+                      ? splitPreview[uid]
+                      : undefined;
                   return (
                     <View key={uid} style={styles.perMemberRow}>
                       <Text style={styles.perMemberName}>
                         {uid === currentUid ? 'You' : member?.displayName}
                       </Text>
-                      <TextInput
-                        style={styles.perMemberInput}
-                        keyboardType="decimal-pad"
-                        placeholder={
-                          splitType === 'percentage'
-                            ? '%'
-                            : splitType === 'shares'
-                            ? 'shares'
-                            : '₹'
-                        }
-                        placeholderTextColor={theme.color.inkFaint}
-                        value={perMemberInput[uid] || ''}
-                        onChangeText={t =>
-                          setPerMemberInput(prev => ({
-                            ...prev,
-                            [uid]: t.replace(/[^0-9.]/g, ''),
-                          }))
-                        }
-                      />
+                      <View style={styles.perMemberRight}>
+                        <TextInput
+                          style={styles.perMemberInput}
+                          keyboardType="decimal-pad"
+                          placeholder={
+                            splitType === 'percentage'
+                              ? '%'
+                              : splitType === 'shares'
+                              ? 'shares'
+                              : '₹'
+                          }
+                          placeholderTextColor={theme.color.inkFaint}
+                          value={perMemberInput[uid] || ''}
+                          onChangeText={t =>
+                            setPerMemberInput(prev => ({
+                              ...prev,
+                              [uid]: clampPerMemberValue(
+                                uid,
+                                t,
+                                splitType,
+                                splitCap,
+                                nonPayerUids,
+                                perMemberInput,
+                              ),
+                            }))
+                          }
+                        />
+                        {converted != null && (
+                          <Text style={styles.convertedText}>
+                            = ₹{converted.toFixed(2)}
+                          </Text>
+                        )}
+                      </View>
                     </View>
                   );
                 })}
-                {!liveCheck.valid && amountValue > 0 && (
-                  <Text style={styles.errorText}>
-                    {(liveCheck as any).error}
+                {usesOwedToPayerFraming && (
+                  <View style={styles.perMemberRow}>
+                    <Text style={styles.perMemberName}>
+                      {paidBy === currentUid ? 'You' : payerName} (paid) — own
+                      part
+                    </Text>
+                    <View style={styles.perMemberRight}>
+                      <Text
+                        style={[
+                          styles.convertedText,
+                          derivedPayerValue < -0.004 && {
+                            color: theme.color.rose,
+                          },
+                        ]}>
+                        {splitType === 'percentage'
+                          ? `${derivedPayerValue}%`
+                          : `₹${derivedPayerValue.toFixed(2)}`}
+                      </Text>
+                    </View>
+                  </View>
+                )}
+                {amountValue > 0 && splitType !== 'shares' && (
+                  <Text
+                    style={[
+                      styles.statusText,
+                      liveCheck.valid ? styles.statusOk : styles.statusPending,
+                    ]}>
+                    {liveCheck.valid
+                      ? '✓ Fully assigned'
+                      : (liveCheck as any).error}
                   </Text>
                 )}
+              </View>
+            )}
+
+            {owesLines.length > 0 && (
+              <View style={styles.owesBlock}>
+                {owesLines.map((line, i) => (
+                  <Text key={i} style={styles.owesText}>
+                    → {line}
+                  </Text>
+                ))}
+              </View>
+            )}
+            {splitPreview && owesLines.length === 0 && (
+              <View style={styles.owesBlock}>
+                <Text style={styles.owesTextNeutral}>
+                  → No one owes anyone for this — it'll be recorded as{' '}
+                  {paidBy === currentUid ? 'your own' : 'their own'} personal
+                  spending.
+                </Text>
               </View>
             )}
 
@@ -462,6 +706,13 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   rowWrap: {flexDirection: 'row', flexWrap: 'wrap'},
+  hintText: {
+    color: theme.color.inkFaint,
+    fontSize: 12,
+    lineHeight: 16,
+    marginBottom: 8,
+    marginTop: -2,
+  },
   perMemberBlock: {marginTop: 8, marginBottom: 4},
   perMemberRow: {
     flexDirection: 'row',
@@ -470,6 +721,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   perMemberName: {color: theme.color.ink, fontSize: 14},
+  perMemberRight: {alignItems: 'flex-end'},
   perMemberInput: {
     width: 90,
     backgroundColor: 'rgba(255,255,255,0.06)',
@@ -481,7 +733,14 @@ const styles = StyleSheet.create({
     color: theme.color.ink,
     textAlign: 'right',
   },
+  convertedText: {color: theme.color.teal, fontSize: 11.5, marginTop: 3},
   errorText: {color: theme.color.rose, fontSize: 12.5, marginTop: 6},
+  statusText: {fontSize: 12.5, marginTop: 6, fontWeight: '600'},
+  statusOk: {color: theme.color.green},
+  statusPending: {color: theme.color.amber},
+  owesBlock: {marginTop: 4, marginBottom: 4, gap: 3},
+  owesText: {color: theme.color.rose, fontSize: 13, fontWeight: '600'},
+  owesTextNeutral: {color: theme.color.green, fontSize: 13, fontWeight: '600'},
   actions: {flexDirection: 'row', gap: 10, marginTop: 20, marginBottom: 8},
   cancelBtn: {
     flex: 1,
