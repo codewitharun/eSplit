@@ -1,11 +1,9 @@
-🎉 What's new in EzySplit 2.0
+🎉 What's new in EzySplit 2.0.2
 
-• Edit an expense after adding it — no more delete-and-redo
-• Settle-up now confirms a payment actually went through
-• Push notifications are back for new expenses & group joins
-• Only the person who added an expense can edit/delete it
-• Leave a group anytime from your group list
-• Join code fallback if a share link won't open
-• Cleaner card designs throughout
+• Clearer expense splitting — just enter each person's share, yours is worked out automatically
+• Fixed an issue that could occasionally block creating or joining a group
+• A friendly nudge to add your UPI ID when you open a group, so others can pay you back
+• Fixed the bottom tab bar crowding the screen on phones using gesture navigation
+• Fixed confirmation messages sometimes appearing hidden behind other screens
 
 Thanks for splitting with us! 💙
