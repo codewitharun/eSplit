@@ -1,8 +1,8 @@
 🎉 What's new in EzySplit 2.1.0
 
-• Split expenses in any currency — pick your country when creating a group and every amount, balance, and export shows up in your currency, not just ₹
-• Settling up outside India now confirms with a simple "mark as paid," since UPI only works within India
-• PDF and Excel exports now display the correct currency for the group
-• Fixed a rare issue where a slow or missing internet connection during sign-in could leave your account only half set up
+• Split expenses in any currency — pick your country when creating a group, and amounts, balances, and exports show your currency, not just ₹
+• Settling up outside India now uses a simple "mark as paid" confirmation, since UPI only works within India
+• PDF and Excel exports show the correct currency
+• Fixed a rare sign-in issue that could leave your account half set up
 
 Thanks for splitting with us! 💙
