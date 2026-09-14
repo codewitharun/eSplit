@@ -33,6 +33,7 @@ import {
   ExpenseCategory,
 } from '../../services/ledger/types';
 import {useExpenseState} from '../../store/useExpenseStore';
+import {formatMoney} from '../../services/ledger/currency';
 import {haptics} from '../../utils/haptics';
 import theme from '../../utils/theme';
 
@@ -258,7 +259,7 @@ Manage & split expenses easily.
           <View style={styles.switchRow}>
             <GroupSwitcherPill style={styles.switchPillInline} />
             <Text style={styles.spentInline}>
-              ₹{ledger.totalSpent.toFixed(2)} spent
+              {formatMoney(ledger.totalSpent, ledger.group?.currency)} spent
             </Text>
           </View>
           <Text style={[styles.subtitle, styles.subtitleSecondLine]}>
@@ -377,7 +378,7 @@ Manage & split expenses easily.
                   </Text>
                 </View>
                 <Text style={styles.expenseAmount}>
-                  ₹{item.amount.toFixed(2)}
+                  {formatMoney(item.amount, ledger.group?.currency)}
                 </Text>
               </GlassCard>
             </TouchableOpacity>
@@ -406,6 +407,7 @@ Manage & split expenses easily.
           groupId={groupKey}
           members={ledger.members}
           currentUid={user!.uid}
+          groupCurrency={ledger.group?.currency}
           editingExpense={editingExpense}
         />
       )}

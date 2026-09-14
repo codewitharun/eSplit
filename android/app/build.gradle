@@ -90,7 +90,7 @@ android {
         minSdkVersion 26
         targetSdkVersion 36
         versionCode Integer.valueOf(System.getenv("BUILD_NUMBER") ?: "1") + 11
-        versionName "2.0.2"
+        versionName "2.1.0"
     }
     signingConfigs {
         debug {

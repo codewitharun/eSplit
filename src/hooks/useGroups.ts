@@ -35,11 +35,11 @@ export function useGroups() {
   }, [refresh]);
 
   const createGroup = useCallback(
-    async (name: string) => {
+    async (name: string, currency?: string) => {
       if (!user) {
         throw new Error('You need to be signed in to create a group.');
       }
-      const group = await createGroupApi(user, name);
+      const group = await createGroupApi(user, name, currency);
       await refresh();
       return group;
     },

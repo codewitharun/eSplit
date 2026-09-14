@@ -10,6 +10,7 @@
 // largest-remainder rounding so the numbers always reconcile.
 
 import {EPSILON, SplitParams, SplitType} from './types';
+import {formatMoney} from './currency';
 
 export interface SplitValidationResult {
   valid: boolean;
@@ -64,6 +65,7 @@ export function validateSplitInput(
   splitType: SplitType,
   participantUids: string[],
   params?: SplitParams,
+  currency?: string,
 ): SplitValidationResult {
   if (!(totalAmount > 0)) {
     return {valid: false, error: 'Total amount must be greater than zero.'};
@@ -101,9 +103,16 @@ export function validateSplitInput(
           valid: false,
           error:
             diff > 0
-              ? `₹${diff} left to assign (of ₹${round2(totalAmount)} total).`
-              : `₹${Math.abs(diff)} over the ₹${round2(
-                  totalAmount,
+              ? `${formatMoney(diff, currency)} left to assign (of ${formatMoney(
+                  round2(totalAmount),
+                  currency,
+                )} total).`
+              : `${formatMoney(
+                  Math.abs(diff),
+                  currency,
+                )} over the ${formatMoney(
+                  round2(totalAmount),
+                  currency,
                 )} total — remove some.`,
         };
       }

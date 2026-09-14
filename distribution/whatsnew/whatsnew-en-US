@@ -1,9 +1,8 @@
-🎉 What's new in EzySplit 2.0.2
+🎉 What's new in EzySplit 2.1.0
 
-• Clearer expense splitting — just enter each person's share, yours is worked out automatically
-• Fixed an issue that could occasionally block creating or joining a group
-• A friendly nudge to add your UPI ID when you open a group, so others can pay you back
-• Fixed the bottom tab bar crowding the screen on phones using gesture navigation
-• Fixed confirmation messages sometimes appearing hidden behind other screens
+• Split expenses in any currency — pick your country when creating a group and every amount, balance, and export shows up in your currency, not just ₹
+• Settling up outside India now confirms with a simple "mark as paid," since UPI only works within India
+• PDF and Excel exports now display the correct currency for the group
+• Fixed a rare issue where a slow or missing internet connection during sign-in could leave your account only half set up
 
 Thanks for splitting with us! 💙

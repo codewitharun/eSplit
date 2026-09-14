@@ -33,6 +33,7 @@ import {
   exportGroupPdf,
 } from '../../services/ledger/exportReport';
 import {buildUpiPayUri} from '../../services/ledger/upi';
+import {currencySymbol, formatMoney, isUpiCurrency} from '../../services/ledger/currency';
 import {Routes} from '../../navigator/constants';
 import {useExpenseState} from '../../store/useExpenseStore';
 import {haptics} from '../../utils/haptics';
@@ -82,7 +83,12 @@ const BalancesScreen: React.FC = () => {
 
   const myBalance = user ? ledger.netBalances[user.uid] || 0 : 0;
 
-  const settle = async (fromUid: string, toUid: string, amount: number) => {
+  const settle = async (
+    fromUid: string,
+    toUid: string,
+    amount: number,
+    method: 'upi' | 'other' = 'other',
+  ) => {
     if (!groupKey) {
       return;
     }
@@ -91,8 +97,8 @@ const BalancesScreen: React.FC = () => {
         fromUid,
         toUid,
         amount,
-        currency: 'INR',
-        method: 'upi',
+        currency: ledger.group?.currency || 'INR',
+        method,
       });
       haptics.success();
       Toast.show({type: 'success', text1: 'Settlement recorded'});
@@ -128,15 +134,16 @@ const BalancesScreen: React.FC = () => {
       pendingSettlementRef.current = null;
       AppAlert.alert(
         'Mark as paid?',
-        `Did you complete the ₹${pending.amount.toFixed(
-          2,
+        `Did you complete the ${formatMoney(
+          pending.amount,
+          ledger.group?.currency,
         )} payment to ${ledger.memberName(pending.toUid)}?`,
         [
           {text: 'Not yet', style: 'cancel'},
           {
             text: 'Yes, paid',
             onPress: () =>
-              settle(pending.fromUid, pending.toUid, pending.amount),
+              settle(pending.fromUid, pending.toUid, pending.amount, 'upi'),
           },
         ],
       );
@@ -150,6 +157,34 @@ const BalancesScreen: React.FC = () => {
     toUid: string,
     amount: number,
   ) => {
+    const groupCurrency = ledger.group?.currency;
+
+    // UPI only exists as a payment rail in India - a group in any other
+    // currency skips the VPA/deep-link attempt entirely and goes straight
+    // to a manual settle confirmation. Checked first, before even looking
+    // at upiIds, so a stray UPI ID on file (e.g. from before this group's
+    // currency was set) can never trigger a upi:// intent for a currency
+    // it doesn't apply to.
+    if (!isUpiCurrency(groupCurrency)) {
+      AppAlert.alert(
+        'Mark as settled?',
+        `Mark the ${formatMoney(
+          amount,
+          groupCurrency,
+        )} payment to ${ledger.memberName(
+          toUid,
+        )} as settled? Pay them however you normally would - bank transfer, cash, whatever you two use.`,
+        [
+          {text: 'Not yet', style: 'cancel'},
+          {
+            text: 'Mark as settled',
+            onPress: () => settle(fromUid, toUid, amount, 'other'),
+          },
+        ],
+      );
+      return;
+    }
+
     const vpa = upiIds[toUid];
     const uri = vpa
       ? buildUpiPayUri({
@@ -173,14 +208,17 @@ const BalancesScreen: React.FC = () => {
         pendingSettlementRef.current = null;
         AppAlert.alert(
           'No UPI app found',
-          `Mark the ₹${amount.toFixed(2)} payment to ${ledger.memberName(
+          `Mark the ${formatMoney(
+            amount,
+            groupCurrency,
+          )} payment to ${ledger.memberName(
             toUid,
           )} as settled anyway? Pay them however you normally would.`,
           [
             {text: 'Not yet', style: 'cancel'},
             {
               text: 'Mark as settled',
-              onPress: () => settle(fromUid, toUid, amount),
+              onPress: () => settle(fromUid, toUid, amount, 'other'),
             },
           ],
         );
@@ -188,14 +226,15 @@ const BalancesScreen: React.FC = () => {
     } else {
       AppAlert.alert(
         `${ledger.memberName(toUid)} hasn't added a UPI ID`,
-        `Mark the ₹${amount.toFixed(
-          2,
+        `Mark the ${formatMoney(
+          amount,
+          groupCurrency,
         )} payment as settled anyway? Pay them however you normally would.`,
         [
           {text: 'Not yet', style: 'cancel'},
           {
             text: 'Mark as settled',
-            onPress: () => settle(fromUid, toUid, amount),
+            onPress: () => settle(fromUid, toUid, amount, 'other'),
           },
         ],
       );
@@ -214,6 +253,7 @@ const BalancesScreen: React.FC = () => {
         ledger.netBalances,
         ledger.totalSpent,
         ledger.settlements,
+        ledger.group?.currency,
       );
       haptics.success();
       Toast.show({type: 'success', text1: 'PDF exported', text2: path});
@@ -239,6 +279,7 @@ const BalancesScreen: React.FC = () => {
         ledger.netBalances,
         ledger.totalSpent,
         ledger.settlements,
+        ledger.group?.currency,
       );
       haptics.success();
       Toast.show({type: 'success', text1: 'Excel exported', text2: path});
@@ -277,7 +318,7 @@ const BalancesScreen: React.FC = () => {
           </Text>
           <AnimatedNumber
             value={Math.abs(myBalance)}
-            prefix="₹"
+            prefix={currencySymbol(ledger.group?.currency)}
             decimals={2}
             style={[
               styles.heroAmount,
@@ -285,7 +326,7 @@ const BalancesScreen: React.FC = () => {
             ]}
           />
           <Text style={styles.heroSub}>
-            Total group spend: ₹{ledger.totalSpent.toFixed(2)}
+            Total group spend: {formatMoney(ledger.totalSpent, ledger.group?.currency)}
           </Text>
         </GlassCard>
 
@@ -304,7 +345,7 @@ const BalancesScreen: React.FC = () => {
                 {t.fromUid === user?.uid ? '' : 's'}{' '}
                 {t.toUid === user?.uid ? 'you' : ledger.memberName(t.toUid)}
               </Text>
-              <Text style={styles.transferAmount}>₹{t.amount.toFixed(2)}</Text>
+              <Text style={styles.transferAmount}>{formatMoney(t.amount, ledger.group?.currency)}</Text>
               {isMine && (
                 <TouchableOpacity
                   style={styles.settleBtn}
@@ -351,8 +392,8 @@ const BalancesScreen: React.FC = () => {
                       : theme.color.rose,
                 },
               ]}>
-              {(ledger.netBalances[m.uid] || 0) >= 0 ? '+' : ''}₹
-              {(ledger.netBalances[m.uid] || 0).toFixed(2)}
+              {(ledger.netBalances[m.uid] || 0) >= 0 ? '+' : ''}
+              {formatMoney(ledger.netBalances[m.uid] || 0, ledger.group?.currency)}
             </Text>
           </View>
         ))}

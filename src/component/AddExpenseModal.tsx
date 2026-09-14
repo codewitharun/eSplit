@@ -32,6 +32,7 @@ import {
   SplitType,
 } from '../services/ledger/types';
 import Toast from '../services/toast';
+import {currencySymbol, formatMoney} from '../services/ledger/currency';
 import {haptics} from '../utils/haptics';
 import theme from '../utils/theme';
 import Chip from './glass/Chip';
@@ -43,6 +44,10 @@ interface Props {
   groupId: string;
   members: GroupMember[];
   currentUid: string;
+  // ISO currency code of the group this expense belongs to - drives every
+  // ₹/$/€ symbol shown here and what gets written to the new expense.
+  // Defaults to INR for any caller that hasn't been updated to pass it.
+  groupCurrency?: string;
   // When set, the modal opens pre-filled with this expense's data and
   // saves via editExpense() instead of creating a new one via addExpense().
   editingExpense?: Expense | null;
@@ -161,9 +166,11 @@ const AddExpenseModal: React.FC<Props> = ({
   groupId,
   members,
   currentUid,
+  groupCurrency,
   editingExpense,
 }) => {
   const isEditMode = !!editingExpense;
+  const moneySymbol = currencySymbol(groupCurrency);
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState<ExpenseCategory>('other');
@@ -257,7 +264,7 @@ const AddExpenseModal: React.FC<Props> = ({
         };
       }
       if (derivedPayerValue < -0.004) {
-        const unit = splitType === 'percentage' ? '%' : '₹';
+        const unit = splitType === 'percentage' ? '%' : moneySymbol;
         return {
           valid: false,
           error: `${unit}${Math.abs(
@@ -274,6 +281,7 @@ const AddExpenseModal: React.FC<Props> = ({
       splitType,
       participantUids,
       buildSplitParams(),
+      groupCurrency,
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [amountValue, splitType, participantUids, perMemberInput, paidBy]);
@@ -329,10 +337,10 @@ const AddExpenseModal: React.FC<Props> = ({
       const debtor = nameOf(uid);
       const payerLabel = paidBy === currentUid ? 'you' : nameOf(paidBy);
       const verb = uid === currentUid ? 'owe' : 'owes';
-      lines.push(`${debtor} ${verb} ${payerLabel} ₹${share.toFixed(2)}`);
+      lines.push(`${debtor} ${verb} ${payerLabel} ${formatMoney(share, groupCurrency)}`);
     });
     return lines;
-  }, [splitPreview, participantUids, paidBy, currentUid, members]);
+  }, [splitPreview, participantUids, paidBy, currentUid, members, groupCurrency]);
 
   const reset = () => {
     setDescription('');
@@ -408,7 +416,7 @@ const AddExpenseModal: React.FC<Props> = ({
           groupId,
           description: description.trim(),
           amount: amountValue,
-          currency: 'INR',
+          currency: groupCurrency || 'INR',
           category,
           paidBy,
           createdBy: currentUid,
@@ -465,7 +473,7 @@ const AddExpenseModal: React.FC<Props> = ({
             />
             <TextInput
               style={styles.input}
-              placeholder="Amount (₹)"
+              placeholder={`Amount (${moneySymbol})`}
               placeholderTextColor={theme.color.inkFaint}
               keyboardType="decimal-pad"
               value={amount}
@@ -541,7 +549,7 @@ const AddExpenseModal: React.FC<Props> = ({
                         } own part fills in automatically below.`
                       : 'Enter what % of this expense was for each person.')}
                   {splitType === 'shares' &&
-                    'Give each person a weight — bigger number, bigger share of the cost. The ₹ amount that comes out of it is shown below.'}
+                    `Give each person a weight — bigger number, bigger share of the cost. The ${moneySymbol} amount that comes out of it is shown below.`}
                 </Text>
                 {nonPayerUids.map(uid => {
                   const member = members.find(m => m.uid === uid);
@@ -563,7 +571,7 @@ const AddExpenseModal: React.FC<Props> = ({
                               ? '%'
                               : splitType === 'shares'
                               ? 'shares'
-                              : '₹'
+                              : moneySymbol
                           }
                           placeholderTextColor={theme.color.inkFaint}
                           value={perMemberInput[uid] || ''}
@@ -583,7 +591,7 @@ const AddExpenseModal: React.FC<Props> = ({
                         />
                         {converted != null && (
                           <Text style={styles.convertedText}>
-                            = ₹{converted.toFixed(2)}
+                            = {formatMoney(converted, groupCurrency)}
                           </Text>
                         )}
                       </View>
@@ -606,7 +614,7 @@ const AddExpenseModal: React.FC<Props> = ({
                         ]}>
                         {splitType === 'percentage'
                           ? `${derivedPayerValue}%`
-                          : `₹${derivedPayerValue.toFixed(2)}`}
+                          : formatMoney(derivedPayerValue, groupCurrency)}
                       </Text>
                     </View>
                   </View>
