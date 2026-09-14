@@ -147,11 +147,31 @@ const App = () => {
   const onAuthStateChanged = async user => {
     if (user) {
       try {
-        const token = await messaging().getToken();
         setTimeout(() => {
           setLoading(false);
           setUser(user);
         }, 2500);
+
+        // Fetching the FCM push token is best-effort and must never block
+        // creating this user's core Firestore record. It used to be
+        // `await`-ed directly inside this same try block, so on any device
+        // where it throws (no Google Play Services, denied notification
+        // permission, a flaky network on first launch - all more common
+        // among the international users added by the multi-currency
+        // rollout) the whole block aborted BEFORE the users/{uid}.set()
+        // below ever ran. The result: the account exists in Firebase
+        // Auth (so it shows up as a "new user" there) but never gets a
+        // Firestore doc, with only a console.error to show for it - no
+        // crash, no visible error, nothing in the admin panel. Isolating
+        // it in its own try/catch means a token failure just costs that
+        // device push notifications, not its entire user record.
+        let token = null;
+        try {
+          token = await messaging().getToken();
+        } catch (tokenError) {
+          console.error('Error fetching FCM token:', tokenError);
+        }
+
         // New ledger schema (src/services/ledger) - this is what
         // getUserGroups()/useGroups() reads. photoUrl/fcmToken names match
         // the AppUser type; groupIds is left untouched here so an existing
@@ -169,21 +189,29 @@ const App = () => {
           Platform.OS === 'android'
             ? String(Platform.constants?.Release ?? Platform.Version)
             : String(Platform.Version);
-        await firestore().collection('users').doc(user.uid).set(
-          {
-            uid: user.uid,
-            displayName: user.displayName,
-            email: user.email,
-            photoUrl: user.photoURL,
-            defaultCurrency: 'INR',
-            fcmToken: token,
-            appVersion: pkg.version,
-            platform: Platform.OS,
-            osVersion,
-            lastSeenAt: firestore.FieldValue.serverTimestamp(),
-          },
-          {merge: true},
-        );
+
+        // fcmToken is only included when the fetch above actually
+        // succeeded, so a transient failure on a later login can't wipe
+        // out a good token this device already registered previously -
+        // {merge: true} simply leaves the existing field untouched.
+        const userDoc = {
+          uid: user.uid,
+          displayName: user.displayName,
+          email: user.email,
+          photoUrl: user.photoURL,
+          defaultCurrency: 'INR',
+          appVersion: pkg.version,
+          platform: Platform.OS,
+          osVersion,
+          lastSeenAt: firestore.FieldValue.serverTimestamp(),
+        };
+        if (token) {
+          userDoc.fcmToken = token;
+        }
+        await firestore()
+          .collection('users')
+          .doc(user.uid)
+          .set(userDoc, {merge: true});
 
         await AsyncStorage.setItem('userToken', user.uid);
         identifyUser(user.uid);

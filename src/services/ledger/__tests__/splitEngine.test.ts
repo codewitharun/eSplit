@@ -54,3 +54,25 @@ describe('splitEngine', () => {
     expect(check.valid).toBe(false);
   });
 });
+
+describe('validateSplitInput exact-split error currency', () => {
+  it('formats the leftover/over amount in the given currency', () => {
+    const short = validateSplitInput(
+      100,
+      'exact',
+      ['a', 'b'],
+      {exactAmounts: {a: 40, b: 40}},
+      'EUR',
+    );
+    expect(short.valid).toBe(false);
+    expect(short.error).toBe('€20.00 left to assign (of €100.00 total).');
+  });
+
+  it("defaults to INR when no currency is passed, matching the app's existing look", () => {
+    const over = validateSplitInput(100, 'exact', ['a', 'b'], {
+      exactAmounts: {a: 70, b: 50},
+    });
+    expect(over.valid).toBe(false);
+    expect(over.error).toBe('₹20.00 over the ₹100.00 total — remove some.');
+  });
+});

@@ -32,6 +32,7 @@ import Header from '../../component/header';
 import {useGroups} from '../../hooks/useGroups';
 import {useGroupsOverview} from '../../hooks/useGroupsOverview';
 import {leaveGroup} from '../../services/ledger/firestoreLedger';
+import {formatMoney, isUpiCurrency} from '../../services/ledger/currency';
 import UpiPromptModal from '../../component/UpiPromptModal';
 import {useExpenseState} from '../../store/useExpenseStore';
 import {haptics} from '../../utils/haptics';
@@ -117,8 +118,14 @@ const GroupManagement = ({navigation}: any) => {
   const upiPromptShownRef = useRef(false);
   const [upiPromptVisible, setUpiPromptVisible] = useState(false);
 
-  const promptForUpiIfMissing = async (currentUser: typeof user) => {
-    if (!currentUser || upiPromptShownRef.current) {
+  const promptForUpiIfMissing = async (
+    currentUser: typeof user,
+    groupCurrency?: string,
+  ) => {
+    // UPI settle-up doesn't apply outside India - nudging someone to add
+    // a UPI ID right after they open a EUR/USD/... group would be asking
+    // for something that group can never actually use.
+    if (!currentUser || upiPromptShownRef.current || !isUpiCurrency(groupCurrency)) {
       return;
     }
     try {
@@ -138,13 +145,13 @@ const GroupManagement = ({navigation}: any) => {
     }
   };
 
-  const enterGroup = async (groupKey: string) => {
+  const enterGroup = async (groupKey: string, groupCurrency?: string) => {
     setGroupKey(groupKey);
     await AsyncStorage.setItem('groupKey', groupKey);
     await AsyncStorage.setItem('lastJoinedGroup', groupKey);
     haptics.success();
     navigation.navigate('Home');
-    promptForUpiIfMissing(user);
+    promptForUpiIfMissing(user, groupCurrency);
   };
 
   const handleJoinById = async (id: string) => {
@@ -154,7 +161,7 @@ const GroupManagement = ({navigation}: any) => {
     setLoader(true);
     try {
       const {group} = await joinGroupById(id);
-      await enterGroup(group.id);
+      await enterGroup(group.id, group.currency);
     } catch (error: any) {
       Toast.show({
         type: 'error',
@@ -179,7 +186,7 @@ const GroupManagement = ({navigation}: any) => {
     try {
       const {group} = await joinGroupByCode(joinCodeInput.trim());
       setJoinCodeInput('');
-      await enterGroup(group.id);
+      await enterGroup(group.id, group.currency);
     } catch (error: any) {
       Toast.show({
         type: 'error',
@@ -219,11 +226,13 @@ const GroupManagement = ({navigation}: any) => {
     }
     const balance = overview.perGroupBalance[leaveGroupId];
     if (Math.abs(balance) > 0.01) {
+      const leaveGroupCurrency = groups.find(g => g.id === leaveGroupId)?.currency;
       Toast.show({
         type: 'error',
         text1: 'Settle up first',
-        text2: `You still have an open balance of ₹${Math.abs(balance).toFixed(
-          2,
+        text2: `You still have an open balance of ${formatMoney(
+          Math.abs(balance),
+          leaveGroupCurrency,
         )} in this group.`,
       });
       return;
@@ -262,21 +271,21 @@ const GroupManagement = ({navigation}: any) => {
     );
   };
 
-  const handleCreateGroup = async (groupName: string) => {
+  const handleCreateGroup = async (groupName: string, currency: string) => {
     if (creatingGroup) {
       return;
     }
     setCreatingGroup(true);
     setLoader(true);
     try {
-      const group = await createGroup(groupName);
+      const group = await createGroup(groupName, currency);
       setGroupNameModal(false);
       Toast.show({
         type: 'success',
         text1: 'Group created',
         text2: `Join code: ${group.joinCode}`,
       });
-      await enterGroup(group.id);
+      await enterGroup(group.id, group.currency);
     } catch (error: any) {
       Toast.show({
         type: 'error',
@@ -308,6 +317,7 @@ const GroupManagement = ({navigation}: any) => {
             <BalanceDonut
               owed={overview.totalOwedToYou}
               owe={overview.totalYouOwe}
+              currency={overview.primaryCurrency}
             />
             <View style={styles.legendCol}>
               <View style={styles.legendRow}>
@@ -321,7 +331,7 @@ const GroupManagement = ({navigation}: any) => {
                   <Text style={styles.legendLabel}>Owed to you</Text>
                   <Text
                     style={[styles.legendAmount, {color: theme.color.green}]}>
-                    ₹{overview.totalOwedToYou.toFixed(2)}
+                    {formatMoney(overview.totalOwedToYou, overview.primaryCurrency)}
                   </Text>
                 </View>
               </View>
@@ -336,10 +346,24 @@ const GroupManagement = ({navigation}: any) => {
                   <Text style={styles.legendLabel}>You owe</Text>
                   <Text
                     style={[styles.legendAmount, {color: theme.color.rose}]}>
-                    ₹{overview.totalYouOwe.toFixed(2)}
+                    {formatMoney(overview.totalYouOwe, overview.primaryCurrency)}
                   </Text>
                 </View>
               </View>
+              {/* Groups in a currency other than primaryCurrency don't
+                  belong in the donut/legend above (adding EUR to INR
+                  would silently produce a meaningless number) - listed
+                  separately instead, one line per other currency. Only
+                  ever renders for a user who actually has groups in more
+                  than one currency, which is rare. */}
+              {Object.entries(overview.totalsByCurrency)
+                .filter(([code]) => code !== overview.primaryCurrency)
+                .map(([code, totals]) => (
+                  <Text key={code} style={styles.legendOtherCurrency}>
+                    + {formatMoney(totals.owedToYou, code)} owed ·{' '}
+                    {formatMoney(totals.youOwe, code)} owing ({code})
+                  </Text>
+                ))}
             </View>
           </GlassCard>
         )}
@@ -415,7 +439,7 @@ const GroupManagement = ({navigation}: any) => {
             actionColor={theme.color.rose}
             onAction={() => handleLeaveGroup(g.id)}>
             <TouchableOpacity
-              onPress={() => enterGroup(g.id)}
+              onPress={() => enterGroup(g.id, g.currency)}
               activeOpacity={0.85}>
               <GlassCard
                 style={StyleSheet.flatten([
@@ -448,7 +472,10 @@ const GroupManagement = ({navigation}: any) => {
                         {overview.perGroupBalance[g.id] >= 0
                           ? "You're owed "
                           : 'You owe '}
-                        ₹{Math.abs(overview.perGroupBalance[g.id]).toFixed(2)}
+                        {formatMoney(
+                          Math.abs(overview.perGroupBalance[g.id]),
+                          g.currency,
+                        )}
                       </Text>
                     )}
                 </View>
@@ -520,6 +547,11 @@ const styles = StyleSheet.create({
   legendDot: {width: 10, height: 10, borderRadius: 5},
   legendLabel: {color: theme.color.inkFaint, fontSize: 12},
   legendAmount: {fontSize: 16, fontWeight: '800', marginTop: 2},
+  legendOtherCurrency: {
+    color: theme.color.inkFaint,
+    fontSize: 11.5,
+    marginTop: 6,
+  },
   sectionLabel: {
     color: theme.color.inkSoft,
     fontSize: 12,

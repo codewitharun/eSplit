@@ -15,6 +15,7 @@ import RNFS from 'react-native-fs';
 import RNHTMLtoPDF from 'react-native-html-to-pdf';
 import * as XLSX from 'xlsx';
 import {Expense, GroupMember, Settlement} from './types';
+import {formatMoney} from './currency';
 
 const BRAND = {
   blue: '#0082B0',
@@ -36,8 +37,8 @@ function fileBaseName(groupName: string) {
   return `ezysplit-${slug}-${monthYear}`;
 }
 
-function fmtMoney(n: number) {
-  return `₹${Math.abs(n).toFixed(2)}`;
+function globalFmtMoney(n: number, currency?: string | null) {
+  return formatMoney(Math.abs(n), currency);
 }
 
 function fmtDate(iso: string | number) {
@@ -59,11 +60,16 @@ export async function exportGroupPdf(
   netBalances: Record<string, number>,
   totalSpent: number,
   settlements: Settlement[] = [],
+  currency: string = 'INR',
 ): Promise<string> {
   const fileName = fileBaseName(groupName);
   const perPerson = members.length ? totalSpent / members.length : 0;
   const name = (uid: string) =>
     members.find(m => m.uid === uid)?.displayName || 'Someone';
+  // Shadows the module-level fmtMoney for the rest of this function so
+  // every existing fmtMoney(x) call below picks up this report's actual
+  // currency without needing to be rewritten one by one.
+  const fmtMoney = (n: number) => globalFmtMoney(n, currency);
 
   const sortedExpenses = [...expenses].sort(
     (a, b) => +new Date(b.createdAt) - +new Date(a.createdAt),
@@ -313,6 +319,7 @@ export async function exportGroupExcel(
   netBalances: Record<string, number>,
   totalSpent: number,
   settlements: Settlement[] = [],
+  currency: string = 'INR',
 ): Promise<string> {
   const fileName = fileBaseName(groupName);
   const name = (uid: string) =>
@@ -323,9 +330,14 @@ export async function exportGroupExcel(
   const wb = XLSX.utils.book_new();
 
   // --- Summary sheet ---
+  // Amounts on this sheet are kept as raw numbers (not "€45.00" strings)
+  // so Excel/Sheets can still sum/chart the column - the currency is
+  // called out once here instead, so the file is still self-describing
+  // for a currency other than INR.
   const summaryRows: (string | number)[][] = [
     ['EzySplit — Expense Report'],
     ['Group', groupName],
+    ['Currency', currency],
     ['Generated', new Date().toLocaleString('en-IN')],
     [],
     ['Total spent', Number(totalSpent.toFixed(2))],

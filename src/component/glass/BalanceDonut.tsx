@@ -9,14 +9,16 @@ import React from 'react';
 import {StyleSheet, Text, View} from 'react-native';
 import Svg, {Circle, G} from 'react-native-svg';
 import theme from '../../utils/theme';
+import {formatMoney} from '../../services/ledger/currency';
 
 interface Props {
   owed: number; // total owed to you, across groups
   owe: number; // total you owe, across groups
+  currency?: string; // ISO code the owed/owe numbers are in - see useGroupsOverview's primaryCurrency
   size?: number;
 }
 
-const BalanceDonut: React.FC<Props> = ({owed, owe, size = 148}) => {
+const BalanceDonut: React.FC<Props> = ({owed, owe, currency, size = 148}) => {
   const strokeWidth = 14;
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
@@ -69,7 +71,7 @@ const BalanceDonut: React.FC<Props> = ({owed, owe, size = 148}) => {
                 styles.netAmount,
                 {color: net >= 0 ? theme.color.green : theme.color.rose},
               ]}>
-              ₹{Math.abs(net).toFixed(0)}
+              {formatMoney(Math.abs(net), currency, 0)}
             </Text>
           </>
         )}

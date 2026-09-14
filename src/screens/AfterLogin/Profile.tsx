@@ -30,6 +30,7 @@ import {
 } from '../../services/ledger/firestoreLedger';
 import {Routes} from '../../navigator/constants';
 import {isValidUpiVpa} from '../../services/ledger/upi';
+import {formatMoney, isUpiCurrency} from '../../services/ledger/currency';
 import {signOut} from '../../services/auth';
 import {useExpenseState} from '../../store/useExpenseStore';
 import {haptics} from '../../utils/haptics';
@@ -162,9 +163,10 @@ const ProfileScreen: React.FC = () => {
       Toast.show({
         type: 'error',
         text1: 'Settle up first',
-        text2: `You still have an open balance of ₹${Math.abs(
-          myBalance,
-        ).toFixed(2)} in this group.`,
+        text2: `You still have an open balance of ${formatMoney(
+          Math.abs(myBalance),
+          ledger.group?.currency,
+        )} in this group.`,
       });
       return;
     }
@@ -230,29 +232,33 @@ const ProfileScreen: React.FC = () => {
           </View>
         </GlassCard>
 
-        <Text style={styles.sectionTitle}>UPI ID (for settle-up)</Text>
-        <GlassCard style={styles.upiCard}>
-          <TextInput
-            style={styles.upiInput}
-            placeholder="yourname@bank"
-            placeholderTextColor={theme.color.inkFaint}
-            autoCapitalize="none"
-            value={upiId}
-            onChangeText={setUpiId}
-          />
-          <TouchableOpacity
-            style={styles.saveBtn}
-            onPress={saveUpiId}
-            disabled={saving}>
-            <Text style={styles.saveBtnText}>
-              {saving ? 'Saving…' : 'Save'}
+        {isUpiCurrency(ledger.group?.currency) && (
+          <>
+            <Text style={styles.sectionTitle}>UPI ID (for settle-up)</Text>
+            <GlassCard style={styles.upiCard}>
+              <TextInput
+                style={styles.upiInput}
+                placeholder="yourname@bank"
+                placeholderTextColor={theme.color.inkFaint}
+                autoCapitalize="none"
+                value={upiId}
+                onChangeText={setUpiId}
+              />
+              <TouchableOpacity
+                style={styles.saveBtn}
+                onPress={saveUpiId}
+                disabled={saving}>
+                <Text style={styles.saveBtnText}>
+                  {saving ? 'Saving…' : 'Save'}
+                </Text>
+              </TouchableOpacity>
+            </GlassCard>
+            <Text style={styles.hint}>
+              When someone settles up with you, this is what lets EzySplit
+              open GPay/PhonePe with the amount prefilled.
             </Text>
-          </TouchableOpacity>
-        </GlassCard>
-        <Text style={styles.hint}>
-          When someone settles up with you, this is what lets EzySplit open
-          GPay/PhonePe with the amount prefilled.
-        </Text>
+          </>
+        )}
 
         {groupKey && (
           <>
@@ -308,8 +314,8 @@ const ProfileScreen: React.FC = () => {
               </Text>
               {hasOpenBalance && (
                 <Text style={styles.leaveBlockedHint}>
-                  Settle your {myBalance >= 0 ? 'incoming' : 'open'} balance of
-                  ₹{Math.abs(myBalance).toFixed(2)} first
+                  Settle your {myBalance >= 0 ? 'incoming' : 'open'} balance of{' '}
+                  {formatMoney(Math.abs(myBalance), ledger.group?.currency)} first
                 </Text>
               )}
             </TouchableOpacity>

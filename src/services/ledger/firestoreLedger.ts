@@ -9,6 +9,7 @@ import firestore, {
 import {computeSplits, validateSplitInput} from './splitEngine';
 import {stripUndefined} from './firestoreUtils';
 import {sendPushNotification} from '../notifications';
+import {formatMoney} from './currency';
 import {
   Expense,
   ExpenseCategory,
@@ -295,6 +296,7 @@ export async function addExpense(input: AddExpenseInput): Promise<void> {
     input.splitType,
     input.participantUids,
     input.splitParams,
+    input.currency,
   );
   if (!check.valid) {
     throw new Error(check.error);
@@ -354,9 +356,10 @@ export async function addExpense(input: AddExpenseInput): Promise<void> {
       await sendPushNotification(
         memberDocs.map(d => d.data()?.fcmToken),
         group?.name || 'EzySplit',
-        `${creatorName} added ₹${input.amount.toFixed(2)} for ${
-          input.description
-        }`,
+        `${creatorName} added ${formatMoney(
+          input.amount,
+          group?.currency,
+        )} for ${input.description}`,
       );
     }
   } catch (error) {
@@ -404,6 +407,10 @@ export async function editExpense(
   changes: EditExpenseInput,
   changeSummary: string,
 ): Promise<void> {
+  // EditExpenseInput has no currency field (editing never changes which
+  // currency an expense is in - that's fixed at creation, tied to the
+  // group) - this defensive re-validation just falls back to the default
+  // symbol for its (rarely surfaced) error message.
   const check = validateSplitInput(
     changes.amount,
     changes.splitType,
