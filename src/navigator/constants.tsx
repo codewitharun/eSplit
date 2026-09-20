@@ -19,4 +19,5 @@ export enum Routes {
   Paynow = 'Paynow',
   Profile = 'Profile',
   BankList = 'BankList',
+  GroupSettings = 'GroupSettings',
 }

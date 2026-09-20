@@ -8,6 +8,7 @@ import React from 'react';
 import {StyleSheet, Text, TouchableOpacity, ViewStyle} from 'react-native';
 import theme from '../utils/theme';
 import {haptics} from '../utils/haptics';
+import {BodyFont, moderateScale} from '../utils/fonts';
 
 interface Props {
   // Lets a caller override layout-only props (e.g. zero out the default
@@ -46,7 +47,12 @@ const styles = StyleSheet.create({
     marginTop: 6,
     gap: 6,
   },
-  text: {color: theme.color.inkSoft, fontSize: 11.5, fontWeight: '600'},
+  text: {
+    fontFamily: BodyFont.semibold,
+    color: theme.color.inkSoft,
+    fontSize: moderateScale(11.5),
+    fontWeight: '600',
+  },
 });
 
 export default GroupSwitcherPill;

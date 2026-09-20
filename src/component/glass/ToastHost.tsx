@@ -27,6 +27,7 @@ import {
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {CircleCheck, CircleX, Info} from 'lucide-react-native';
 import {useToastStore} from '../../services/toast';
+import {BodyFont, moderateScale} from '../../utils/fonts';
 import theme from '../../utils/theme';
 
 const ICONS = {
@@ -149,8 +150,18 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   textCol: {flex: 1},
-  text1: {color: theme.color.ink, fontWeight: '700', fontSize: 14},
-  text2: {color: theme.color.inkSoft, fontSize: 12.5, marginTop: 2},
+  text1: {
+    fontFamily: BodyFont.bold,
+    color: theme.color.ink,
+    fontWeight: '700',
+    fontSize: moderateScale(14),
+  },
+  text2: {
+    fontFamily: BodyFont.regular,
+    color: theme.color.inkSoft,
+    fontSize: moderateScale(12.5),
+    marginTop: 2,
+  },
 });
 
 export default ToastHost;

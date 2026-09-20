@@ -5,6 +5,7 @@
 // exact amount / percentage / share weight, validated live against the
 // same rules the Firestore layer enforces.
 
+import {X} from 'lucide-react-native';
 import React, {useEffect, useMemo, useState} from 'react';
 import {
   KeyboardAvoidingView,
@@ -17,7 +18,10 @@ import {
   TouchableWithoutFeedback,
   View,
 } from 'react-native';
+import {GestureHandlerRootView} from 'react-native-gesture-handler';
 import {KeyboardAwareScrollView} from 'react-native-keyboard-aware-scroll-view';
+import {useModalOpenGuard} from '../hooks/useModalOpenGuard';
+import {currencySymbol, formatMoney} from '../services/ledger/currency';
 import {addExpense, editExpense} from '../services/ledger/firestoreLedger';
 import {
   computeSplits,
@@ -32,11 +36,11 @@ import {
   SplitType,
 } from '../services/ledger/types';
 import Toast from '../services/toast';
-import {currencySymbol, formatMoney} from '../services/ledger/currency';
-import {haptics} from '../utils/haptics';
+import {BodyFont, DisplayFont, moderateScale} from '../utils/fonts';
 import theme from '../utils/theme';
 import Chip from './glass/Chip';
 import GlassCard from './glass/GlassCard';
+import SwipeToConfirm from './glass/SwipeToConfirm';
 
 interface Props {
   visible: boolean;
@@ -183,6 +187,10 @@ const AddExpenseModal: React.FC<Props> = ({
     {},
   );
   const [submitting, setSubmitting] = useState(false);
+  // See useModalOpenGuard.ts - swallows the phantom close Android
+  // can replay onto this modal's backdrop/close button the instant
+  // it opens.
+  const canClose = useModalOpenGuard(visible);
 
   const amountValue = parseFloat(amount) || 0;
 
@@ -337,10 +345,19 @@ const AddExpenseModal: React.FC<Props> = ({
       const debtor = nameOf(uid);
       const payerLabel = paidBy === currentUid ? 'you' : nameOf(paidBy);
       const verb = uid === currentUid ? 'owe' : 'owes';
-      lines.push(`${debtor} ${verb} ${payerLabel} ${formatMoney(share, groupCurrency)}`);
+      lines.push(
+        `${debtor} ${verb} ${payerLabel} ${formatMoney(share, groupCurrency)}`,
+      );
     });
     return lines;
-  }, [splitPreview, participantUids, paidBy, currentUid, members, groupCurrency]);
+  }, [
+    splitPreview,
+    participantUids,
+    paidBy,
+    currentUid,
+    members,
+    groupCurrency,
+  ]);
 
   const reset = () => {
     setDescription('');
@@ -381,7 +398,7 @@ const AddExpenseModal: React.FC<Props> = ({
         text1: 'Add a description',
         text2: 'What was this expense for?',
       });
-      return;
+      throw new Error('missing-description');
     }
     if (!liveCheck.valid) {
       Toast.show({
@@ -389,7 +406,7 @@ const AddExpenseModal: React.FC<Props> = ({
         text1: 'Split doesn’t add up',
         text2: liveCheck.error || 'Check the amounts entered for each person.',
       });
-      return;
+      throw new Error('invalid-split');
     }
     setSubmitting(true);
     try {
@@ -409,7 +426,6 @@ const AddExpenseModal: React.FC<Props> = ({
           {...nextValues, splitParams: buildSplitParams()},
           buildChangeSummary(editingExpense, nextValues),
         );
-        haptics.success();
         Toast.show({type: 'success', text1: 'Expense updated'});
       } else {
         await addExpense({
@@ -424,7 +440,6 @@ const AddExpenseModal: React.FC<Props> = ({
           participantUids,
           splitParams: buildSplitParams(),
         });
-        haptics.success();
         Toast.show({type: 'success', text1: 'Expense added'});
       }
       reset();
@@ -437,6 +452,7 @@ const AddExpenseModal: React.FC<Props> = ({
           : 'Could not add expense',
         text2: error?.message,
       });
+      throw error;
     } finally {
       setSubmitting(false);
     }
@@ -448,235 +464,266 @@ const AddExpenseModal: React.FC<Props> = ({
       animationType="slide"
       transparent
       onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        style={styles.backdrop}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <TouchableWithoutFeedback onPress={onClose}>
-          <View style={StyleSheet.absoluteFill} />
-        </TouchableWithoutFeedback>
-        <GlassCard opaque style={styles.sheet}>
-          <KeyboardAwareScrollView
-            showsVerticalScrollIndicator={false}
-            enableOnAndroid
-            extraScrollHeight={24}
-            keyboardShouldPersistTaps="handled">
-            <Text style={styles.title}>
-              {isEditMode ? 'Edit expense' : 'New expense'}
-            </Text>
+      <GestureHandlerRootView style={styles.gestureRoot}>
+        <KeyboardAvoidingView
+          style={styles.backdrop}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <TouchableWithoutFeedback
+            onPress={() => {
+              // Swallows the phantom release Android can replay onto this
+              // backdrop the instant the modal opens - see
+              // useModalOpenGuard.ts. A real tap closes it exactly as
+              // before.
+              if (canClose()) {
+                onClose();
+              }
+            }}>
+            <View style={StyleSheet.absoluteFill} />
+          </TouchableWithoutFeedback>
+          <TouchableOpacity
+            style={styles.closeBtn}
+            disabled={submitting}
+            onPress={() => {
+              if (canClose()) {
+                onClose();
+              }
+            }}
+            hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
+            <X size={20} color={theme.color.ink} />
+          </TouchableOpacity>
+          <GlassCard opaque style={styles.sheet}>
+            <KeyboardAwareScrollView
+              showsVerticalScrollIndicator={false}
+              enableOnAndroid
+              extraScrollHeight={24}
+              keyboardShouldPersistTaps="handled">
+              <Text style={styles.title}>
+                {isEditMode ? 'Edit expense' : 'New expense'}
+              </Text>
 
-            <TextInput
-              style={styles.input}
-              placeholder="What was it for?"
-              placeholderTextColor={theme.color.inkFaint}
-              value={description}
-              onChangeText={setDescription}
-            />
-            <TextInput
-              style={styles.input}
-              placeholder={`Amount (${moneySymbol})`}
-              placeholderTextColor={theme.color.inkFaint}
-              keyboardType="decimal-pad"
-              value={amount}
-              onChangeText={t => setAmount(t.replace(/[^0-9.]/g, ''))}
-            />
+              <TextInput
+                style={styles.input}
+                placeholder="What was it for?"
+                placeholderTextColor={theme.color.inkFaint}
+                value={description}
+                onChangeText={setDescription}
+              />
+              <TextInput
+                style={styles.input}
+                placeholder={`Amount (${moneySymbol})`}
+                placeholderTextColor={theme.color.inkFaint}
+                keyboardType="decimal-pad"
+                value={amount}
+                onChangeText={t => setAmount(t.replace(/[^0-9.]/g, ''))}
+              />
 
-            <Text style={styles.sectionLabel}>Category</Text>
-            <View style={styles.rowWrap}>
-              {EXPENSE_CATEGORIES.map(c => (
-                <Chip
-                  key={c.key}
-                  label={`${c.icon} ${c.label}`}
-                  active={category === c.key}
-                  onPress={() => setCategory(c.key)}
-                />
-              ))}
-            </View>
-
-            <Text style={styles.sectionLabel}>Paid by</Text>
-            <View style={styles.rowWrap}>
-              {members.map(m => (
-                <Chip
-                  key={m.uid}
-                  label={m.uid === currentUid ? 'You' : m.displayName}
-                  active={paidBy === m.uid}
-                  onPress={() => setPaidBy(m.uid)}
-                />
-              ))}
-            </View>
-
-            <Text style={styles.sectionLabel}>Split</Text>
-            <View style={styles.rowWrap}>
-              {SPLIT_TYPES.map(s => (
-                <Chip
-                  key={s.key}
-                  label={s.label}
-                  active={splitType === s.key}
-                  onPress={() => setSplitType(s.key)}
-                />
-              ))}
-              {/* <Text style={styles.hintText}>
-                Equally split between everyone by default, or tap to remove/add
-                participants.
-              </Text> */}
-            </View>
-
-            <Text style={styles.sectionLabel}>Between</Text>
-
-            <View style={styles.rowWrap}>
-              {members.map(m => (
-                <Chip
-                  key={m.uid}
-                  label={m.uid === currentUid ? 'You' : m.displayName}
-                  active={participantUids.includes(m.uid)}
-                  onPress={() => toggleParticipant(m.uid)}
-                />
-              ))}
-            </View>
-
-            {splitType !== 'equal' && (
-              <View style={styles.perMemberBlock}>
-                <Text style={styles.hintText}>
-                  {splitType === 'exact' &&
-                    (usesOwedToPayerFraming
-                      ? `Enter how much of this expense was for each person. ${
-                          paidBy === currentUid ? 'Your' : `${payerName}'s`
-                        } own part fills in automatically below.`
-                      : 'Enter how much of this expense was for each person.')}
-                  {splitType === 'percentage' &&
-                    (usesOwedToPayerFraming
-                      ? `Enter what % of this expense was for each person. ${
-                          paidBy === currentUid ? 'Your' : `${payerName}'s`
-                        } own part fills in automatically below.`
-                      : 'Enter what % of this expense was for each person.')}
-                  {splitType === 'shares' &&
-                    `Give each person a weight — bigger number, bigger share of the cost. The ${moneySymbol} amount that comes out of it is shown below.`}
-                </Text>
-                {nonPayerUids.map(uid => {
-                  const member = members.find(m => m.uid === uid);
-                  const converted =
-                    splitType !== 'exact' && splitPreview
-                      ? splitPreview[uid]
-                      : undefined;
-                  return (
-                    <View key={uid} style={styles.perMemberRow}>
-                      <Text style={styles.perMemberName}>
-                        {uid === currentUid ? 'You' : member?.displayName}
-                      </Text>
-                      <View style={styles.perMemberRight}>
-                        <TextInput
-                          style={styles.perMemberInput}
-                          keyboardType="decimal-pad"
-                          placeholder={
-                            splitType === 'percentage'
-                              ? '%'
-                              : splitType === 'shares'
-                              ? 'shares'
-                              : moneySymbol
-                          }
-                          placeholderTextColor={theme.color.inkFaint}
-                          value={perMemberInput[uid] || ''}
-                          onChangeText={t =>
-                            setPerMemberInput(prev => ({
-                              ...prev,
-                              [uid]: clampPerMemberValue(
-                                uid,
-                                t,
-                                splitType,
-                                splitCap,
-                                nonPayerUids,
-                                perMemberInput,
-                              ),
-                            }))
-                          }
-                        />
-                        {converted != null && (
-                          <Text style={styles.convertedText}>
-                            = {formatMoney(converted, groupCurrency)}
-                          </Text>
-                        )}
-                      </View>
-                    </View>
-                  );
-                })}
-                {usesOwedToPayerFraming && (
-                  <View style={styles.perMemberRow}>
-                    <Text style={styles.perMemberName}>
-                      {paidBy === currentUid ? 'You' : payerName} (paid) — own
-                      part
-                    </Text>
-                    <View style={styles.perMemberRight}>
-                      <Text
-                        style={[
-                          styles.convertedText,
-                          derivedPayerValue < -0.004 && {
-                            color: theme.color.rose,
-                          },
-                        ]}>
-                        {splitType === 'percentage'
-                          ? `${derivedPayerValue}%`
-                          : formatMoney(derivedPayerValue, groupCurrency)}
-                      </Text>
-                    </View>
-                  </View>
-                )}
-                {amountValue > 0 && splitType !== 'shares' && (
-                  <Text
-                    style={[
-                      styles.statusText,
-                      liveCheck.valid ? styles.statusOk : styles.statusPending,
-                    ]}>
-                    {liveCheck.valid
-                      ? '✓ Fully assigned'
-                      : (liveCheck as any).error}
-                  </Text>
-                )}
-              </View>
-            )}
-
-            {owesLines.length > 0 && (
-              <View style={styles.owesBlock}>
-                {owesLines.map((line, i) => (
-                  <Text key={i} style={styles.owesText}>
-                    → {line}
-                  </Text>
+              <Text style={styles.sectionLabel}>Category</Text>
+              <View style={styles.rowWrap}>
+                {EXPENSE_CATEGORIES.map(c => (
+                  <Chip
+                    key={c.key}
+                    label={`${c.icon} ${c.label}`}
+                    active={category === c.key}
+                    onPress={() => setCategory(c.key)}
+                  />
                 ))}
               </View>
-            )}
-            {splitPreview && owesLines.length === 0 && (
-              <View style={styles.owesBlock}>
-                <Text style={styles.owesTextNeutral}>
-                  → No one owes anyone for this — it'll be recorded as{' '}
-                  {paidBy === currentUid ? 'your own' : 'their own'} personal
-                  spending.
-                </Text>
-              </View>
-            )}
 
-            <View style={styles.actions}>
-              <TouchableOpacity style={styles.cancelBtn} onPress={onClose}>
-                <Text style={styles.cancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.submitBtn, submitting && {opacity: 0.6}]}
-                disabled={submitting}
-                onPress={handleSubmit}>
-                <Text style={styles.submitText}>
-                  {submitting
-                    ? 'Saving…'
-                    : isEditMode
-                    ? 'Save changes'
-                    : 'Add expense'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </KeyboardAwareScrollView>
-        </GlassCard>
-      </KeyboardAvoidingView>
+              {/* With only one member (a personal list, or a real group
+              everyone else has left), paidBy/participantUids already
+              default to that single uid and every split type produces
+              the same result - full amount, one person - so these
+              pickers have nothing to actually decide. Hiding them isn't
+              just tidiness: showing a "Paid by" chip row with one chip
+              you can't meaningfully change reads as broken UI, and users
+              specifically asked for personal lists to not look like a
+              group-splitting form at all. */}
+              {members.length > 1 && (
+                <>
+                  <Text style={styles.sectionLabel}>Paid by</Text>
+                  <View style={styles.rowWrap}>
+                    {members.map(m => (
+                      <Chip
+                        key={m.uid}
+                        label={m.uid === currentUid ? 'You' : m.displayName}
+                        active={paidBy === m.uid}
+                        onPress={() => setPaidBy(m.uid)}
+                      />
+                    ))}
+                  </View>
+
+                  <Text style={styles.sectionLabel}>Split</Text>
+                  <View style={styles.rowWrap}>
+                    {SPLIT_TYPES.map(s => (
+                      <Chip
+                        key={s.key}
+                        label={s.label}
+                        active={splitType === s.key}
+                        onPress={() => setSplitType(s.key)}
+                      />
+                    ))}
+                  </View>
+
+                  <Text style={styles.sectionLabel}>Between</Text>
+
+                  <View style={styles.rowWrap}>
+                    {members.map(m => (
+                      <Chip
+                        key={m.uid}
+                        label={m.uid === currentUid ? 'You' : m.displayName}
+                        active={participantUids.includes(m.uid)}
+                        onPress={() => toggleParticipant(m.uid)}
+                      />
+                    ))}
+                  </View>
+                </>
+              )}
+
+              {splitType !== 'equal' && (
+                <View style={styles.perMemberBlock}>
+                  <Text style={styles.hintText}>
+                    {splitType === 'exact' &&
+                      (usesOwedToPayerFraming
+                        ? `Enter how much of this expense was for each person. ${
+                            paidBy === currentUid ? 'Your' : `${payerName}'s`
+                          } own part fills in automatically below.`
+                        : 'Enter how much of this expense was for each person.')}
+                    {splitType === 'percentage' &&
+                      (usesOwedToPayerFraming
+                        ? `Enter what % of this expense was for each person. ${
+                            paidBy === currentUid ? 'Your' : `${payerName}'s`
+                          } own part fills in automatically below.`
+                        : 'Enter what % of this expense was for each person.')}
+                    {splitType === 'shares' &&
+                      `Give each person a weight — bigger number, bigger share of the cost. The ${moneySymbol} amount that comes out of it is shown below.`}
+                  </Text>
+                  {nonPayerUids.map(uid => {
+                    const member = members.find(m => m.uid === uid);
+                    const converted =
+                      splitType !== 'exact' && splitPreview
+                        ? splitPreview[uid]
+                        : undefined;
+                    return (
+                      <View key={uid} style={styles.perMemberRow}>
+                        <Text style={styles.perMemberName}>
+                          {uid === currentUid ? 'You' : member?.displayName}
+                        </Text>
+                        <View style={styles.perMemberRight}>
+                          <TextInput
+                            style={styles.perMemberInput}
+                            keyboardType="decimal-pad"
+                            placeholder={
+                              splitType === 'percentage'
+                                ? '%'
+                                : splitType === 'shares'
+                                ? 'shares'
+                                : moneySymbol
+                            }
+                            placeholderTextColor={theme.color.inkFaint}
+                            value={perMemberInput[uid] || ''}
+                            onChangeText={t =>
+                              setPerMemberInput(prev => ({
+                                ...prev,
+                                [uid]: clampPerMemberValue(
+                                  uid,
+                                  t,
+                                  splitType,
+                                  splitCap,
+                                  nonPayerUids,
+                                  perMemberInput,
+                                ),
+                              }))
+                            }
+                          />
+                          {converted != null && (
+                            <Text style={styles.convertedText}>
+                              = {formatMoney(converted, groupCurrency)}
+                            </Text>
+                          )}
+                        </View>
+                      </View>
+                    );
+                  })}
+                  {usesOwedToPayerFraming && (
+                    <View style={styles.perMemberRow}>
+                      <Text style={styles.perMemberName}>
+                        {paidBy === currentUid ? 'You' : payerName} (paid) — own
+                        part
+                      </Text>
+                      <View style={styles.perMemberRight}>
+                        <Text
+                          style={[
+                            styles.convertedText,
+                            derivedPayerValue < -0.004 && {
+                              color: theme.color.rose,
+                            },
+                          ]}>
+                          {splitType === 'percentage'
+                            ? `${derivedPayerValue}%`
+                            : formatMoney(derivedPayerValue, groupCurrency)}
+                        </Text>
+                      </View>
+                    </View>
+                  )}
+                  {amountValue > 0 && splitType !== 'shares' && (
+                    <Text
+                      style={[
+                        styles.statusText,
+                        liveCheck.valid
+                          ? styles.statusOk
+                          : styles.statusPending,
+                      ]}>
+                      {liveCheck.valid
+                        ? '✓ Fully assigned'
+                        : (liveCheck as any).error}
+                    </Text>
+                  )}
+                </View>
+              )}
+
+              {owesLines.length > 0 && (
+                <View style={styles.owesBlock}>
+                  {owesLines.map((line, i) => (
+                    <Text key={i} style={styles.owesText}>
+                      → {line}
+                    </Text>
+                  ))}
+                </View>
+              )}
+              {splitPreview && owesLines.length === 0 && (
+                <View style={styles.owesBlock}>
+                  <Text style={styles.owesTextNeutral}>
+                    → No one owes anyone for this — it'll be recorded as{' '}
+                    {paidBy === currentUid ? 'your own' : 'their own'} personal
+                    spending.
+                  </Text>
+                </View>
+              )}
+
+              <View style={styles.actions}>
+                <SwipeToConfirm
+                  style={styles.swipeConfirm}
+                  label={
+                    isEditMode
+                      ? 'Slide to save changes'
+                      : 'Slide to add expense'
+                  }
+                  pendingLabel={isEditMode ? 'Saving…' : 'Adding…'}
+                  successLabel={isEditMode ? 'Saved!' : 'Added!'}
+                  disabled={submitting}
+                  onConfirm={handleSubmit}
+                />
+              </View>
+            </KeyboardAwareScrollView>
+          </GlassCard>
+        </KeyboardAvoidingView>
+      </GestureHandlerRootView>
     </Modal>
   );
 };
 
 const styles = StyleSheet.create({
+  gestureRoot: {flex: 1},
   backdrop: {
     flex: 1,
     backgroundColor: 'rgba(6,5,12,0.72)',
@@ -689,7 +736,8 @@ const styles = StyleSheet.create({
   },
   title: {
     color: theme.color.ink,
-    fontSize: 19,
+    fontFamily: DisplayFont.bold,
+    fontSize: moderateScale(19),
     fontWeight: '700',
     marginBottom: 16,
   },
@@ -702,11 +750,13 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     color: theme.color.ink,
     marginBottom: 12,
-    fontSize: 15,
+    fontFamily: BodyFont.regular,
+    fontSize: moderateScale(15),
   },
   sectionLabel: {
     color: theme.color.inkSoft,
-    fontSize: 12,
+    fontFamily: BodyFont.bold,
+    fontSize: moderateScale(12),
     fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
@@ -716,8 +766,9 @@ const styles = StyleSheet.create({
   rowWrap: {flexDirection: 'row', flexWrap: 'wrap'},
   hintText: {
     color: theme.color.inkFaint,
-    fontSize: 12,
-    lineHeight: 16,
+    fontFamily: BodyFont.regular,
+    fontSize: moderateScale(12),
+    lineHeight: moderateScale(16),
     marginBottom: 8,
     marginTop: -2,
   },
@@ -728,7 +779,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: 6,
   },
-  perMemberName: {color: theme.color.ink, fontSize: 14},
+  perMemberName: {
+    color: theme.color.ink,
+    fontFamily: BodyFont.regular,
+    fontSize: moderateScale(14),
+  },
   perMemberRight: {alignItems: 'flex-end'},
   perMemberInput: {
     width: 90,
@@ -741,24 +796,58 @@ const styles = StyleSheet.create({
     color: theme.color.ink,
     textAlign: 'right',
   },
-  convertedText: {color: theme.color.teal, fontSize: 11.5, marginTop: 3},
-  errorText: {color: theme.color.rose, fontSize: 12.5, marginTop: 6},
-  statusText: {fontSize: 12.5, marginTop: 6, fontWeight: '600'},
+  convertedText: {
+    color: theme.color.teal,
+    fontFamily: BodyFont.regular,
+    fontSize: moderateScale(11.5),
+    marginTop: 3,
+  },
+  errorText: {
+    color: theme.color.rose,
+    fontFamily: BodyFont.regular,
+    fontSize: moderateScale(12.5),
+    marginTop: 6,
+  },
+  statusText: {
+    fontFamily: BodyFont.semibold,
+    fontSize: moderateScale(12.5),
+    marginTop: 6,
+    fontWeight: '600',
+  },
   statusOk: {color: theme.color.green},
   statusPending: {color: theme.color.amber},
   owesBlock: {marginTop: 4, marginBottom: 4, gap: 3},
-  owesText: {color: theme.color.rose, fontSize: 13, fontWeight: '600'},
-  owesTextNeutral: {color: theme.color.green, fontSize: 13, fontWeight: '600'},
-  actions: {flexDirection: 'row', gap: 10, marginTop: 20, marginBottom: 8},
-  cancelBtn: {
-    flex: 1,
-    paddingVertical: 13,
-    borderRadius: theme.radius.md,
+  owesText: {
+    color: theme.color.rose,
+    fontFamily: BodyFont.semibold,
+    fontSize: moderateScale(13),
+    fontWeight: '600',
+  },
+  owesTextNeutral: {
+    color: theme.color.green,
+    fontFamily: BodyFont.semibold,
+    fontSize: moderateScale(13),
+    fontWeight: '600',
+  },
+  actions: {marginTop: 20, marginBottom: 8},
+  // Floating above the sheet, outside the card, centered - replaces the
+  // old in-row Cancel button now that the slider owns the full width.
+  closeBtn: {
+    alignSelf: 'center',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: theme.color.surfaceStrong,
     borderWidth: 1,
     borderColor: theme.color.border,
     alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
   },
-  cancelText: {color: theme.color.inkSoft, fontWeight: '600'},
+  swipeConfirm: {
+    width: '90%',
+    alignSelf: 'center',
+  },
   submitBtn: {
     flex: 2,
     paddingVertical: 13,
@@ -766,7 +855,11 @@ const styles = StyleSheet.create({
     backgroundColor: theme.color.blue,
     alignItems: 'center',
   },
-  submitText: {color: theme.color.onAccent, fontWeight: '700'},
+  submitText: {
+    color: theme.color.onAccent,
+    fontFamily: BodyFont.bold,
+    fontWeight: '700',
+  },
 });
 
 export default AddExpenseModal;

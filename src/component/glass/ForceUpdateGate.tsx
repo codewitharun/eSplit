@@ -18,6 +18,7 @@ import {
 } from 'react-native';
 import GlassCard from './GlassCard';
 import theme from '../../utils/theme';
+import {BodyFont, DisplayFont, moderateScale} from '../../utils/fonts';
 import AppAlert from '../../services/appAlert';
 import {checkAppConfig, openPlayStore} from '../../services/appConfig';
 
@@ -103,13 +104,15 @@ const styles = StyleSheet.create({
   },
   card: {width: '100%', maxWidth: 360},
   title: {
-    fontSize: 19,
+    fontFamily: DisplayFont.bold,
+    fontSize: moderateScale(19),
     fontWeight: '700',
     color: theme.color.ink,
     marginBottom: 10,
   },
   message: {
-    fontSize: 14,
+    fontFamily: BodyFont.regular,
+    fontSize: moderateScale(14),
     color: theme.color.inkSoft,
     lineHeight: 20,
     marginBottom: 22,
@@ -120,7 +123,12 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.md,
     alignItems: 'center',
   },
-  buttonText: {color: theme.color.onAccent, fontWeight: '700', fontSize: 15},
+  buttonText: {
+    fontFamily: BodyFont.bold,
+    color: theme.color.onAccent,
+    fontWeight: '700',
+    fontSize: moderateScale(15),
+  },
 });
 
 export default ForceUpdateGate;

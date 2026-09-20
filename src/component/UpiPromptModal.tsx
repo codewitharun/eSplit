@@ -31,6 +31,7 @@ import GlassCard from './glass/GlassCard';
 import {isValidUpiVpa} from '../services/ledger/upi';
 import {haptics} from '../utils/haptics';
 import theme from '../utils/theme';
+import {BodyFont, DisplayFont, moderateScale} from '../utils/fonts';
 
 interface UpiPromptModalProps {
   visible: boolean;
@@ -161,18 +162,20 @@ const styles = StyleSheet.create({
   },
   modalContent: {width: '85%'},
   title: {
-    fontSize: 18,
+    fontFamily: DisplayFont.bold,
+    fontSize: moderateScale(18),
     marginBottom: 8,
     fontWeight: '700',
     textAlign: 'center',
     color: theme.color.ink,
   },
   subtitle: {
-    fontSize: 13,
+    fontFamily: BodyFont.regular,
+    fontSize: moderateScale(13),
     marginBottom: 16,
     textAlign: 'center',
     color: theme.color.inkSoft,
-    lineHeight: 18,
+    lineHeight: moderateScale(18),
   },
   input: {
     backgroundColor: 'rgba(255,255,255,0.06)',
@@ -200,11 +203,13 @@ const styles = StyleSheet.create({
   skipText: {
     color: theme.color.inkSoft,
     textAlign: 'center',
+    fontFamily: BodyFont.semibold,
     fontWeight: '600',
   },
   saveText: {
     color: theme.color.onAccent,
     textAlign: 'center',
+    fontFamily: BodyFont.bold,
     fontWeight: '700',
   },
   buttonDisabled: {

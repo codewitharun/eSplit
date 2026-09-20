@@ -1,8 +1,25 @@
 import React, {useEffect, useRef, useState} from 'react';
-import {Platform, StyleSheet} from 'react-native';
+import {Platform, StyleSheet, Text, TextInput} from 'react-native';
 import {GestureHandlerRootView} from 'react-native-gesture-handler';
 import {SafeAreaProvider} from 'react-native-safe-area-context';
 import {navigationRef} from './src/services/NavigationService';
+import {BodyFont} from './src/utils/fonts';
+
+// Global font default: any <Text>/<TextInput> that doesn't explicitly
+// spread a Typography.* preset (see src/utils/fonts.tsx) still gets the
+// app's real body typeface instead of silently falling back to the
+// system font. Typography.* presets still win wherever they're used -
+// this only fills the gaps.
+Text.defaultProps = Text.defaultProps || {};
+Text.defaultProps.style = [
+  {fontFamily: BodyFont.regular},
+  Text.defaultProps.style,
+];
+TextInput.defaultProps = TextInput.defaultProps || {};
+TextInput.defaultProps.style = [
+  {fontFamily: BodyFont.regular},
+  TextInput.defaultProps.style,
+];
 
 // Own app version, read straight from package.json - same source
 // src/services/appConfig.ts already uses for the force-update check,
@@ -21,12 +38,17 @@ import AppAlertHost from './src/component/glass/AppAlertHost';
 import ForceUpdateGate from './src/component/glass/ForceUpdateGate';
 import ToastHost from './src/component/glass/ToastHost';
 import MainTabs from './src/navigator/BottomTabNavigator';
+import CreateJoinGroup from './src/screens/AfterLogin/CreateJoinGroup';
 import GroupManagement from './src/screens/AfterLogin/GroupCheck';
 import LogoutScreen from './src/screens/AfterLogin/Logout';
+import NotificationsScreen from './src/screens/AfterLogin/NotificationsScreen';
+import ProfileScreen from './src/screens/AfterLogin/Profile';
 import LoginScreen from './src/screens/BeforeLogin/Login';
+import OnboardingScreen from './src/screens/BeforeLogin/Onboarding';
 import Notifications from './src/screens/Notifications';
 import SplashScreen from './src/screens/Splash';
 import {identifyUser, trackScreenView} from './src/services/crashReporting';
+import {handleNotificationTap} from './src/services/notificationNavigation';
 import Toast from './src/services/toast';
 import {useAuthStore} from './src/store/useAuthStore';
 
@@ -40,6 +62,13 @@ const App = () => {
   // logs a screen_view when the route actually changed, not on every
   // navigation state update (which fires more often than screens change).
   const routeNameRef = useRef();
+  // Set once by getInitialNotification() below if the app was launched
+  // (cold start, previously killed) by tapping a notification. It can't
+  // navigate the instant it's known - NavigationContainer isn't mounted
+  // yet at that point (still on SplashScreen, possibly still signing the
+  // user back in) - so it's read and cleared inside onReady() instead,
+  // once a navigator actually exists to receive the navigate() call.
+  const pendingNotificationDataRef = useRef(null);
 
   // Deep links (Group-Check/:groupId) are handled entirely by React
   // Navigation's own `linking` mechanism below - it parses the URL into
@@ -73,27 +102,95 @@ const App = () => {
     messaging().registerDeviceForRemoteMessages();
     Notifications.createChannel();
     Notifications.createExportChannel();
-    messaging().onMessage(async remoteMessage => {
-      console.log('Received notification:', remoteMessage);
-      Toast.show({
-        type: 'success',
-        text1: remoteMessage.notification.title,
-        text2: remoteMessage.notification.body,
-      });
-    });
 
-    notifee.onForegroundEvent(async ({type, detail}) => {
-      try {
-        if (type === EventType.PRESS && detail.pressAction.id === 'open-pdf') {
-          const filePath = detail.notification?.data?.filePath;
-          if (filePath) {
-            await FileViewer.open(filePath, {showOpenWithDialog: true});
-          }
+    // Each of these three registers a listener that lives for as long as
+    // the app does - fine for a real launch (this effect only ever runs
+    // once), but during development, Fast Refresh can re-run this effect
+    // on a hot reload without the app actually restarting. Without
+    // unsubscribing, that stacks a second, third, ... copy of the same
+    // listener on top of the previous ones, so a single incoming push
+    // gets logged/handled multiple times (harmless, but noisy and
+    // confusing to debug against). Capturing and calling their
+    // unsubscribe functions on cleanup keeps it to exactly one listener
+    // of each kind, in dev or in production.
+    const unsubscribeOnMessage = messaging().onMessage(async remoteMessage => {
+      console.log('Received notification:', remoteMessage);
+      if (remoteMessage.data && remoteMessage.data.type) {
+        // A notification carrying a `type` (currently just the
+        // join-approval flow) gets a real, tappable system notification
+        // instead of a Toast - a Toast disappears on its own and can't
+        // be tapped, so there'd be no way to act on "someone wants to
+        // join" without hunting for the group manually. Every other
+        // notification (every existing expense-added / plain join
+        // notification, none of which send `data`) keeps the exact
+        // Toast-only behavior this app already had.
+        try {
+          await Notifications.displayDataNotification({
+            title: remoteMessage.notification?.title,
+            body: remoteMessage.notification?.body,
+            data: remoteMessage.data,
+          });
+        } catch (error) {
+          console.log('🚀 ~ displayDataNotification ~ error:', error);
         }
-      } catch (error) {
-        console.log('🚀 ~ notifee.onForegroundEvent ~ error:', error);
+      } else {
+        Toast.show({
+          type: 'success',
+          text1: remoteMessage.notification.title,
+          text2: remoteMessage.notification.body,
+        });
       }
     });
+
+    // Backgrounded: the app is already running (just not in front), and
+    // the OS displayed the notification itself from the push's own
+    // `notification` payload - this only needs to catch the tap once the
+    // user brings the app back to the foreground because of it.
+    const unsubscribeOpenedApp = messaging().onNotificationOpenedApp(
+      remoteMessage => {
+        handleNotificationTap(remoteMessage?.data);
+      },
+    );
+
+    // Killed: the app wasn't running at all, and this exact tap is what
+    // launched it - there's no live listener to have caught it, so it has
+    // to be recovered once on this cold start instead. Stashed in a ref
+    // rather than acted on immediately: see pendingNotificationDataRef's
+    // comment for why this can't navigate yet. A one-shot promise, not a
+    // subscription, so there's nothing here to unsubscribe.
+    messaging()
+      .getInitialNotification()
+      .then(remoteMessage => {
+        if (remoteMessage?.data) {
+          pendingNotificationDataRef.current = remoteMessage.data;
+        }
+      });
+
+    const unsubscribeForegroundEvent = notifee.onForegroundEvent(
+      async ({type, detail}) => {
+        try {
+          if (type !== EventType.PRESS) {
+            return;
+          }
+          if (detail.pressAction.id === 'open-pdf') {
+            const filePath = detail.notification?.data?.filePath;
+            if (filePath) {
+              await FileViewer.open(filePath, {showOpenWithDialog: true});
+            }
+          } else if (detail.pressAction.id === 'join-notification') {
+            await handleNotificationTap(detail.notification?.data);
+          }
+        } catch (error) {
+          console.log('🚀 ~ notifee.onForegroundEvent ~ error:', error);
+        }
+      },
+    );
+
+    return () => {
+      unsubscribeOnMessage();
+      unsubscribeOpenedApp();
+      unsubscribeForegroundEvent();
+    };
   }, []);
 
   useEffect(() => {
@@ -111,7 +208,27 @@ const App = () => {
       onAuthStateChanged(user);
     });
 
-    return unsubscribe;
+    // Safety net: `loading` only ever flips to false from inside
+    // onAuthStateChanged above, so if that listener is ever late to fire
+    // its first event - observed after a JS-only reload (Fast Refresh /
+    // Metro "r"), as opposed to fully closing and relaunching the app,
+    // which reliably worked - the app is stuck on the splash screen
+    // forever with nothing left to trigger it. The try/finally fix
+    // earlier only guarded against the callback THROWING; it can't help
+    // when the callback simply never runs. This forces past the splash
+    // screen after a few seconds no matter what, defaulting to
+    // signed-out (Login screen) if the real check still hasn't reported
+    // in - safe, since signing in from there re-runs the real auth flow
+    // regardless. It's a no-op on the normal path: setLoading(false) is
+    // already false by the time this fires almost every time.
+    const splashTimeout = setTimeout(() => {
+      setLoading(false);
+    }, 4000);
+
+    return () => {
+      unsubscribe();
+      clearTimeout(splashTimeout);
+    };
   }, []);
 
   const checkPermission = async () => {
@@ -221,15 +338,25 @@ const App = () => {
         console.error('Error in onAuthStateChanged:', error);
       }
     } else {
+      // setLoading(false) used to be the last line INSIDE this try block,
+      // after two awaited AsyncStorage calls - if either of those ever
+      // threw (a transient native-bridge hiccup right after a JS reload
+      // is a common trigger), execution jumped straight to the catch
+      // below and setLoading(false) never ran, leaving `loading` stuck
+      // true forever: the app never gets past the splash screen for a
+      // signed-out user. This is the "not logged in, reload the app, now
+      // it's stuck on splash" bug - moved to `finally` so it always runs,
+      // whether or not the AsyncStorage cleanup above succeeded.
       try {
         console.log('else block runing');
 
         await AsyncStorage.removeItem('userToken');
         await AsyncStorage.removeItem('lastJoinedGroup');
         identifyUser(null);
-        setLoading(false);
       } catch (error) {
         console.error('Error in onAuthStateChanged (logout):', error);
+      } finally {
+        setLoading(false);
       }
     }
   };
@@ -237,13 +364,29 @@ const App = () => {
   const AfterLogin = () => (
     <Stack.Navigator screenOptions={{headerShown: false}}>
       <Stack.Screen name="Group-Check" component={GroupManagement} />
+      <Stack.Screen name="CreateJoinGroup" component={CreateJoinGroup} />
       <Stack.Screen name="Home" component={MainTabs} />
+      {/* Reached by tapping the avatar in the dashboard header
+          (src/component/header/index.tsx) - identity + logout + delete
+          account, scoped to the signed-in person, not any one group. */}
+      <Stack.Screen name="Profile" component={ProfileScreen} />
+      {/* Reached by tapping the bell in the dashboard header, or by
+          tapping a "someone wants to join" push - join requests,
+          announcements and admin-sent personal messages, not group
+          activity (see NotificationsScreen.tsx's own header comment). */}
+      <Stack.Screen name="Notifications" component={NotificationsScreen} />
       <Stack.Screen name="Logout" component={LogoutScreen} />
     </Stack.Navigator>
   );
 
   const BeforeLogin = () => (
     <Stack.Navigator screenOptions={{headerShown: false}}>
+      {/* First screen by default (React Navigation's initial route is
+          whichever Screen is listed first) - Onboarding.tsx itself checks
+          AsyncStorage and immediately replaces itself with Login for
+          anyone who's already been through it, so this only actually
+          shows once per install. */}
+      <Stack.Screen name="Onboarding" component={OnboardingScreen} />
       <Stack.Screen name="Login" component={LoginScreen} />
     </Stack.Navigator>
   );
@@ -266,6 +409,11 @@ const App = () => {
           ref={navigationRef}
           onReady={() => {
             routeNameRef.current = navigationRef.getCurrentRoute()?.name;
+            if (pendingNotificationDataRef.current) {
+              const data = pendingNotificationDataRef.current;
+              pendingNotificationDataRef.current = null;
+              handleNotificationTap(data);
+            }
           }}
           onStateChange={() => {
             const previousRouteName = routeNameRef.current;

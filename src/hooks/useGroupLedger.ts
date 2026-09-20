@@ -14,7 +14,7 @@ import {
 } from '../services/ledger/firestoreLedger';
 import {
   computeNetBalances,
-  simplifyDebts,
+  computePairwiseLedger,
 } from '../services/ledger/debtSimplifier';
 import {
   Expense,
@@ -105,7 +105,16 @@ export function useGroupLedger(groupId: string | null): GroupLedger {
     [memberIds, expenses, settlements],
   );
 
-  const transfers = useMemo(() => simplifyDebts(netBalances), [netBalances]);
+  // "Who owes whom" now shows the direct, pair-by-pair ledger rather than
+  // the old minimum-transaction simplification - users found the latter
+  // confusing (a settle-up payment that didn't trace back to any shared
+  // bill between that specific pair). netBalances above is UNCHANGED and
+  // still drives every "you owe / you're owed" summary number - only the
+  // transfer list shown here changes.
+  const transfers = useMemo(
+    () => computePairwiseLedger(expenses, settlements),
+    [expenses, settlements],
+  );
 
   const totalSpent = useMemo(
     () => expenses.reduce((sum, e) => sum + e.amount, 0),

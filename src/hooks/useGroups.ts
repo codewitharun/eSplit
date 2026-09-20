@@ -10,7 +10,7 @@ import {
   getUserGroups,
   joinGroup as joinGroupApi,
 } from '../services/ledger/firestoreLedger';
-import {Group} from '../services/ledger/types';
+import {Group, GroupType} from '../services/ledger/types';
 
 export function useGroups() {
   const [groups, setGroups] = useState<Group[]>([]);
@@ -35,11 +35,11 @@ export function useGroups() {
   }, [refresh]);
 
   const createGroup = useCallback(
-    async (name: string, currency?: string) => {
+    async (name: string, currency?: string, groupType?: GroupType) => {
       if (!user) {
         throw new Error('You need to be signed in to create a group.');
       }
-      const group = await createGroupApi(user, name, currency);
+      const group = await createGroupApi(user, name, currency, groupType);
       await refresh();
       return group;
     },

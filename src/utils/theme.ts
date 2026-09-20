@@ -37,14 +37,37 @@ export const theme = {
     rose: '#F0819C', // owe
     amber: '#F0B94D', // pending / gold-coin accent
     onAccent: '#08101F', // text color for anything sitting on a bright accent surface
+    // --- Added for the 2026 dashboard/nav/header redesign, additively ---
+    // brighter gradient-stop siblings of the base brand colors, used only
+    // by GradientView fills (hero cards, FAB, swipe-to-confirm) - every
+    // key above this line is unchanged so no existing screen is affected.
+    blueBright: '#12A8DD',
+    tealBright: '#5FEADD',
+    greenBright: '#5CE2A6',
+    shadow: 'rgba(4,8,20,0.45)',
   },
   radius: {
     sm: 10,
     md: 16,
     lg: 22,
+    xl: 28,
     pill: 999,
   },
   space: (n: number) => n * 4,
+  // Named gradient stops for GradientView - kept here so the redesign's
+  // palette lives in one token file instead of scattered hex literals.
+  gradient: {
+    hero: ['#00688D', '#0082B0', '#38D9C9'] as string[],
+    fab: ['#0082B0', '#38D9C9'] as string[],
+    success: ['#2BB673', '#3ECF8E'] as string[],
+    danger: ['#D9536B', '#F0819C'] as string[],
+    // Deep, muted navy-to-teal for the dashboard's large "Your position"
+    // hero card - deliberately darker/less saturated than `hero` above
+    // (used for the small header avatar ring), matching the low-key look
+    // of the approved dashboard mockup instead of a bright poster-like
+    // gradient.
+    heroDark: ['#0A1B2C', '#123A46', '#1B4C4A'] as string[],
+  },
 };
 
 export type Theme = typeof theme;

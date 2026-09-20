@@ -10,6 +10,7 @@ export type RootStackParamList = {
   QRScanner: undefined;
   Paynow: undefined;
   Profile: undefined;
+  GroupSettings: undefined;
   Banklist: undefined;
   SignUp: {
     credentials?: string | never;
