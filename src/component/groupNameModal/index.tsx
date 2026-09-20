@@ -10,7 +10,6 @@
 
 import React, {useMemo, useState} from 'react';
 import {
-  ActivityIndicator,
   FlatList,
   KeyboardAvoidingView,
   Modal,
@@ -22,11 +21,14 @@ import {
   TouchableWithoutFeedback,
   View,
 } from 'react-native';
-import Toast from '../../services/toast';
-import GlassCard from '../glass/GlassCard';
-import {isUpiCurrency} from '../../services/ledger/currency';
+import {GestureHandlerRootView} from 'react-native-gesture-handler';
 import {COUNTRIES, CountryOption} from '../../data/countries';
+import {isUpiCurrency} from '../../services/ledger/currency';
+import Toast from '../../services/toast';
 import theme from '../../utils/theme';
+import {BodyFont, DisplayFont, moderateScale} from '../../utils/fonts';
+import GlassCard from '../glass/GlassCard';
+import SwipeToConfirm from '../glass/SwipeToConfirm';
 
 interface GroupNameModalProps {
   visible: boolean;
@@ -62,14 +64,14 @@ const GroupNameModal: React.FC<GroupNameModalProps> = ({
     );
   }, [search]);
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     // Guard against a second tap landing while the first Create is still
     // in flight (Firestore write) - previously nothing here disabled the
     // button or showed feedback inside the modal itself, so a user could
     // fire off a duplicate createGroup() before the modal had a chance to
     // close.
     if (loading) {
-      return;
+      throw new Error('already-loading');
     }
     const trimmed = groupName.trim();
     if (trimmed.length < 3) {
@@ -78,7 +80,7 @@ const GroupNameModal: React.FC<GroupNameModalProps> = ({
         text1: 'Group name too short',
         text2: 'Please enter at least 3 characters.',
       });
-      return;
+      throw new Error('name-too-short');
     }
     onCreate(trimmed, country.currency);
     setGroupName('');
@@ -104,65 +106,65 @@ const GroupNameModal: React.FC<GroupNameModalProps> = ({
       animationType="slide"
       transparent
       onRequestClose={loading ? undefined : onClose}>
-      <KeyboardAvoidingView
-        style={styles.modalContainer}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 0}>
-        <TouchableWithoutFeedback onPress={loading ? undefined : onClose}>
-          <View style={StyleSheet.absoluteFill} />
-        </TouchableWithoutFeedback>
-        <GlassCard opaque style={styles.modalContent}>
-          <Text style={styles.title}>Name your group</Text>
-          <TextInput
-            placeholder="e.g. Trip to Goa"
-            style={styles.input}
-            value={groupName}
-            onChangeText={setGroupName}
-            placeholderTextColor={theme.color.inkFaint}
-            autoFocus
-            editable={!loading}
-          />
-          <Text style={styles.sectionLabel}>Country / Currency</Text>
-          <TouchableOpacity
-            style={styles.countrySelector}
-            disabled={loading}
-            onPress={openPicker}>
-            <Text style={styles.countrySelectorFlag}>{country.flag}</Text>
-            <View style={styles.countrySelectorTextWrap}>
-              <Text style={styles.countrySelectorName} numberOfLines={1}>
-                {country.name}
-              </Text>
-              <Text style={styles.countrySelectorSub}>
-                {country.currency} · {country.symbol}
-              </Text>
+      <GestureHandlerRootView style={styles.gestureRoot}>
+        <KeyboardAvoidingView
+          style={styles.modalContainer}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 0}>
+          <TouchableWithoutFeedback onPress={loading ? undefined : onClose}>
+            <View style={StyleSheet.absoluteFill} />
+          </TouchableWithoutFeedback>
+          <GlassCard opaque style={styles.modalContent}>
+            <Text style={styles.title}>Name your group</Text>
+            <TextInput
+              placeholder="e.g. Trip to Goa"
+              style={styles.input}
+              value={groupName}
+              onChangeText={setGroupName}
+              placeholderTextColor={theme.color.inkFaint}
+              autoFocus
+              editable={!loading}
+            />
+            <Text style={styles.sectionLabel}>Country / Currency</Text>
+            <TouchableOpacity
+              style={styles.countrySelector}
+              disabled={loading}
+              onPress={openPicker}>
+              <Text style={styles.countrySelectorFlag}>{country.flag}</Text>
+              <View style={styles.countrySelectorTextWrap}>
+                <Text style={styles.countrySelectorName} numberOfLines={1}>
+                  {country.name}
+                </Text>
+                <Text style={styles.countrySelectorSub}>
+                  {country.currency} · {country.symbol}
+                </Text>
+              </View>
+              <Text style={styles.countrySelectorChevron}>▾</Text>
+            </TouchableOpacity>
+            <Text style={styles.currencyHint}>
+              {isUpiCurrency(country.currency)
+                ? 'Settle up opens GPay/PhonePe/Paytm directly with the amount filled in.'
+                : 'UPI isn\'t available outside India, so settle up will be a manual "mark as paid" instead.'}
+            </Text>
+            <View style={styles.buttonContainer}>
+              <TouchableOpacity
+                onPress={onClose}
+                disabled={loading}
+                style={[styles.cancelButton, loading && styles.buttonDisabled]}>
+                <Text style={styles.cancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <SwipeToConfirm
+                style={styles.swipeCreate}
+                label="Slide to create"
+                pendingLabel="Creating…"
+                successLabel="Created!"
+                disabled={loading}
+                onConfirm={handleCreate}
+              />
             </View>
-            <Text style={styles.countrySelectorChevron}>▾</Text>
-          </TouchableOpacity>
-          <Text style={styles.currencyHint}>
-            {isUpiCurrency(country.currency)
-              ? 'Settle up opens GPay/PhonePe/Paytm directly with the amount filled in.'
-              : 'UPI isn\'t available outside India, so settle up will be a manual "mark as paid" instead.'}
-          </Text>
-          <View style={styles.buttonContainer}>
-            <TouchableOpacity
-              onPress={onClose}
-              disabled={loading}
-              style={[styles.cancelButton, loading && styles.buttonDisabled]}>
-              <Text style={styles.cancelText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={handleCreate}
-              disabled={loading}
-              style={[styles.createButton, loading && styles.buttonDisabled]}>
-              {loading ? (
-                <ActivityIndicator color={theme.color.onAccent} size="small" />
-              ) : (
-                <Text style={styles.createText}>Create</Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        </GlassCard>
-      </KeyboardAvoidingView>
+          </GlassCard>
+        </KeyboardAvoidingView>
+      </GestureHandlerRootView>
 
       <Modal
         visible={pickerVisible}
@@ -200,9 +202,7 @@ const GroupNameModal: React.FC<GroupNameModalProps> = ({
                   <Text style={styles.pickerRowName} numberOfLines={1}>
                     {item.name}
                   </Text>
-                  <Text style={styles.pickerRowCurrency}>
-                    {item.currency}
-                  </Text>
+                  <Text style={styles.pickerRowCurrency}>{item.currency}</Text>
                 </TouchableOpacity>
               )}
             />
@@ -214,6 +214,7 @@ const GroupNameModal: React.FC<GroupNameModalProps> = ({
 };
 
 const styles = StyleSheet.create({
+  gestureRoot: {flex: 1},
   modalContainer: {
     flex: 1,
     backgroundColor: 'rgba(6,5,12,0.72)',
@@ -222,7 +223,8 @@ const styles = StyleSheet.create({
   },
   modalContent: {width: '85%'},
   title: {
-    fontSize: 18,
+    fontFamily: DisplayFont.bold,
+    fontSize: moderateScale(18),
     marginBottom: 14,
     fontWeight: '700',
     textAlign: 'center',
@@ -238,7 +240,8 @@ const styles = StyleSheet.create({
     color: theme.color.ink,
   },
   sectionLabel: {
-    fontSize: 12,
+    fontFamily: BodyFont.bold,
+    fontSize: moderateScale(12),
     fontWeight: '700',
     letterSpacing: 0.4,
     textTransform: 'uppercase',
@@ -255,29 +258,33 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   countrySelectorFlag: {
-    fontSize: 22,
+    fontSize: moderateScale(22),
     marginRight: 10,
   },
   countrySelectorTextWrap: {
     flex: 1,
   },
   countrySelectorName: {
-    fontSize: 14,
+    fontFamily: BodyFont.semibold,
+    fontSize: moderateScale(14),
     fontWeight: '600',
     color: theme.color.ink,
   },
   countrySelectorSub: {
-    fontSize: 12,
+    fontFamily: BodyFont.regular,
+    fontSize: moderateScale(12),
     color: theme.color.inkFaint,
     marginTop: 1,
   },
   countrySelectorChevron: {
-    fontSize: 14,
+    fontFamily: BodyFont.regular,
+    fontSize: moderateScale(14),
     color: theme.color.inkFaint,
     marginLeft: 8,
   },
   currencyHint: {
-    fontSize: 12,
+    fontFamily: BodyFont.regular,
+    fontSize: moderateScale(12),
     color: theme.color.inkFaint,
     marginTop: 8,
     marginBottom: 18,
@@ -290,6 +297,9 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: theme.radius.md,
   },
+  swipeCreate: {
+    flex: 1,
+  },
   createButton: {
     flex: 1,
     backgroundColor: theme.color.blue,
@@ -299,11 +309,13 @@ const styles = StyleSheet.create({
   cancelText: {
     color: theme.color.inkSoft,
     textAlign: 'center',
+    fontFamily: BodyFont.semibold,
     fontWeight: '600',
   },
   createText: {
     color: theme.color.onAccent,
     textAlign: 'center',
+    fontFamily: BodyFont.bold,
     fontWeight: '700',
   },
   buttonDisabled: {
@@ -344,16 +356,18 @@ const styles = StyleSheet.create({
     borderBottomColor: theme.color.border,
   },
   pickerRowFlag: {
-    fontSize: 20,
+    fontSize: moderateScale(20),
     marginRight: 10,
   },
   pickerRowName: {
     flex: 1,
-    fontSize: 14,
+    fontFamily: BodyFont.regular,
+    fontSize: moderateScale(14),
     color: theme.color.ink,
   },
   pickerRowCurrency: {
-    fontSize: 12,
+    fontFamily: BodyFont.bold,
+    fontSize: moderateScale(12),
     fontWeight: '700',
     color: theme.color.inkFaint,
     marginLeft: 8,

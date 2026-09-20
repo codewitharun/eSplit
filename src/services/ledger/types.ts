@@ -40,7 +40,32 @@ export interface GroupMember {
   role: 'admin' | 'member';
   active: boolean;
   leftAt?: string; // ISO timestamp, set when active is flipped to false
+  // OPTIONAL and only ever set going forward, exactly like Group.type
+  // below: every member doc created before this feature existed simply
+  // has no `isGuest` at all, and every read site treats a missing value
+  // as "not a guest" (a real, joined member) - purely additive, no
+  // existing member doc is touched. A guest is added straight to this
+  // `members` subcollection (see addGuestMember()) with a synthetic
+  // `guest_<id>` uid instead of a Firebase Auth uid - there is no
+  // users/{uid} doc for them, and they are deliberately never added to
+  // the parent group's `memberIds` array (that array is what ties a
+  // REAL account to a group via users/{uid}.groupIds; a guest has no
+  // account to tie). They still fully participate in the split/ledger
+  // math below, which only ever treats uids as opaque strings.
+  isGuest?: boolean;
 }
+
+// 'group' (the default) is a normal shared group; 'personal' is a
+// single-member list created via the Personal toggle at creation time -
+// same schema, same expense/split engine, just always paidBy===the one
+// member and shares===the whole amount to them (see AddExpenseModal's
+// members.length <= 1 handling), so it never needs its own data model.
+// OPTIONAL and only ever set going forward: every group created before
+// this field existed simply has no `type` at all, and every read site
+// treats a missing/undefined type as 'group' - so this is purely
+// additive and doesn't touch, migrate, or require re-reading a single
+// existing group document.
+export type GroupType = 'group' | 'personal';
 
 export interface Group {
   id: string;
@@ -51,6 +76,29 @@ export interface Group {
   isLocked: boolean;
   joinCode: string; // short human code, resolved via a query - not the doc id
   memberIds: string[];
+  type?: GroupType; // undefined on any group created before this field existed - treat as 'group'
+}
+
+// A pending/resolved request to join a group, stored at
+// groups/{groupId}/joinRequests/{uid} - one doc per requester, keyed by
+// their uid so a repeat request (e.g. re-scanning the same QR code) just
+// overwrites their own doc rather than piling up duplicates. Introduced
+// so that finding a join code or QR image (printed, screenshotted,
+// forwarded) is no longer enough to walk straight into a group's expense
+// history - every new member now needs an admin to say yes, regardless of
+// whether they arrived via a join code, a deep link, or a QR scan.
+// Someone who is ALREADY a member (re-opening an old invite link, say)
+// never creates one of these - see joinGroup() in firestoreLedger.ts.
+export type JoinRequestStatus = 'pending' | 'approved' | 'declined';
+
+export interface JoinRequest {
+  uid: string;
+  displayName: string;
+  photoUrl?: string;
+  status: JoinRequestStatus;
+  requestedAt: string; // ISO timestamp
+  respondedAt?: string; // ISO timestamp, set when approved/declined
+  method?: 'code' | 'qr' | 'link'; // how they found the group, for admin context
 }
 
 export interface SplitParams {

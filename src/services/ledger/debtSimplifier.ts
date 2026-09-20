@@ -1,14 +1,26 @@
 // src/services/ledger/debtSimplifier.ts
 //
 // Turns a pile of expenses + settlements into (a) each member's net balance
-// and (b) the *fewest* payments needed to bring every balance to zero.
+// and (b) settle-up transfers.
 //
-// This is the piece the current app has none of: today, three people who
-// each fronted one shared cost end up with three separate mental IOUs.
-// Netting + a greedy largest-creditor/largest-debtor match collapses that
-// to the minimum number of transfers.
+// Two different transfer views live here:
+//   - simplifyDebts(): the *fewest* payments needed to bring every net
+//     balance to zero (netting + greedy largest-creditor/largest-debtor
+//     match). No longer used by Balances.tsx - users found it confusing
+//     ("why do I pay X when I only ever shared a bill with Y?") when a
+//     minimum-transaction payment doesn't trace back to any specific
+//     expense between that pair. Kept (with its existing test) as a
+//     still-correct algorithm, same as this file keeps computeNetBalances
+//     below regardless.
+//   - computePairwiseLedger(): direct, pair-by-pair "who owes who for
+//     what" - see its own comment below. This is what Balances.tsx's
+//     "Who owes whom" section actually shows now. Ported from (and MUST
+//     be kept in lockstep with) the backend's independent verification
+//     copy at esplit-backend/lib/ledgerMath.js, which mirrors this file
+//     for the admin panel's Group Inspector - if this algorithm ever
+//     changes, mirror the change there too.
 
-import {EPSILON, SimplifiedTransfer} from './types';
+import {EPSILON, Expense, Settlement, SimplifiedTransfer} from './types';
 
 export interface LedgerExpenseInput {
   paidBy: string;
@@ -119,4 +131,87 @@ export function simplifyDebts(
   }
 
   return transfers;
+}
+
+// Direct, pair-by-pair ledger - what users asked for instead of
+// simplifyDebts()'s minimum-transaction shortcut. For every expense,
+// whoever didn't pay owes their own share straight to whoever did, full
+// stop - no netting against the rest of the group. A settlement is
+// folded in the same way, netted only against the exact pair it was
+// recorded against (a payment made under the old simplified view won't
+// necessarily zero out a specific pair here - that's expected, not a
+// bug: it was never a payment against that pair's own shared expenses in
+// the first place).
+//
+// Returns every pair with a non-zero net amount owed, as
+// {fromUid, toUid, amount}, largest first. Unlike simplifyDebts(), this
+// can and often will list MORE transfers than the minimum required -
+// that's the whole point of it: it's the "who owes who for what,
+// exactly" view, not the "fewest payments to zero everyone out" view.
+// The two will always reconcile to the same net balance per person
+// (computeNetBalances above) even though the transfer lists differ.
+export function computePairwiseLedger(
+  expenses: Pick<Expense, 'paidBy' | 'shares'>[],
+  settlements: Pick<Settlement, 'fromUid' | 'toUid' | 'amount'>[] = [],
+): SimplifiedTransfer[] {
+  const raw: Record<string, Record<string, number>> = {}; // raw[a][b] = total 'a' owes 'b', before pair-netting
+  function bump(from: string, to: string, amount: number) {
+    if (!from || !to || from === to || !amount) {
+      return;
+    }
+    if (!raw[from]) {
+      raw[from] = {};
+    }
+    raw[from][to] = round2((raw[from][to] || 0) + amount);
+  }
+
+  for (const expense of expenses) {
+    const payer = expense.paidBy;
+    for (const [uid, share] of Object.entries(expense.shares || {})) {
+      if (uid === payer) {
+        continue; // payer's own share isn't a debt to themselves
+      }
+      bump(uid, payer, Number(share) || 0);
+    }
+  }
+
+  for (const settlement of settlements) {
+    // A direct payment reduces exactly this pair's debt, the same as if
+    // it were negative shared spending between the two of them.
+    bump(
+      settlement.fromUid,
+      settlement.toUid,
+      -(Number(settlement.amount) || 0),
+    );
+  }
+
+  const uids = new Set<string>([
+    ...Object.keys(raw),
+    ...Object.values(raw).flatMap(row => Object.keys(row)),
+  ]);
+
+  const seen = new Set<string>();
+  const pairs: SimplifiedTransfer[] = [];
+  for (const a of uids) {
+    for (const b of uids) {
+      if (a === b) {
+        continue;
+      }
+      const key = [a, b].sort().join('::');
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+
+      const net = round2((raw[a]?.[b] || 0) - (raw[b]?.[a] || 0));
+      if (net > EPSILON) {
+        pairs.push({fromUid: a, toUid: b, amount: net});
+      } else if (net < -EPSILON) {
+        pairs.push({fromUid: b, toUid: a, amount: -net});
+      }
+    }
+  }
+
+  pairs.sort((x, y) => y.amount - x.amount);
+  return pairs;
 }

@@ -1,12 +1,22 @@
 // src/screens/AfterLogin/Balances.tsx
-// The screen that didn't exist before: net balances, the minimum set of
-// transfers to clear the group (via the debt simplifier), one-tap settle
-// with a UPI deep link when the payee has a VPA on file, and the PDF/CSV
-// exports moved here from the old "Show Total" toggle.
+// The screen that didn't exist before: net balances, a direct pair-by-pair
+// "who owes whom" ledger (computePairwiseLedger - straight per-expense
+// math, not a minimum-transaction simplification users found confusing),
+// one-tap settle with a UPI deep link when the payee has a VPA on file,
+// and the PDF/CSV exports moved here from the old "Show Total" toggle.
+//
+// The "Your UPI ID" editor moved here from the old Profile.tsx (which is
+// being repurposed as a standalone account screen) since UPI is what
+// makes the settle-up deep link above actually work - it belongs next to
+// the balances it affects, not buried in a general profile screen. The
+// data model is unchanged: still per-USER (users/{uid}.upiId), read here
+// for every OTHER member (unchanged) and now also read/written here for
+// the current user instead of in Profile.tsx.
 
 import auth from '@react-native-firebase/auth';
 import firestore from '@react-native-firebase/firestore';
 import {useFocusEffect, useNavigation} from '@react-navigation/native';
+import {useBottomTabBarHeight} from '@react-navigation/bottom-tabs';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {
@@ -16,6 +26,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -24,7 +35,6 @@ import AppAlert from '../../services/appAlert';
 import AnimatedNumber from '../../component/glass/AnimatedNumber';
 import GlassCard from '../../component/glass/GlassCard';
 import GroupSwitcherPill from '../../component/GroupSwitcherPill';
-import GradientMesh from '../../component/glass/GradientMesh';
 import SwipeableRow from '../../component/glass/SwipeableRow';
 import {useGroupLedger} from '../../hooks/useGroupLedger';
 import {addSettlement} from '../../services/ledger/firestoreLedger';
@@ -32,20 +42,32 @@ import {
   exportGroupExcel,
   exportGroupPdf,
 } from '../../services/ledger/exportReport';
-import {buildUpiPayUri} from '../../services/ledger/upi';
-import {currencySymbol, formatMoney, isUpiCurrency} from '../../services/ledger/currency';
+import {buildUpiPayUri, isValidUpiVpa} from '../../services/ledger/upi';
+import {
+  currencySymbol,
+  formatMoney,
+  isUpiCurrency,
+} from '../../services/ledger/currency';
 import {Routes} from '../../navigator/constants';
 import {useExpenseState} from '../../store/useExpenseStore';
 import {haptics} from '../../utils/haptics';
 import theme from '../../utils/theme';
+import {BodyFont, DisplayFont, moderateScale} from '../../utils/fonts';
 
 const BalancesScreen: React.FC = () => {
   const user = auth().currentUser;
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
+  // Real height of the floating tab bar (it overlays content now
+  // instead of reserving its own row - see BottomTabNavigator.tsx),
+  // so scrollable content here can pad exactly enough to clear it at
+  // rest while still scrolling underneath it past that point.
+  const tabBarHeight = useBottomTabBarHeight();
   const groupKey = useExpenseState(state => state.groupKey);
   const ledger = useGroupLedger(groupKey);
   const [upiIds, setUpiIds] = useState<Record<string, string>>({});
+  const [myUpiId, setMyUpiId] = useState('');
+  const [savingUpi, setSavingUpi] = useState(false);
 
   // Balances is a secondary tab, so the hardware back button should first
   // return the user to the home tab (Activity) rather than exiting the
@@ -81,7 +103,54 @@ const BalancesScreen: React.FC = () => {
     })();
   }, [ledger.members]);
 
+  // The current user's own UPI ID is also present in `upiIds` once the
+  // fetch above lands (they're a member of their own group) - seed the
+  // editable field from that instead of a second read of the same doc.
+  useEffect(() => {
+    if (user && upiIds[user.uid] !== undefined) {
+      setMyUpiId(upiIds[user.uid]);
+    }
+  }, [user, upiIds]);
+
+  const saveMyUpiId = async () => {
+    if (!user) {
+      return;
+    }
+    if (myUpiId && !isValidUpiVpa(myUpiId)) {
+      Toast.show({
+        type: 'error',
+        text1: 'That doesn’t look like a UPI ID',
+        text2: 'e.g. name@bank',
+      });
+      return;
+    }
+    setSavingUpi(true);
+    try {
+      await firestore()
+        .collection('users')
+        .doc(user.uid)
+        .set({upiId: myUpiId.trim()}, {merge: true});
+      setUpiIds(prev => ({...prev, [user.uid]: myUpiId.trim()}));
+      haptics.success();
+      Toast.show({type: 'success', text1: 'UPI ID saved'});
+    } catch (error: any) {
+      Toast.show({
+        type: 'error',
+        text1: 'Could not save',
+        text2: error?.message,
+      });
+    } finally {
+      setSavingUpi(false);
+    }
+  };
+
   const myBalance = user ? ledger.netBalances[user.uid] || 0 : 0;
+  // A personal list (or, incidentally, any real group everyone else has
+  // left) has nobody to owe or settle with - UPI-for-receiving-payment,
+  // "who owes whom", and a per-person breakdown are all meaningless with
+  // one member, so this screen shows a much simpler view instead of the
+  // full settle-up UI for those.
+  const isPersonal = ledger.members.length <= 1;
 
   const settle = async (
     fromUid: string,
@@ -296,7 +365,6 @@ const BalancesScreen: React.FC = () => {
   if (!groupKey) {
     return (
       <View style={styles.flex}>
-        <GradientMesh />
         <View style={styles.emptyState}>
           <Text style={styles.emptyText}>No group selected yet.</Text>
         </View>
@@ -306,9 +374,14 @@ const BalancesScreen: React.FC = () => {
 
   return (
     <View style={styles.flex}>
-      <GradientMesh />
       <ScrollView
-        contentContainerStyle={[styles.content, {paddingTop: insets.top + 24}]}>
+        contentContainerStyle={[
+          styles.content,
+          // The tab bar floats over content now instead of reserving
+          // its own row (see BottomTabNavigator.tsx) - pad for its real
+          // height so the last card isn't hidden underneath it at rest.
+          {paddingTop: insets.top + 24, paddingBottom: tabBarHeight + 24},
+        ]}>
         <Text style={styles.heading}>Balances</Text>
         <GroupSwitcherPill />
 
@@ -326,77 +399,128 @@ const BalancesScreen: React.FC = () => {
             ]}
           />
           <Text style={styles.heroSub}>
-            Total group spend: {formatMoney(ledger.totalSpent, ledger.group?.currency)}
+            Total group spend:{' '}
+            {formatMoney(ledger.totalSpent, ledger.group?.currency)}
           </Text>
         </GlassCard>
 
-        <Text style={styles.sectionTitle}>Who owes whom</Text>
-        {ledger.transfers.length === 0 && (
-          <Text style={styles.emptyText}>Everyone's settled up. 🎉</Text>
-        )}
-        {ledger.transfers.map((t, i) => {
-          const isMine = t.fromUid === user?.uid;
-          const key = `${t.fromUid}-${t.toUid}-${i}`;
-          const card = (
-            <GlassCard style={styles.transferRow}>
-              <Text style={styles.transferText}>
-                {t.fromUid === user?.uid ? 'You' : ledger.memberName(t.fromUid)}{' '}
-                owe
-                {t.fromUid === user?.uid ? '' : 's'}{' '}
-                {t.toUid === user?.uid ? 'you' : ledger.memberName(t.toUid)}
-              </Text>
-              <Text style={styles.transferAmount}>{formatMoney(t.amount, ledger.group?.currency)}</Text>
-              {isMine && (
-                <TouchableOpacity
-                  style={styles.settleBtn}
-                  onPress={() =>
-                    handleSettlePress(t.fromUid, t.toUid, t.amount)
-                  }>
-                  <Text style={styles.settleBtnText}>Settle</Text>
-                </TouchableOpacity>
-              )}
+        {isUpiCurrency(ledger.group?.currency) && !isPersonal && (
+          <>
+            <Text style={styles.sectionTitle}>Your UPI ID (for settle-up)</Text>
+            <GlassCard style={styles.upiCard}>
+              <TextInput
+                style={styles.upiInput}
+                placeholder="yourname@bank"
+                placeholderTextColor={theme.color.inkFaint}
+                autoCapitalize="none"
+                value={myUpiId}
+                onChangeText={setMyUpiId}
+              />
+              <TouchableOpacity
+                style={styles.saveBtn}
+                onPress={saveMyUpiId}
+                disabled={savingUpi}>
+                <Text style={styles.saveBtnText}>
+                  {savingUpi ? 'Saving…' : 'Save'}
+                </Text>
+              </TouchableOpacity>
             </GlassCard>
-          );
-          // Only the member who owes can settle their own debt. The swipe
-          // gesture used to wrap every row unconditionally and fire
-          // handleSettlePress() regardless of who was looking at it - in a
-          // 3+ person group, that let anyone swipe-settle a debt between
-          // two OTHER members. The inline "Settle" button was already
-          // isMine-gated; the swipe wrapper wasn't, until now.
-          return isMine ? (
-            <SwipeableRow
-              key={key}
-              actionLabel="Settle"
-              actionColor={theme.color.green}
-              onAction={() => handleSettlePress(t.fromUid, t.toUid, t.amount)}>
-              {card}
-            </SwipeableRow>
-          ) : (
-            <View key={key}>{card}</View>
-          );
-        })}
+            <Text style={styles.hint}>
+              When someone settles up with you, this is what lets EzySplit open
+              GPay/PhonePe with the amount prefilled.
+            </Text>
+          </>
+        )}
 
-        <Text style={styles.sectionTitle}>Per-person totals</Text>
-        {ledger.members.map(m => (
-          <View key={m.uid} style={styles.memberRow}>
-            <Text style={styles.memberName}>
-              {m.uid === user?.uid ? 'You' : m.displayName}
-            </Text>
-            <Text
-              style={[
-                styles.memberBalance,
-                {
-                  color:
-                    (ledger.netBalances[m.uid] || 0) >= 0
-                      ? theme.color.green
-                      : theme.color.rose,
-                },
-              ]}>
-              {(ledger.netBalances[m.uid] || 0) >= 0 ? '+' : ''}
-              {formatMoney(ledger.netBalances[m.uid] || 0, ledger.group?.currency)}
-            </Text>
-          </View>
-        ))}
+        {isPersonal ? (
+          <Text style={styles.emptyText}>
+            This is a personal list - just you, nothing to split or settle.
+          </Text>
+        ) : (
+          <>
+            <Text style={styles.sectionTitle}>Who owes whom</Text>
+            {ledger.transfers.length === 0 && (
+              <Text style={styles.emptyText}>Everyone's settled up. 🎉</Text>
+            )}
+          </>
+        )}
+        {!isPersonal &&
+          ledger.transfers.map((t, i) => {
+            const isMine = t.fromUid === user?.uid;
+            const key = `${t.fromUid}-${t.toUid}-${i}`;
+            const card = (
+              <GlassCard style={styles.transferRow}>
+                <Text style={styles.transferText}>
+                  {t.fromUid === user?.uid
+                    ? 'You'
+                    : ledger.memberName(t.fromUid)}{' '}
+                  owe
+                  {t.fromUid === user?.uid ? '' : 's'}{' '}
+                  {t.toUid === user?.uid ? 'you' : ledger.memberName(t.toUid)}
+                </Text>
+                <Text style={styles.transferAmount}>
+                  {formatMoney(t.amount, ledger.group?.currency)}
+                </Text>
+                {isMine && (
+                  <TouchableOpacity
+                    style={styles.settleBtn}
+                    onPress={() =>
+                      handleSettlePress(t.fromUid, t.toUid, t.amount)
+                    }>
+                    <Text style={styles.settleBtnText}>Settle</Text>
+                  </TouchableOpacity>
+                )}
+              </GlassCard>
+            );
+            // Only the member who owes can settle their own debt. The swipe
+            // gesture used to wrap every row unconditionally and fire
+            // handleSettlePress() regardless of who was looking at it - in a
+            // 3+ person group, that let anyone swipe-settle a debt between
+            // two OTHER members. The inline "Settle" button was already
+            // isMine-gated; the swipe wrapper wasn't, until now.
+            return isMine ? (
+              <SwipeableRow
+                key={key}
+                actionLabel="Settle"
+                actionColor={theme.color.green}
+                onAction={() =>
+                  handleSettlePress(t.fromUid, t.toUid, t.amount)
+                }>
+                {card}
+              </SwipeableRow>
+            ) : (
+              <View key={key}>{card}</View>
+            );
+          })}
+
+        {!isPersonal && (
+          <>
+            <Text style={styles.sectionTitle}>Per-person totals</Text>
+            {ledger.members.map(m => (
+              <View key={m.uid} style={styles.memberRow}>
+                <Text style={styles.memberName}>
+                  {m.uid === user?.uid ? 'You' : m.displayName}
+                </Text>
+                <Text
+                  style={[
+                    styles.memberBalance,
+                    {
+                      color:
+                        (ledger.netBalances[m.uid] || 0) >= 0
+                          ? theme.color.green
+                          : theme.color.rose,
+                    },
+                  ]}>
+                  {(ledger.netBalances[m.uid] || 0) >= 0 ? '+' : ''}
+                  {formatMoney(
+                    ledger.netBalances[m.uid] || 0,
+                    ledger.group?.currency,
+                  )}
+                </Text>
+              </View>
+            ))}
+          </>
+        )}
 
         <View style={styles.exportRow}>
           <TouchableOpacity style={styles.exportBtn} onPress={onExportPdf}>
@@ -419,24 +543,72 @@ const styles = StyleSheet.create({
   content: {padding: 20, paddingBottom: 60},
   heading: {
     color: theme.color.ink,
-    fontSize: 24,
+    fontFamily: DisplayFont.extrabold,
+    fontSize: moderateScale(24),
     fontWeight: '800',
     marginBottom: 16,
   },
   heroCard: {alignItems: 'center', paddingVertical: 28, marginBottom: 24},
-  heroLabel: {color: theme.color.inkSoft, fontSize: 13},
-  heroAmount: {fontSize: 40, fontWeight: '800', marginTop: 6},
-  heroSub: {color: theme.color.inkFaint, fontSize: 12.5, marginTop: 8},
+  heroLabel: {
+    color: theme.color.inkSoft,
+    fontFamily: BodyFont.regular,
+    fontSize: moderateScale(13),
+  },
+  heroAmount: {
+    fontFamily: DisplayFont.extrabold,
+    fontSize: moderateScale(40),
+    fontWeight: '800',
+    marginTop: 6,
+  },
+  heroSub: {
+    color: theme.color.inkFaint,
+    fontFamily: BodyFont.regular,
+    fontSize: moderateScale(12.5),
+    marginTop: 8,
+  },
   sectionTitle: {
     color: theme.color.inkSoft,
-    fontSize: 12,
+    fontFamily: BodyFont.bold,
+    fontSize: moderateScale(12),
     fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 10,
     marginTop: 8,
   },
-  emptyText: {color: theme.color.inkFaint, fontSize: 13.5, marginBottom: 12},
+  upiCard: {flexDirection: 'row', alignItems: 'center', gap: 10},
+  upiInput: {
+    flex: 1,
+    color: theme.color.ink,
+    fontFamily: BodyFont.regular,
+    fontSize: moderateScale(14.5),
+  },
+  saveBtn: {
+    backgroundColor: theme.color.blue,
+    borderRadius: theme.radius.pill,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  saveBtnText: {
+    color: theme.color.onAccent,
+    fontFamily: BodyFont.bold,
+    fontWeight: '700',
+    fontSize: moderateScale(12.5),
+  },
+  hint: {
+    color: theme.color.inkFaint,
+    fontFamily: BodyFont.regular,
+    fontSize: moderateScale(12),
+    marginTop: 8,
+    marginBottom: 8,
+    lineHeight: moderateScale(17),
+  },
+  emptyText: {
+    color: theme.color.inkFaint,
+    fontFamily: BodyFont.regular,
+    fontSize: moderateScale(13.5),
+    marginBottom: 12,
+  },
   transferRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -444,15 +616,30 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     padding: 14,
   },
-  transferText: {color: theme.color.ink, fontSize: 13.5, flex: 1},
-  transferAmount: {color: theme.color.ink, fontWeight: '700', marginRight: 10},
+  transferText: {
+    color: theme.color.ink,
+    fontFamily: BodyFont.regular,
+    fontSize: moderateScale(13.5),
+    flex: 1,
+  },
+  transferAmount: {
+    color: theme.color.ink,
+    fontFamily: BodyFont.bold,
+    fontWeight: '700',
+    marginRight: 10,
+  },
   settleBtn: {
     backgroundColor: theme.color.green,
     borderRadius: theme.radius.pill,
     paddingHorizontal: 12,
     paddingVertical: 6,
   },
-  settleBtnText: {color: theme.color.onAccent, fontWeight: '700', fontSize: 12},
+  settleBtnText: {
+    color: theme.color.onAccent,
+    fontFamily: BodyFont.bold,
+    fontWeight: '700',
+    fontSize: moderateScale(12),
+  },
   memberRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -460,8 +647,16 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: theme.color.border,
   },
-  memberName: {color: theme.color.ink, fontSize: 14},
-  memberBalance: {fontWeight: '700', fontVariant: ['tabular-nums']},
+  memberName: {
+    color: theme.color.ink,
+    fontFamily: BodyFont.regular,
+    fontSize: moderateScale(14),
+  },
+  memberBalance: {
+    fontFamily: BodyFont.bold,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+  },
   exportRow: {flexDirection: 'row', gap: 10, marginTop: 24},
   exportBtn: {
     flex: 1,
@@ -472,7 +667,12 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     alignItems: 'center',
   },
-  exportText: {color: theme.color.ink, fontWeight: '600', fontSize: 13},
+  exportText: {
+    color: theme.color.ink,
+    fontFamily: BodyFont.semibold,
+    fontWeight: '600',
+    fontSize: moderateScale(13),
+  },
   emptyState: {flex: 1, justifyContent: 'center', alignItems: 'center'},
 });
 

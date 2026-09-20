@@ -2,11 +2,21 @@
 // Replaces the expense list + add-expense form half of the old
 // ExpenseTracker.js: search, category filters, swipe-to-delete, a
 // recurring-expense due banner, and the new AddExpenseModal.
+//
+// Redesign pass: the plain "spent" line + invite/join-code column moved
+// out of the header into a GlassCard mini-hero (matching the approved
+// mockup's summary card), and the always-visible search box + category
+// row now collapse behind Search/Filter icon buttons - mirroring the
+// same collapse pattern GroupCheck.tsx already uses for its own group
+// search - with a new date-range filter dimension (This week/This
+// month/All time/Custom range, same client-side logic as
+// PersonalExpenses.tsx) added alongside the existing category filter.
 
 import auth from '@react-native-firebase/auth';
 import {useFocusEffect, useNavigation} from '@react-navigation/native';
+import {useBottomTabBarHeight} from '@react-navigation/bottom-tabs';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
-import React, {useCallback, useRef, useState} from 'react';
+import React, {useCallback, useMemo, useRef, useState} from 'react';
 import {
   BackHandler,
   FlatList,
@@ -18,14 +28,16 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import {Calendar} from 'react-native-calendars';
+import {Search, SlidersHorizontal, X} from 'lucide-react-native';
 import Toast from '../../services/toast';
 import AddExpenseModal from '../../component/AddExpenseModal';
 import GroupSwitcherPill from '../../component/GroupSwitcherPill';
 import Chip from '../../component/glass/Chip';
 import GlassCard from '../../component/glass/GlassCard';
-import GradientMesh from '../../component/glass/GradientMesh';
 import SwipeableRow from '../../component/glass/SwipeableRow';
 import {useGroupLedger} from '../../hooks/useGroupLedger';
+import {useModalOpenGuard} from '../../hooks/useModalOpenGuard';
 import {addExpense, deleteExpense} from '../../services/ledger/firestoreLedger';
 import {
   EXPENSE_CATEGORIES,
@@ -36,8 +48,35 @@ import {useExpenseState} from '../../store/useExpenseStore';
 import {formatMoney} from '../../services/ledger/currency';
 import {haptics} from '../../utils/haptics';
 import theme from '../../utils/theme';
+import {BodyFont, DisplayFont, moderateScale} from '../../utils/fonts';
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+type DateFilter = 'week' | 'month' | 'all' | 'custom';
+
+function startOfToday(): Date {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+// Inclusive day-range check against an expense's ISO createdAt - every
+// filter here (week/month/custom) resolves to a [from, to] pair so the
+// actual matching logic only has to live in one place. Same shape as the
+// one in PersonalExpenses.tsx; kept local rather than shared since the two
+// screens filter different lists and the app already tolerates this kind
+// of small, screen-local duplication (see GroupCheck's own inline
+// enter-group logic).
+function inRange(iso: string, from: Date | null, to: Date | null): boolean {
+  const t = new Date(iso).getTime();
+  if (from && t < from.getTime()) {
+    return false;
+  }
+  if (to && t > to.getTime()) {
+    return false;
+  }
+  return true;
+}
 
 const ActivityScreen: React.FC = () => {
   const user = auth().currentUser;
@@ -48,9 +87,23 @@ const ActivityScreen: React.FC = () => {
   const [showPastMembers, setShowPastMembers] = useState(false);
   const addExpenseSignal = useExpenseState(state => state.addExpenseSignal);
   const [search, setSearch] = useState('');
+  const [searchVisible, setSearchVisible] = useState(false);
+  const [filtersVisible, setFiltersVisible] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<ExpenseCategory | null>(
     null,
   );
+  const [dateFilter, setDateFilter] = useState<DateFilter>('all');
+  const [customRange, setCustomRange] = useState<{
+    start: string;
+    end: string;
+  } | null>(null);
+  const [pickerVisible, setPickerVisible] = useState(false);
+  // See useModalOpenGuard.ts - both modals below can be opened
+  // synchronously from a chip/button press, which is exactly the
+  // shape of bug that hits AddExpenseModal without this guard.
+  const canCloseShowPastMembers = useModalOpenGuard(showPastMembers);
+  const canClosePicker = useModalOpenGuard(pickerVisible);
+  const [pickerStart, setPickerStart] = useState<string | null>(null);
 
   // `addExpenseSignal` is a persistent counter bumped by the floating "+"
   // above the tab bar - it never resets. Reacting to "is it > 0" meant
@@ -71,6 +124,11 @@ const ActivityScreen: React.FC = () => {
 
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
+  // Real height of the floating tab bar (it overlays content now
+  // instead of reserving its own row - see BottomTabNavigator.tsx),
+  // so scrollable content here can pad exactly enough to clear it at
+  // rest while still scrolling underneath it past that point.
+  const tabBarHeight = useBottomTabBarHeight();
 
   // Activity is the first/home tab, so it's the natural floor for the
   // Android hardware back button - without this, pressing back here fell
@@ -124,8 +182,76 @@ const ActivityScreen: React.FC = () => {
     setEditingExpense(null);
   };
 
+  const {from, to} = useMemo(() => {
+    if (dateFilter === 'week') {
+      const start = startOfToday();
+      start.setDate(start.getDate() - 6);
+      return {from: start, to: null as Date | null};
+    }
+    if (dateFilter === 'month') {
+      const start = startOfToday();
+      start.setDate(start.getDate() - 29);
+      return {from: start, to: null as Date | null};
+    }
+    if (dateFilter === 'custom' && customRange) {
+      const end = new Date(customRange.end);
+      end.setHours(23, 59, 59, 999);
+      return {from: new Date(customRange.start), to: end};
+    }
+    return {from: null as Date | null, to: null as Date | null};
+  }, [dateFilter, customRange]);
+
+  const selectDateFilter = (next: DateFilter) => {
+    if (next === 'custom') {
+      setPickerStart(null);
+      setPickerVisible(true);
+      return;
+    }
+    setDateFilter(next);
+  };
+
+  const onDayPress = (day: {dateString: string}) => {
+    if (!pickerStart) {
+      setPickerStart(day.dateString);
+      return;
+    }
+    const start = pickerStart <= day.dateString ? pickerStart : day.dateString;
+    const end = pickerStart <= day.dateString ? day.dateString : pickerStart;
+    setCustomRange({start, end});
+    setDateFilter('custom');
+    setPickerVisible(false);
+    setPickerStart(null);
+  };
+
+  const markedDates = useMemo(() => {
+    if (!pickerStart) {
+      return {};
+    }
+    return {
+      [pickerStart]: {
+        startingDay: true,
+        endingDay: true,
+        color: theme.color.blue,
+        textColor: theme.color.onAccent,
+      },
+    };
+  }, [pickerStart]);
+
+  const customRangeLabel =
+    customRange &&
+    `${new Date(customRange.start).toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+    })} - ${new Date(customRange.end).toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+    })}`;
+
   const filteredExpenses = ledger.expenses.filter(e => {
     if (categoryFilter && e.category !== categoryFilter) {
+      return false;
+    }
+    if (!inRange(e.createdAt, from, to)) {
       return false;
     }
     if (
@@ -136,6 +262,8 @@ const ActivityScreen: React.FC = () => {
     }
     return true;
   });
+
+  const filtersActive = !!categoryFilter || dateFilter !== 'all';
 
   const overdueRecurring = ledger.expenses.filter(
     e =>
@@ -239,7 +367,6 @@ Manage & split expenses easily.
   if (!groupKey) {
     return (
       <View style={styles.flex}>
-        <GradientMesh />
         <View style={styles.emptyState}>
           <Text style={styles.emptyText}>
             Pick or create a group from the You tab to get started.
@@ -251,16 +378,12 @@ Manage & split expenses easily.
 
   return (
     <View style={styles.flex}>
-      <GradientMesh />
       <View style={[styles.header, {paddingTop: insets.top + 24}]}>
         <View style={styles.headerLeft}>
           <Text style={styles.eyebrow}>ACTIVITY</Text>
           <Text style={styles.title}>{ledger.group?.name || 'Loading…'}</Text>
           <View style={styles.switchRow}>
             <GroupSwitcherPill style={styles.switchPillInline} />
-            <Text style={styles.spentInline}>
-              {formatMoney(ledger.totalSpent, ledger.group?.currency)} spent
-            </Text>
           </View>
           <Text style={[styles.subtitle, styles.subtitleSecondLine]}>
             {ledger.members.length} people
@@ -280,19 +403,23 @@ Manage & split expenses easily.
               : ledger.memberName(ledger.group?.createdBy || '')}
           </Text>
         </View>
+      </View>
+
+      <GlassCard style={styles.heroCard}>
+        <Text style={styles.heroLabel}>Total spent</Text>
+        <Text style={styles.heroAmount}>
+          {formatMoney(ledger.totalSpent, ledger.group?.currency)}
+        </Text>
         {/* This used to be gated on "no expenses yet", back when a group
             auto-locked itself on the first expense - at that point "no
             expenses" and "still open to new members" were the same thing.
             Locking is now a separate, explicit admin toggle (see
-            Profile.tsx), so the Invite button needs to follow that flag
+            GroupSettings.tsx), so the Invite row needs to follow that flag
             directly instead - otherwise it silently disappears the moment
             someone logs an expense, and toggling the lock does nothing to
             it either way, which is the bug being fixed here. */}
         {!ledger.group?.isLocked && (
-          <View style={styles.inviteColumn}>
-            <TouchableOpacity onPress={onShareInvite} style={styles.inviteBtn}>
-              <Text style={styles.inviteText}>Invite</Text>
-            </TouchableOpacity>
+          <View style={styles.heroInviteRow}>
             {!!ledger.group?.joinCode && (
               // Plain, selectable text rather than a copy icon + clipboard
               // library - `selectable` still gives a native long-press
@@ -303,9 +430,12 @@ Manage & split expenses easily.
                 Code: {ledger.group.joinCode}
               </Text>
             )}
+            <TouchableOpacity onPress={onShareInvite} style={styles.inviteBtn}>
+              <Text style={styles.inviteText}>Invite</Text>
+            </TouchableOpacity>
           </View>
         )}
-      </View>
+      </GlassCard>
 
       {overdueRecurring.map(e => (
         <GlassCard key={e.id} style={styles.recurringBanner}>
@@ -318,36 +448,107 @@ Manage & split expenses easily.
         </GlassCard>
       ))}
 
-      <TextInput
-        style={styles.search}
-        placeholder="Search expenses"
-        placeholderTextColor={theme.color.inkFaint}
-        value={search}
-        onChangeText={setSearch}
-      />
-      <View style={styles.filterRow}>
-        <Chip
-          label="All"
-          active={!categoryFilter}
-          onPress={() => setCategoryFilter(null)}
-        />
-        {EXPENSE_CATEGORIES.map(c => (
-          <Chip
-            key={c.key}
-            label={`${c.icon} ${c.label}`}
-            active={categoryFilter === c.key}
-            onPress={() =>
-              setCategoryFilter(categoryFilter === c.key ? null : c.key)
-            }
-          />
-        ))}
+      <View style={styles.expensesHeaderRow}>
+        <Text style={styles.expensesTitle}>Expenses</Text>
+        <View style={styles.expensesHeaderActions}>
+          <TouchableOpacity
+            style={styles.iconBtn}
+            hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}
+            onPress={() => {
+              setSearchVisible(v => !v);
+              if (searchVisible) {
+                setSearch('');
+              }
+            }}>
+            {searchVisible ? (
+              <X size={17} color={theme.color.ink} />
+            ) : (
+              <Search size={17} color={theme.color.ink} />
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.iconBtn, filtersActive && styles.iconBtnActive]}
+            hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}
+            onPress={() => setFiltersVisible(v => !v)}>
+            <SlidersHorizontal
+              size={17}
+              color={filtersActive ? theme.color.blueBright : theme.color.ink}
+            />
+          </TouchableOpacity>
+        </View>
       </View>
+
+      {searchVisible && (
+        <TextInput
+          style={styles.search}
+          placeholder="Search expenses"
+          placeholderTextColor={theme.color.inkFaint}
+          value={search}
+          onChangeText={setSearch}
+          autoFocus
+        />
+      )}
+
+      {filtersVisible && (
+        <>
+          <View style={styles.filterRow}>
+            <Chip
+              label="All"
+              active={!categoryFilter}
+              onPress={() => setCategoryFilter(null)}
+            />
+            {EXPENSE_CATEGORIES.map(c => (
+              <Chip
+                key={c.key}
+                label={`${c.icon} ${c.label}`}
+                active={categoryFilter === c.key}
+                onPress={() =>
+                  setCategoryFilter(categoryFilter === c.key ? null : c.key)
+                }
+              />
+            ))}
+          </View>
+          <View style={styles.filterRow}>
+            <Chip
+              label="This week"
+              active={dateFilter === 'week'}
+              onPress={() => selectDateFilter('week')}
+            />
+            <Chip
+              label="This month"
+              active={dateFilter === 'month'}
+              onPress={() => selectDateFilter('month')}
+            />
+            <Chip
+              label="All time"
+              active={dateFilter === 'all'}
+              onPress={() => selectDateFilter('all')}
+            />
+            <Chip
+              label={
+                dateFilter === 'custom' && customRangeLabel
+                  ? `📅 ${customRangeLabel}`
+                  : '📅 Custom range'
+              }
+              active={dateFilter === 'custom'}
+              onPress={() => selectDateFilter('custom')}
+            />
+          </View>
+        </>
+      )}
 
       <Text style={styles.hint}>Tap an expense to edit, swipe to delete.</Text>
       <FlatList
         data={filteredExpenses}
         keyExtractor={item => item.id!}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[
+          styles.listContent,
+          // The tab bar now floats over the content (see
+          // BottomTabNavigator.tsx) instead of reserving its own row, so
+          // the list needs real bottom padding for its own height or the
+          // last rows would render hidden underneath it at rest.
+          {paddingBottom: tabBarHeight + 24},
+        ]}
         renderItem={({item}) => (
           <SwipeableRow
             actionLabel="Delete"
@@ -358,7 +559,7 @@ Manage & split expenses easily.
               onPress={() => openEditExpense(item)}>
               <GlassCard style={styles.expenseRow}>
                 <View style={styles.expenseIcon}>
-                  <Text style={{fontSize: 18}}>
+                  <Text style={{fontSize: moderateScale(18)}}>
                     {EXPENSE_CATEGORIES.find(c => c.key === item.category)
                       ?.icon || '🧾'}
                   </Text>
@@ -386,7 +587,9 @@ Manage & split expenses easily.
         )}
         ListEmptyComponent={
           <Text style={styles.emptyText}>
-            No expenses yet — tap + to add the first one.
+            {ledger.expenses.length === 0
+              ? 'No expenses yet — tap + to add the first one.'
+              : 'No expenses match this filter.'}
           </Text>
         }
       />
@@ -420,7 +623,11 @@ Manage & split expenses easily.
         <TouchableOpacity
           style={styles.pastMembersOverlay}
           activeOpacity={1}
-          onPress={() => setShowPastMembers(false)}>
+          onPress={() => {
+            if (canCloseShowPastMembers()) {
+              setShowPastMembers(false);
+            }
+          }}>
           <GlassCard opaque style={styles.pastMembersCard}>
             <Text style={styles.pastMembersTitle}>Left the group</Text>
             {ledger.pastMembers.map(m => (
@@ -428,6 +635,50 @@ Manage & split expenses easily.
                 {m.displayName}
               </Text>
             ))}
+          </GlassCard>
+        </TouchableOpacity>
+      </Modal>
+
+      <Modal
+        visible={pickerVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPickerVisible(false)}>
+        <TouchableOpacity
+          style={styles.pickerOverlay}
+          activeOpacity={1}
+          onPress={() => {
+            if (canClosePicker()) {
+              setPickerVisible(false);
+            }
+          }}>
+          <GlassCard opaque style={styles.pickerCard}>
+            <View style={styles.pickerHeader}>
+              <Text style={styles.pickerTitle}>
+                {pickerStart ? 'Pick the end date' : 'Pick the start date'}
+              </Text>
+              <TouchableOpacity
+                onPress={() => {
+                  if (canClosePicker()) {
+                    setPickerVisible(false);
+                  }
+                }}>
+                <X size={18} color={theme.color.inkSoft} />
+              </TouchableOpacity>
+            </View>
+            <Calendar
+              onDayPress={onDayPress}
+              maxDate={new Date().toISOString().split('T')[0]}
+              markedDates={markedDates}
+              theme={{
+                calendarBackground: 'transparent',
+                dayTextColor: theme.color.ink,
+                monthTextColor: theme.color.ink,
+                textDisabledColor: theme.color.inkFaint,
+                todayTextColor: theme.color.blueBright,
+                arrowColor: theme.color.ink,
+              }}
+            />
           </GlassCard>
         </TouchableOpacity>
       </Modal>
@@ -447,27 +698,27 @@ const styles = StyleSheet.create({
     // devices where the OS forces edge-to-edge (Android 15+).
     paddingBottom: 16,
   },
-  // The left column used to have no width constraint, so the subtitle
-  // line just grew as long as its content needed - fine for "₹X spent · Y
-  // people", but adding "· Created by NAME" (and, before that, the past-
-  // members note) made it long enough to push the Invite button/join-code
-  // column straight off the right edge of the screen instead of wrapping.
-  // `flex: 1` bounds it to the space actually left after that column, so
-  // the text wraps onto a second line instead.
   headerLeft: {flex: 1, paddingRight: 12},
   eyebrow: {
     color: theme.color.inkFaint,
-    fontSize: 11,
+    fontFamily: BodyFont.bold,
+    fontSize: moderateScale(11),
     fontWeight: '700',
     letterSpacing: 0.8,
   },
   title: {
     color: theme.color.ink,
-    fontSize: 24,
+    fontFamily: DisplayFont.extrabold,
+    fontSize: moderateScale(24),
     fontWeight: '800',
     marginTop: 2,
   },
-  subtitle: {color: theme.color.inkSoft, fontSize: 13, marginTop: 4},
+  subtitle: {
+    color: theme.color.inkSoft,
+    fontFamily: BodyFont.regular,
+    fontSize: moderateScale(13),
+    marginTop: 4,
+  },
   subtitleSecondLine: {marginTop: 2},
   switchRow: {flexDirection: 'row', alignItems: 'center', gap: 10},
   // GroupSwitcherPill normally sits alone below a title, where its default
@@ -475,9 +726,9 @@ const styles = StyleSheet.create({
   // same margin just pushed it down and off-center. Zeroed here; the
   // row's own `alignItems: 'center'` does the vertical centering instead.
   switchPillInline: {marginTop: 0},
-  spentInline: {color: theme.color.inkSoft, fontSize: 13},
   pastMembersLink: {
     color: theme.color.rose,
+    fontFamily: BodyFont.bold,
     fontWeight: '700',
     textDecorationLine: 'underline',
   },
@@ -491,11 +742,39 @@ const styles = StyleSheet.create({
   pastMembersCard: {width: '100%', maxWidth: 340},
   pastMembersTitle: {
     color: theme.color.ink,
-    fontSize: 16,
+    fontFamily: DisplayFont.bold,
+    fontSize: moderateScale(16),
     fontWeight: '700',
     marginBottom: 10,
   },
-  pastMembersName: {color: theme.color.inkSoft, fontSize: 14, marginTop: 6},
+  pastMembersName: {
+    color: theme.color.inkSoft,
+    fontFamily: BodyFont.regular,
+    fontSize: moderateScale(14),
+    marginTop: 6,
+  },
+  heroCard: {marginHorizontal: 20, marginBottom: 14},
+  heroLabel: {
+    color: theme.color.inkFaint,
+    fontFamily: BodyFont.regular,
+    fontSize: moderateScale(12),
+    marginBottom: 4,
+  },
+  heroAmount: {
+    color: theme.color.ink,
+    fontFamily: DisplayFont.extrabold,
+    fontSize: moderateScale(28),
+    fontWeight: '800',
+  },
+  heroInviteRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 14,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: theme.color.border,
+  },
   inviteBtn: {
     backgroundColor: theme.color.surface,
     borderWidth: 1,
@@ -504,11 +783,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
   },
-  inviteText: {color: theme.color.ink, fontWeight: '600', fontSize: 13},
-  inviteColumn: {alignItems: 'flex-end', gap: 6, flexShrink: 0},
+  inviteText: {
+    color: theme.color.ink,
+    fontFamily: BodyFont.semibold,
+    fontWeight: '600',
+    fontSize: moderateScale(13),
+  },
   joinCodeText: {
     color: theme.color.inkFaint,
-    fontSize: 11.5,
+    fontFamily: BodyFont.semibold,
+    fontSize: moderateScale(11.5),
     fontWeight: '600',
     letterSpacing: 0.4,
   },
@@ -520,8 +804,43 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
   },
-  recurringText: {color: theme.color.ink, fontSize: 13, flex: 1},
-  recurringAction: {color: theme.color.teal, fontWeight: '700', fontSize: 13},
+  recurringText: {
+    color: theme.color.ink,
+    fontFamily: BodyFont.regular,
+    fontSize: moderateScale(13),
+    flex: 1,
+  },
+  recurringAction: {
+    color: theme.color.teal,
+    fontFamily: BodyFont.bold,
+    fontWeight: '700',
+    fontSize: moderateScale(13),
+  },
+  expensesHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    marginBottom: 10,
+  },
+  expensesTitle: {
+    color: theme.color.ink,
+    fontFamily: BodyFont.bold,
+    fontSize: moderateScale(15),
+    fontWeight: '700',
+  },
+  expensesHeaderActions: {flexDirection: 'row', alignItems: 'center', gap: 8},
+  iconBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1,
+    borderColor: theme.color.border,
+    backgroundColor: theme.color.groundAlt,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  iconBtnActive: {borderColor: theme.color.blueBright},
   search: {
     marginHorizontal: 20,
     backgroundColor: theme.color.surface,
@@ -541,9 +860,11 @@ const styles = StyleSheet.create({
   },
   hint: {
     color: theme.color.inkFaint,
-    fontSize: 11.5,
+    fontFamily: BodyFont.regular,
+    fontSize: moderateScale(11.5),
     paddingHorizontal: 20,
     marginBottom: 6,
+    marginTop: 6,
   },
   listContent: {paddingHorizontal: 20, paddingBottom: 120},
   expenseRow: {
@@ -562,10 +883,21 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   expenseMid: {flex: 1},
-  expenseTitle: {color: theme.color.ink, fontWeight: '600', fontSize: 14.5},
-  expenseSub: {color: theme.color.inkFaint, fontSize: 12, marginTop: 2},
+  expenseTitle: {
+    color: theme.color.ink,
+    fontFamily: BodyFont.semibold,
+    fontWeight: '600',
+    fontSize: moderateScale(14.5),
+  },
+  expenseSub: {
+    color: theme.color.inkFaint,
+    fontFamily: BodyFont.regular,
+    fontSize: moderateScale(12),
+    marginTop: 2,
+  },
   expenseAmount: {
     color: theme.color.ink,
+    fontFamily: BodyFont.bold,
     fontWeight: '700',
     fontVariant: ['tabular-nums'],
   },
@@ -579,7 +911,8 @@ const styles = StyleSheet.create({
     color: theme.color.inkSoft,
     textAlign: 'center',
     marginTop: 24,
-    fontSize: 14,
+    fontFamily: BodyFont.regular,
+    fontSize: moderateScale(14),
   },
   fab: {
     position: 'absolute',
@@ -599,9 +932,30 @@ const styles = StyleSheet.create({
   },
   fabPlus: {
     color: theme.color.onAccent,
-    fontSize: 30,
+    fontFamily: BodyFont.bold,
+    fontSize: moderateScale(30),
     fontWeight: '700',
     marginTop: -2,
+  },
+  pickerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(6,5,12,0.72)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  pickerCard: {width: '100%', maxWidth: 360},
+  pickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  pickerTitle: {
+    color: theme.color.ink,
+    fontFamily: DisplayFont.bold,
+    fontSize: moderateScale(14.5),
+    fontWeight: '700',
   },
 });
 

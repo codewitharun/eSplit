@@ -5,6 +5,7 @@
 import React from 'react';
 import {StyleSheet, Text, TouchableOpacity} from 'react-native';
 import {haptics} from '../../utils/haptics';
+import {BodyFont, moderateScale} from '../../utils/fonts';
 import theme from '../../utils/theme';
 
 interface Props {
@@ -40,7 +41,8 @@ const styles = StyleSheet.create({
     borderColor: theme.color.blue,
   },
   label: {
-    fontSize: 12.5,
+    fontFamily: BodyFont.semibold,
+    fontSize: moderateScale(12.5),
     color: theme.color.inkSoft,
     fontWeight: '600',
   },

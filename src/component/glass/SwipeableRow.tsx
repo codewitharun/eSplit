@@ -14,6 +14,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import {haptics} from '../../utils/haptics';
+import {BodyFont, moderateScale} from '../../utils/fonts';
 import theme from '../../utils/theme';
 
 const ACTION_WIDTH = 84;
@@ -111,9 +112,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   actionText: {
+    fontFamily: BodyFont.bold,
     color: theme.color.onAccent,
     fontWeight: '700',
-    fontSize: 12.5,
+    fontSize: moderateScale(12.5),
   },
 });
 

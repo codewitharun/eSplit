@@ -19,6 +19,12 @@ export async function sendPushNotification(
   tokens: Array<string | null | undefined>,
   title: string,
   body: string,
+  // Optional custom payload carried alongside the notification - e.g.
+  // {type: 'join_request', groupId} - so a tap can be routed to the right
+  // screen instead of just opening the app. FCM requires every value to
+  // be a string. Backward compatible: omitting this sends exactly what
+  // this function always sent before.
+  data?: Record<string, string>,
 ): Promise<void> {
   const cleanTokens = Array.from(
     new Set(tokens.filter((t): t is string => !!t)),
@@ -30,7 +36,12 @@ export async function sendPushNotification(
     await fetch(NOTIFY_ENDPOINT, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({tokens: cleanTokens, title, body}),
+      body: JSON.stringify({
+        tokens: cleanTokens,
+        title,
+        body,
+        ...(data ? {data} : {}),
+      }),
     });
   } catch (error) {
     // A notification hiccup (backend hiccup, no network) should never

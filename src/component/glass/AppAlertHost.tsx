@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import GlassCard from './GlassCard';
 import {AppAlertButton, useAppAlertStore} from '../../services/appAlert';
+import {BodyFont, DisplayFont, moderateScale} from '../../utils/fonts';
 import theme from '../../utils/theme';
 
 const AppAlertHost: React.FC = () => {
@@ -96,13 +97,15 @@ const styles = StyleSheet.create({
   },
   card: {width: '100%', maxWidth: 360},
   title: {
-    fontSize: 17,
+    fontFamily: DisplayFont.bold,
+    fontSize: moderateScale(17),
     fontWeight: '700',
     color: theme.color.ink,
     marginBottom: 8,
   },
   message: {
-    fontSize: 14,
+    fontFamily: BodyFont.regular,
+    fontSize: moderateScale(14),
     color: theme.color.inkSoft,
     lineHeight: 20,
     marginBottom: 18,
@@ -123,7 +126,12 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     borderColor: theme.color.rose,
   },
-  buttonText: {fontWeight: '700', fontSize: 14, color: theme.color.inkSoft},
+  buttonText: {
+    fontFamily: BodyFont.bold,
+    fontWeight: '700',
+    fontSize: moderateScale(14),
+    color: theme.color.inkSoft,
+  },
   primaryText: {color: theme.color.onAccent},
   cancelText: {color: theme.color.inkSoft},
   destructiveText: {color: theme.color.rose},

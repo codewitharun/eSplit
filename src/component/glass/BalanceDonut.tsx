@@ -9,6 +9,7 @@ import React from 'react';
 import {StyleSheet, Text, View} from 'react-native';
 import Svg, {Circle, G} from 'react-native-svg';
 import theme from '../../utils/theme';
+import {BodyFont, DisplayFont, moderateScale} from '../../utils/fonts';
 import {formatMoney} from '../../services/ledger/currency';
 
 interface Props {
@@ -86,12 +87,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  netLabel: {color: theme.color.inkFaint, fontSize: 11.5},
-  netAmount: {fontSize: 22, fontWeight: '800', marginTop: 2},
-  settledEmoji: {fontSize: 22},
+  netLabel: {
+    color: theme.color.inkFaint,
+    fontFamily: BodyFont.regular,
+    fontSize: moderateScale(11.5),
+  },
+  netAmount: {
+    fontFamily: DisplayFont.extrabold,
+    fontSize: moderateScale(22),
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  settledEmoji: {fontSize: moderateScale(22)},
   settledText: {
     color: theme.color.inkSoft,
-    fontSize: 12,
+    fontFamily: BodyFont.semibold,
+    fontSize: moderateScale(12),
     marginTop: 4,
     fontWeight: '600',
   },
