@@ -21,7 +21,6 @@ import {
   BackHandler,
   FlatList,
   Modal,
-  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -50,10 +49,12 @@ import {
   ExpenseCategory,
 } from '../../services/ledger/types';
 import Toast from '../../services/toast';
+import {shareGroupInvite} from '../../services/invite';
 import {useExpenseState} from '../../store/useExpenseStore';
 import {BodyFont, DisplayFont, moderateScale} from '../../utils/fonts';
 import {haptics} from '../../utils/haptics';
 import {FLOATING_ACTIONS_CLEARANCE} from '../../navigator/constants';
+import {useCollapseFabsOnScroll} from '../../hooks/useCollapseFabsOnScroll';
 import theme from '../../utils/theme';
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -149,6 +150,8 @@ const ActivityScreen: React.FC = () => {
   // so scrollable content here can pad exactly enough to clear it at
   // rest while still scrolling underneath it past that point.
   const tabBarHeight = useBottomTabBarHeight();
+  // Collapses the floating create button to icon-only while scrolling down.
+  const onFabScroll = useCollapseFabsOnScroll();
 
   // Activity is the first/home tab, so it's the natural floor for the
   // Android hardware back button - without this, pressing back here fell
@@ -333,42 +336,11 @@ const ActivityScreen: React.FC = () => {
     }
   };
 
-  const onShareInvite = async () => {
+  const onShareInvite = () => {
     if (!groupKey) {
       return;
     }
-    try {
-      const groupName = ledger.group?.name || 'my group';
-      const joinCode = ledger.group?.joinCode;
-      // The link alone used to be the whole message. Bring back the
-      // typeable join code alongside it (like the old share format did,
-      // just with the new 6-character code instead of exposing the raw
-      // Firestore doc ID) so someone can still get in by hand from
-      // "Join with a code" on Group-Check if the link itself doesn't
-      // redirect cleanly for them.
-      const message = joinCode
-        ? `🎉 Join me on EzySplit!
-
-Manage & split expenses easily on "${groupName}".
-
-🔗 Tap to join: https://ezysplit.arun.codes/app/Group-Check/${groupKey}
-
-Or open EzySplit and use this join code: ${joinCode}
-
-Let's make splitting simple! 💰`
-        : `🎉 Join me on EzySplit!
-
-Manage & split expenses easily.
-
-🔗 https://ezysplit.arun.codes/app/Group-Check/${groupKey}`;
-      await Share.share({message});
-    } catch (error: any) {
-      Toast.show({
-        type: 'error',
-        text1: 'Sharing failed',
-        text2: error?.message,
-      });
-    }
+    shareGroupInvite(groupKey, ledger.group?.name, ledger.group?.joinCode);
   };
 
   const onDelete = (expenseId: string) => {
@@ -446,7 +418,8 @@ Manage & split expenses easily.
             directly instead - otherwise it silently disappears the moment
             someone logs an expense, and toggling the lock does nothing to
             it either way, which is the bug being fixed here. */}
-        {!ledger.group?.isLocked && (
+        {/* No invite on a personal list - it's just you by design. */}
+        {!ledger.group?.isLocked && ledger.group?.type !== 'personal' && (
           <View style={styles.heroInviteRow}>
             {!!ledger.group?.joinCode && (
               // Plain, selectable text rather than a copy icon + clipboard
@@ -567,6 +540,8 @@ Manage & split expenses easily.
 
       <Text style={styles.hint}>Tap an expense to edit, swipe to delete.</Text>
       <FlatList
+        onScroll={onFabScroll}
+        scrollEventThrottle={16}
         data={filteredExpenses}
         keyExtractor={item => item.id!}
         contentContainerStyle={[

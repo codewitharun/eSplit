@@ -49,6 +49,7 @@ import {formatMoney} from '../../services/ledger/currency';
 import UpiPromptModal from '../../component/UpiPromptModal';
 import {useExpenseState} from '../../store/useExpenseStore';
 import {haptics} from '../../utils/haptics';
+import {useCollapseFabsOnScroll} from '../../hooks/useCollapseFabsOnScroll';
 import theme from '../../utils/theme';
 import {BodyFont, MonoFont, Typography, moderateScale} from '../../utils/fonts';
 
@@ -80,6 +81,8 @@ const GroupsScreen = ({navigation}: any) => {
   const {enterGroup, upiPromptVisible, dismissUpiPrompt} =
     useEnterGroup(navigation);
   const barHeight = useAppBottomBarHeight();
+  // Collapses the floating create button to icon-only while scrolling down.
+  const onFabScroll = useCollapseFabsOnScroll();
   const user = auth().currentUser;
   const focused = useIsFocused();
 
@@ -248,6 +251,8 @@ const GroupsScreen = ({navigation}: any) => {
     <View style={styles.flex}>
       <Header />
       <KeyboardAwareScrollView
+        onScroll={onFabScroll}
+        scrollEventThrottle={16}
         ref={scrollRef}
         contentContainerStyle={[
           styles.content,

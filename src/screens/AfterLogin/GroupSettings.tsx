@@ -29,7 +29,7 @@
 import auth from '@react-native-firebase/auth';
 import {useFocusEffect, useNavigation} from '@react-navigation/native';
 import {useBottomTabBarHeight} from '@react-navigation/bottom-tabs';
-import {Pencil} from 'lucide-react-native';
+import {Pencil, Share2, UserRound, UsersRound} from 'lucide-react-native';
 import React, {useCallback, useState} from 'react';
 import {
   BackHandler,
@@ -45,6 +45,7 @@ import {
 import QRCode from 'react-native-qrcode-svg';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import GlassCard from '../../component/glass/GlassCard';
+import MemberAvatar from '../../component/MemberAvatar';
 import GroupSwitcherPill from '../../component/GroupSwitcherPill';
 import HomeIconChip from '../../component/HomeIconChip';
 import {useGroupLedger} from '../../hooks/useGroupLedger';
@@ -66,10 +67,17 @@ import {
 } from '../../services/ledger/firestoreLedger';
 import {EPSILON} from '../../services/ledger/types';
 import Toast from '../../services/toast';
+import {shareGroupInvite} from '../../services/invite';
 import {useExpenseState} from '../../store/useExpenseStore';
 import {haptics} from '../../utils/haptics';
+import {useCollapseFabsOnScroll} from '../../hooks/useCollapseFabsOnScroll';
 import theme from '../../utils/theme';
-import {BodyFont, DisplayFont, moderateScale} from '../../utils/fonts';
+import {
+  BodyFont,
+  DisplayFont,
+  MonoFont,
+  moderateScale,
+} from '../../utils/fonts';
 
 const GroupSettingsScreen: React.FC = () => {
   const navigation = useNavigation<any>();
@@ -79,6 +87,8 @@ const GroupSettingsScreen: React.FC = () => {
   // so scrollable content here can pad exactly enough to clear it at
   // rest while still scrolling underneath it past that point.
   const tabBarHeight = useBottomTabBarHeight();
+  // Collapses the floating create button to icon-only while scrolling down.
+  const onFabScroll = useCollapseFabsOnScroll();
   const user = auth().currentUser;
   const groupKey = useExpenseState(state => state.groupKey);
   const setGroupKey = useExpenseState(state => state.setGroupKey);
@@ -128,6 +138,7 @@ const GroupSettingsScreen: React.FC = () => {
   const hasOpenBalance = Math.abs(myBalance) > EPSILON;
   const myRole = ledger.members.find(m => m.uid === user?.uid)?.role;
   const isGroupAdmin = myRole === 'admin';
+  const isPersonalList = ledger.group?.type === 'personal';
   // Delete group needs EVERYONE settled, not just the admin - unlike
   // leaving, where only the leaver's own balance matters, deleting wipes
   // every member's history at once.
@@ -451,6 +462,8 @@ const GroupSettingsScreen: React.FC = () => {
   return (
     <View style={styles.flex}>
       <ScrollView
+        onScroll={onFabScroll}
+        scrollEventThrottle={16}
         contentContainerStyle={[
           styles.content,
           // The tab bar floats over content now instead of reserving
@@ -472,38 +485,120 @@ const GroupSettingsScreen: React.FC = () => {
 
         <GlassCard style={styles.groupCard}>
           <View style={styles.groupNameRow}>
-            <Text
-              style={[styles.groupName, styles.groupNameText]}
-              numberOfLines={1}>
-              {ledger.group?.name || 'Loading…'}
-            </Text>
+            <MemberAvatar
+              id={ledger.group?.id || groupKey || 'group'}
+              name={ledger.group?.name || '?'}
+              size={46}
+            />
+            <View style={styles.groupNameText}>
+              <Text style={styles.groupName} numberOfLines={1}>
+                {ledger.group?.name || 'Loading…'}
+              </Text>
+              {!!ledger.group?.createdAt && (
+                <Text style={styles.groupMetaText} numberOfLines={1}>
+                  Since{' '}
+                  {new Date(ledger.group.createdAt).toLocaleDateString(
+                    'en-IN',
+                    {month: 'short', year: 'numeric'},
+                  )}
+                  {' · created by '}
+                  {ledger.group.createdBy === user?.uid
+                    ? 'you'
+                    : ledger.memberName(ledger.group.createdBy)}
+                </Text>
+              )}
+            </View>
             {isGroupAdmin && (
               <TouchableOpacity
                 style={styles.renameBtn}
+                accessibilityLabel="Rename group"
                 hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}
                 onPress={openRenameModal}>
                 <Pencil size={15} color={theme.color.inkSoft} />
               </TouchableOpacity>
             )}
           </View>
-          <View style={styles.groupMetaRow}>
-            <Text style={styles.groupMetaText}>
-              {ledger.group?.currency || 'INR'} · {ledger.members.length} member
-              {ledger.members.length === 1 ? '' : 's'}
-            </Text>
-          </View>
-          {ledger.group?.type !== 'personal' &&
-            (!ledger.group?.isLocked ? (
-              !!ledger.group?.joinCode && (
-                <Text style={styles.joinCodeText} selectable>
-                  Join code: {ledger.group.joinCode}
-                </Text>
-              )
-            ) : (
-              <Text style={styles.lockedText}>
-                Locked - the join code no longer works.
+
+          <View style={styles.chipRow}>
+            <View style={styles.chip}>
+              {isPersonalList ? (
+                <UserRound size={13} color={theme.color.inkSoft} />
+              ) : (
+                <UsersRound size={13} color={theme.color.inkSoft} />
+              )}
+              <Text style={styles.chipText}>
+                {isPersonalList ? 'Personal list' : 'Shared group'}
               </Text>
-            ))}
+            </View>
+            <View style={styles.chip}>
+              <Text style={styles.chipText}>
+                {ledger.group?.currency || 'INR'}
+              </Text>
+            </View>
+            {!isPersonalList && (
+              <View style={styles.chip}>
+                <Text style={styles.chipText}>
+                  {ledger.members.length} member
+                  {ledger.members.length === 1 ? '' : 's'}
+                </Text>
+              </View>
+            )}
+            {!isPersonalList &&
+              !ledger.group?.isLocked &&
+              !!ledger.group?.joinCode && (
+                <View style={styles.chip}>
+                  <Text style={styles.chipText}>Code</Text>
+                  <Text style={styles.codeText} selectable>
+                    {ledger.group.joinCode}
+                  </Text>
+                </View>
+              )}
+          </View>
+
+          {!isPersonalList && (
+            <View style={styles.groupFooter}>
+              <View style={styles.avatarStack}>
+                {ledger.members.slice(0, 5).map((m, i) => (
+                  <MemberAvatar
+                    key={m.uid}
+                    id={m.uid}
+                    name={m.displayName}
+                    size={30}
+                    ring
+                    style={i > 0 ? styles.stacked : undefined}
+                  />
+                ))}
+                {ledger.members.length > 5 && (
+                  <View style={[styles.moreBubble, styles.stacked]}>
+                    <Text style={styles.moreText}>
+                      +{ledger.members.length - 5}
+                    </Text>
+                  </View>
+                )}
+              </View>
+              {ledger.group?.isLocked ? (
+                <Text style={styles.lockedText}>
+                  Locked - the join code no longer works.
+                </Text>
+              ) : (
+                !!ledger.group?.id && (
+                  <TouchableOpacity
+                    style={styles.shareBtn}
+                    onPress={() => {
+                      haptics.tap();
+                      shareGroupInvite(
+                        ledger.group!.id,
+                        ledger.group!.name,
+                        ledger.group!.joinCode,
+                      );
+                    }}>
+                    <Share2 size={14} color={theme.color.ink} />
+                    <Text style={styles.shareText}>Invite</Text>
+                  </TouchableOpacity>
+                )
+              )}
+            </View>
+          )}
         </GlassCard>
 
         {isGroupAdmin && ledger.group?.type !== 'personal' && (
@@ -573,9 +668,12 @@ const GroupSettingsScreen: React.FC = () => {
           .filter(m => !m.isGuest)
           .map(m => (
             <View key={m.uid} style={styles.memberRow}>
-              <Text style={styles.memberName}>
-                {m.uid === user?.uid ? 'You' : m.displayName}
-              </Text>
+              <View style={styles.memberLeft}>
+                <MemberAvatar id={m.uid} name={m.displayName} size={30} />
+                <Text style={styles.memberName}>
+                  {m.uid === user?.uid ? 'You' : m.displayName}
+                </Text>
+              </View>
               {m.role === 'admin' && (
                 <View style={styles.adminBadge}>
                   <Text style={styles.adminBadgeText}>Admin</Text>
@@ -607,7 +705,10 @@ const GroupSettingsScreen: React.FC = () => {
                 .filter(m => m.isGuest)
                 .map(m => (
                   <View key={m.uid} style={styles.memberRow}>
-                    <Text style={styles.memberName}>{m.displayName}</Text>
+                    <View style={styles.memberLeft}>
+                      <MemberAvatar id={m.uid} name={m.displayName} size={30} />
+                      <Text style={styles.memberName}>{m.displayName}</Text>
+                    </View>
                     <View style={styles.guestRowActions}>
                       <View style={styles.guestBadge}>
                         <Text style={styles.guestBadgeText}>Guest</Text>
@@ -893,8 +994,7 @@ const styles = StyleSheet.create({
   groupNameRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
+    gap: 12,
   },
   groupName: {
     color: theme.color.ink,
@@ -903,6 +1003,73 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   groupNameText: {flex: 1},
+  chipRow: {flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 14},
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: theme.radius.pill,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: theme.color.border,
+  },
+  chipText: {
+    color: theme.color.inkSoft,
+    fontFamily: BodyFont.regular,
+    fontSize: moderateScale(11.5),
+  },
+  codeText: {
+    color: theme.color.ink,
+    fontFamily: MonoFont,
+    fontSize: moderateScale(12),
+    letterSpacing: 1,
+  },
+  groupFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 14,
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: theme.color.border,
+    gap: 10,
+  },
+  avatarStack: {flexDirection: 'row', alignItems: 'center'},
+  stacked: {marginLeft: -8},
+  moreBubble: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.color.surfaceStrong,
+    borderWidth: 2,
+    borderColor: theme.color.modalSurface,
+  },
+  moreText: {
+    color: theme.color.ink,
+    fontFamily: BodyFont.bold,
+    fontSize: moderateScale(11),
+    fontWeight: '700',
+  },
+  shareBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.color.surfaceStrong,
+  },
+  shareText: {
+    color: theme.color.ink,
+    fontFamily: BodyFont.semibold,
+    fontSize: moderateScale(13),
+    fontWeight: '600',
+  },
+  memberLeft: {flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1},
   renameBtn: {
     width: 30,
     height: 30,
@@ -911,19 +1078,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  groupMetaRow: {marginTop: 4},
   groupMetaText: {
     color: theme.color.inkSoft,
     fontFamily: BodyFont.regular,
     fontSize: moderateScale(13),
-  },
-  joinCodeText: {
-    color: theme.color.inkFaint,
-    fontFamily: BodyFont.semibold,
-    fontSize: moderateScale(12),
-    fontWeight: '600',
-    letterSpacing: 0.4,
-    marginTop: 10,
   },
   lockedText: {
     color: theme.color.inkFaint,

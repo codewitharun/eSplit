@@ -11,7 +11,12 @@
 // one else to owe or share with.
 // Read-only: everything comes from data the screen already loaded.
 
-import {ArrowDownRight, ArrowUpRight, Check} from 'lucide-react-native';
+import {
+  ArrowDownRight,
+  ArrowUpRight,
+  CalendarDays,
+  Check,
+} from 'lucide-react-native';
 import React, {useEffect} from 'react';
 import {StyleSheet, Text, View} from 'react-native';
 import Animated, {
@@ -129,12 +134,46 @@ const GroupInsightsCard: React.FC<Props> = ({
           </>
         )}
 
-        {top && (
-          <Text style={styles.topCategory}>
-            Top: {top.icon} {top.label} {pct(insights.topCategory!.ratio)} ·{' '}
-            {insights.expenseCount} expense
-            {insights.expenseCount === 1 ? '' : 's'}
-          </Text>
+        {insights.expenseCount > 0 && (
+          <Animated.View
+            entering={FadeInDown.delay(350).duration(400)}
+            style={styles.chips}>
+            <View style={styles.chip}>
+              <CalendarDays size={13} color={theme.color.inkSoft} />
+              <Text style={styles.chipText}>
+                This month{' '}
+                <Text style={styles.chipStrong}>
+                  {formatMoney(insights.thisMonth, currency, 0)}
+                </Text>
+              </Text>
+              {insights.monthChange !== null && (
+                <Text
+                  style={styles.chipText}
+                  accessibilityLabel={`${
+                    insights.monthChange >= 0 ? 'up' : 'down'
+                  } ${pct(Math.abs(insights.monthChange))} from last month`}>
+                  {insights.monthChange >= 0 ? '↑' : '↓'}
+                  {pct(Math.abs(insights.monthChange))}
+                </Text>
+              )}
+            </View>
+            {top && (
+              <View style={styles.chip}>
+                <Text style={styles.chipText}>
+                  {top.icon} {top.label}{' '}
+                  <Text style={styles.chipStrong}>
+                    {pct(insights.topCategory!.ratio)}
+                  </Text>
+                </Text>
+              </View>
+            )}
+            <View style={styles.chip}>
+              <Text style={styles.chipText}>
+                <Text style={styles.chipStrong}>{insights.expenseCount}</Text>{' '}
+                expense{insights.expenseCount === 1 ? '' : 's'}
+              </Text>
+            </View>
+          </Animated.View>
         )}
 
         {children}
@@ -221,11 +260,27 @@ const styles = StyleSheet.create({
     fontFamily: BodyFont.semibold,
     fontWeight: '600',
   },
-  topCategory: {
-    color: theme.color.inkFaint,
+  chips: {flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 12},
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: theme.radius.pill,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: theme.color.border,
+  },
+  chipText: {
+    color: theme.color.inkSoft,
     fontFamily: BodyFont.regular,
-    fontSize: moderateScale(12),
-    marginTop: 8,
+    fontSize: moderateScale(11.5),
+  },
+  chipStrong: {
+    color: theme.color.ink,
+    fontFamily: BodyFont.semibold,
+    fontWeight: '600',
   },
 });
 

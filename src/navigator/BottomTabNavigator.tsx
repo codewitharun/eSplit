@@ -33,14 +33,14 @@ import {
   Settings,
 } from 'lucide-react-native';
 import React, {useEffect} from 'react';
-import {StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import {StyleSheet, View} from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withSpring,
 } from 'react-native-reanimated';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
-import GradientView from '../component/glass/GradientView';
+import ExtendedFab from '../component/ExtendedFab';
 import AssistantOrb from '../component/assistant/AssistantOrb';
 import ActivityScreen from '../screens/AfterLogin/Activity';
 import BalancesScreen from '../screens/AfterLogin/Balances';
@@ -48,7 +48,6 @@ import GroupSettingsScreen from '../screens/AfterLogin/GroupSettings';
 import {useExpenseState} from '../store/useExpenseStore';
 import {useGroupsStore} from '../store/useGroupsStore';
 import {BodyFont, moderateScale} from '../utils/fonts';
-import {haptics} from '../utils/haptics';
 import theme from '../utils/theme';
 import {Routes} from './constants';
 
@@ -65,22 +64,17 @@ const FAB_RIGHT = 24;
 function AddFab({bottom}: {bottom: number}) {
   const triggerAddExpense = useExpenseState(state => state.triggerAddExpense);
   return (
-    <TouchableOpacity
-      style={[styles.fabShadow, {bottom}]}
-      activeOpacity={0.85}
-      accessibilityRole="button"
+    <ExtendedFab
+      variant="primary"
+      icon={<ReceiptText size={20} color={theme.color.onAccent} />}
+      iconSize={20}
+      label="Add expense"
       accessibilityLabel="Add expense"
-      onPress={() => {
-        haptics.tap();
-        triggerAddExpense();
-      }}>
-      <GradientView
-        colors={[theme.color.blueBright, theme.color.green]}
-        style={styles.fab}>
-        <ReceiptText size={20} color={theme.color.onAccent} />
-        <Text style={styles.fabLabel}>Add expense</Text>
-      </GradientView>
-    </TouchableOpacity>
+      size={FAB_SIZE}
+      bottom={bottom}
+      right={FAB_RIGHT}
+      onPress={triggerAddExpense}
+    />
   );
 }
 
@@ -308,32 +302,5 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     borderRadius: theme.radius.pill,
     backgroundColor: 'rgba(255,255,255,0.08)',
-  },
-  fabShadow: {
-    position: 'absolute',
-    right: FAB_RIGHT,
-    height: FAB_SIZE,
-    borderRadius: FAB_SIZE / 2,
-    shadowColor: theme.color.greenBright,
-    shadowOpacity: 0.5,
-    shadowRadius: 14,
-    shadowOffset: {width: 0, height: 8},
-    elevation: 6,
-  },
-  fab: {
-    height: FAB_SIZE,
-    borderRadius: FAB_SIZE / 2,
-    flexDirection: 'row',
-    gap: 8,
-    paddingHorizontal: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    overflow: 'hidden',
-  },
-  fabLabel: {
-    color: theme.color.onAccent,
-    fontFamily: BodyFont.bold,
-    fontSize: moderateScale(14),
-    fontWeight: '800',
   },
 });
