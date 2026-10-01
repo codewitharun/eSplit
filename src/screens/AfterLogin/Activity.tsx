@@ -13,9 +13,9 @@
 // PersonalExpenses.tsx) added alongside the existing category filter.
 
 import auth from '@react-native-firebase/auth';
-import {useFocusEffect, useNavigation} from '@react-navigation/native';
 import {useBottomTabBarHeight} from '@react-navigation/bottom-tabs';
-import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import {useFocusEffect, useNavigation} from '@react-navigation/native';
+import {Search, SlidersHorizontal, X} from 'lucide-react-native';
 import React, {useCallback, useMemo, useRef, useState} from 'react';
 import {
   BackHandler,
@@ -29,26 +29,27 @@ import {
   View,
 } from 'react-native';
 import {Calendar} from 'react-native-calendars';
-import {Search, SlidersHorizontal, X} from 'lucide-react-native';
-import Toast from '../../services/toast';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import AddExpenseModal from '../../component/AddExpenseModal';
 import GroupSwitcherPill from '../../component/GroupSwitcherPill';
+import HomeIconChip from '../../component/HomeIconChip';
 import Chip from '../../component/glass/Chip';
 import GlassCard from '../../component/glass/GlassCard';
 import SwipeableRow from '../../component/glass/SwipeableRow';
 import {useGroupLedger} from '../../hooks/useGroupLedger';
 import {useModalOpenGuard} from '../../hooks/useModalOpenGuard';
+import {formatMoney} from '../../services/ledger/currency';
 import {addExpense, deleteExpense} from '../../services/ledger/firestoreLedger';
 import {
   EXPENSE_CATEGORIES,
   Expense,
   ExpenseCategory,
 } from '../../services/ledger/types';
+import Toast from '../../services/toast';
 import {useExpenseState} from '../../store/useExpenseStore';
-import {formatMoney} from '../../services/ledger/currency';
+import {BodyFont, DisplayFont, moderateScale} from '../../utils/fonts';
 import {haptics} from '../../utils/haptics';
 import theme from '../../utils/theme';
-import {BodyFont, DisplayFont, moderateScale} from '../../utils/fonts';
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -380,11 +381,7 @@ Manage & split expenses easily.
     <View style={styles.flex}>
       <View style={[styles.header, {paddingTop: insets.top + 24}]}>
         <View style={styles.headerLeft}>
-          <Text style={styles.eyebrow}>ACTIVITY</Text>
           <Text style={styles.title}>{ledger.group?.name || 'Loading…'}</Text>
-          <View style={styles.switchRow}>
-            <GroupSwitcherPill style={styles.switchPillInline} />
-          </View>
           <Text style={[styles.subtitle, styles.subtitleSecondLine]}>
             {ledger.members.length} people
             {ledger.pastMembers.length > 0 && (
@@ -402,6 +399,10 @@ Manage & split expenses easily.
               ? 'you'
               : ledger.memberName(ledger.group?.createdBy || '')}
           </Text>
+        </View>
+        <View style={styles.headerRightGroup}>
+          <HomeIconChip />
+          <GroupSwitcherPill iconOnly />
         </View>
       </View>
 
@@ -699,6 +700,12 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
   },
   headerLeft: {flex: 1, paddingRight: 12},
+  headerRightGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'center',
+    gap: 8,
+  },
   eyebrow: {
     color: theme.color.inkFaint,
     fontFamily: BodyFont.bold,
@@ -720,12 +727,6 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   subtitleSecondLine: {marginTop: 2},
-  switchRow: {flexDirection: 'row', alignItems: 'center', gap: 10},
-  // GroupSwitcherPill normally sits alone below a title, where its default
-  // marginTop gives it breathing room - inline next to text in a row, that
-  // same margin just pushed it down and off-center. Zeroed here; the
-  // row's own `alignItems: 'center'` does the vertical centering instead.
-  switchPillInline: {marginTop: 0},
   pastMembersLink: {
     color: theme.color.rose,
     fontFamily: BodyFont.bold,

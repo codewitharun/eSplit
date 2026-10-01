@@ -27,6 +27,9 @@ import {
 } from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import GlassCard from '../../component/glass/GlassCard';
+import AppBottomBar, {
+  useAppBottomBarHeight,
+} from '../../navigator/AppBottomBar';
 import TechTitanFooter from '../../component/glass/TechTitanFooter';
 import {useGroups} from '../../hooks/useGroups';
 import AppAlert from '../../services/appAlert';
@@ -38,6 +41,7 @@ import theme from '../../utils/theme';
 const ProfileScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
+  const barHeight = useAppBottomBarHeight();
   const user = auth().currentUser;
   const {groups, loading: groupsLoading} = useGroups();
   const [deletingAccount, setDeletingAccount] = useState(false);
@@ -140,7 +144,14 @@ const ProfileScreen: React.FC = () => {
         <View style={styles.headerSpacer} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView
+        contentContainerStyle={[
+          styles.content,
+          // ~50 covers TechTitanFooter's own rendered height (paddingTop
+          // 10 + the logo/text row + paddingBottom 10); +24 is the same
+          // breathing-room gap used elsewhere for AppBottomBar clearance.
+          {paddingBottom: barHeight + 74},
+        ]}>
         <GlassCard style={styles.profileCard}>
           {user?.photoURL ? (
             <Image source={{uri: user.photoURL}} style={styles.avatar} />
@@ -180,9 +191,9 @@ const ProfileScreen: React.FC = () => {
         </TouchableOpacity>
       </ScrollView>
 
-      <TechTitanFooter
-        style={[styles.footerFixed, {paddingBottom: insets.bottom + 10}]}
-      />
+      <TechTitanFooter style={[styles.footerFixed, {bottom: barHeight}]} />
+
+      <AppBottomBar active="settings" />
     </View>
   );
 };
@@ -204,7 +215,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   headerSpacer: {width: 30},
-  content: {padding: 20, paddingBottom: 90},
+  content: {padding: 20},
   profileCard: {flexDirection: 'row', alignItems: 'center', marginBottom: 8},
   avatar: {width: 52, height: 52, borderRadius: 26},
   avatarFallback: {
@@ -275,9 +286,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: 0,
     justifyContent: 'center',
     paddingTop: 10,
+    paddingBottom: 10,
     backgroundColor: theme.color.ground,
   },
 });

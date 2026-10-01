@@ -31,10 +31,12 @@ import {
   View,
 } from 'react-native';
 import Toast from '../../services/toast';
+import FileViewer from 'react-native-file-viewer';
 import AppAlert from '../../services/appAlert';
 import AnimatedNumber from '../../component/glass/AnimatedNumber';
 import GlassCard from '../../component/glass/GlassCard';
 import GroupSwitcherPill from '../../component/GroupSwitcherPill';
+import HomeIconChip from '../../component/HomeIconChip';
 import SwipeableRow from '../../component/glass/SwipeableRow';
 import {useGroupLedger} from '../../hooks/useGroupLedger';
 import {addSettlement} from '../../services/ledger/firestoreLedger';
@@ -325,7 +327,15 @@ const BalancesScreen: React.FC = () => {
         ledger.group?.currency,
       );
       haptics.success();
-      Toast.show({type: 'success', text1: 'PDF exported', text2: path});
+      Toast.show({type: 'success', text1: 'PDF exported'});
+      // The file lives in the app's own private storage (see
+      // exportReport.ts) - there's nothing at a path the user could
+      // browse to, so hand it straight to the OS "Open with" chooser
+      // where they can view it or save/share it wherever they like.
+      // Best-effort: the export itself already succeeded and the toast
+      // above already said so, so a viewer failure (e.g. no PDF app on
+      // the device) shouldn't read as the export having failed.
+      FileViewer.open(path, {showOpenWithDialog: true}).catch(() => {});
     } catch (error: any) {
       haptics.warning();
       Toast.show({
@@ -351,7 +361,9 @@ const BalancesScreen: React.FC = () => {
         ledger.group?.currency,
       );
       haptics.success();
-      Toast.show({type: 'success', text1: 'Excel exported', text2: path});
+      Toast.show({type: 'success', text1: 'Excel exported'});
+      // Same hand-off as onExportPdf above.
+      FileViewer.open(path, {showOpenWithDialog: true}).catch(() => {});
     } catch (error: any) {
       haptics.warning();
       Toast.show({
@@ -382,8 +394,13 @@ const BalancesScreen: React.FC = () => {
           // height so the last card isn't hidden underneath it at rest.
           {paddingTop: insets.top + 24, paddingBottom: tabBarHeight + 24},
         ]}>
-        <Text style={styles.heading}>Balances</Text>
-        <GroupSwitcherPill />
+        <View style={styles.headingRow}>
+          <Text style={[styles.heading, styles.headingNoMargin]}>Balances</Text>
+          <View style={styles.headerRightGroup}>
+            <HomeIconChip />
+            <GroupSwitcherPill iconOnly />
+          </View>
+        </View>
 
         <GlassCard tilt strong style={styles.heroCard}>
           <Text style={styles.heroLabel}>
@@ -548,6 +565,20 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     marginBottom: 16,
   },
+  // Wraps the heading + GroupSwitcherPill on one row (right-aligned pill)
+  // instead of the pill sitting alone on its own line below the title -
+  // the row itself now owns the marginBottom the bare heading used to.
+  headingRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  headingNoMargin: {marginBottom: 0},
+  // GroupSwitcherPill's own default marginTop gave it breathing room
+  // below a title - centered in this row instead, that same margin just
+  // pushed it down and off-center.
+  headerRightGroup: {flexDirection: 'row', alignItems: 'center', gap: 8},
   heroCard: {alignItems: 'center', paddingVertical: 28, marginBottom: 24},
   heroLabel: {
     color: theme.color.inkSoft,

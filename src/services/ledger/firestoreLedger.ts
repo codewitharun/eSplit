@@ -595,6 +595,21 @@ export async function setGroupLocked(
   await groupsRef().doc(groupId).update({isLocked: locked});
 }
 
+// Renames a group. Deliberately a single-field update, same shape as
+// setGroupLocked() above - the group's name is a plain string field with
+// no denormalized copies anywhere else in Firestore (members, expenses
+// and settlements all reference the group by id, never by name), so
+// there's nothing else to touch. The caller is expected to have already
+// trimmed and validated `newName` is non-empty (see the rename modal in
+// GroupSettings.tsx, matching handleAddGuest's own trim-then-validate
+// pattern), so this stays a dumb, single-purpose write like its sibling.
+export async function renameGroup(
+  groupId: string,
+  newName: string,
+): Promise<void> {
+  await groupsRef().doc(groupId).update({name: newName});
+}
+
 // Full set of user-editable fields for an expense. Unlike the very first
 // version of this function (description/amount/category only), editing
 // also needs to be able to move the split around - who's paying, how it's

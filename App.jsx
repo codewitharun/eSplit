@@ -40,6 +40,7 @@ import ToastHost from './src/component/glass/ToastHost';
 import MainTabs from './src/navigator/BottomTabNavigator';
 import CreateJoinGroup from './src/screens/AfterLogin/CreateJoinGroup';
 import GroupManagement from './src/screens/AfterLogin/GroupCheck';
+import GroupsScreen from './src/screens/AfterLogin/Groups';
 import LogoutScreen from './src/screens/AfterLogin/Logout';
 import NotificationsScreen from './src/screens/AfterLogin/NotificationsScreen';
 import ProfileScreen from './src/screens/AfterLogin/Profile';
@@ -364,6 +365,10 @@ const App = () => {
   const AfterLogin = () => (
     <Stack.Navigator screenOptions={{headerShown: false}}>
       <Stack.Screen name="Group-Check" component={GroupManagement} />
+      {/* The Groups tab of the outer Home/Groups/Settings bar
+          (AppBottomBar.tsx) - reached via "See All" on the dashboard's
+          trimmed group preview, or by tapping Groups in the bar itself. */}
+      <Stack.Screen name="Groups" component={GroupsScreen} />
       <Stack.Screen name="CreateJoinGroup" component={CreateJoinGroup} />
       <Stack.Screen name="Home" component={MainTabs} />
       {/* Reached by tapping the avatar in the dashboard header

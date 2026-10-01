@@ -297,15 +297,26 @@ export async function exportGroupPdf(
   </html>
   `;
 
+  // `directory: 'Download'` here does NOT write to the device's public
+  // Downloads folder - react-native-html-to-pdf resolves it under the
+  // app's own scoped external-files directory (getExternalFilesDir/
+  // Download on Android), which every app can always write to with zero
+  // storage permission, on every Android version including the
+  // scoped-storage ones. A previous version of this function then
+  // manually copied that file out to RNFS.DownloadDirectoryPath (the
+  // REAL public Downloads folder) - that raw filesystem write is exactly
+  // what Android's scoped storage blocks on real devices (Android 10+,
+  // this app's targetSdk 35), which is what caused "PDF export failed:
+  // ENOENT: open failed: EACCES (Permission denied)" for real users. The
+  // already-private file is safe to hand straight to FileViewer (see
+  // Balances.tsx's onExportPdf) - no copy needed, and nothing for the
+  // user to grant.
   const file = await RNHTMLtoPDF.convert({
     html,
     fileName,
     directory: 'Download',
   });
-  const publicPath = `${RNFS.DownloadDirectoryPath}/${fileName}.pdf`;
-  await RNFS.copyFile(file.filePath, publicPath);
-  await RNFS.unlink(file.filePath);
-  return publicPath;
+  return file.filePath;
 }
 
 /* ------------------------------------------------------------------ */
@@ -425,9 +436,13 @@ export async function exportGroupExcel(
   XLSX.utils.book_append_sheet(wb, settlementSheet, 'Settlements');
 
   const base64 = XLSX.write(wb, {type: 'base64', bookType: 'xlsx'});
-  const publicPath = `${RNFS.DownloadDirectoryPath}/${fileName}.xlsx`;
-  await RNFS.writeFile(publicPath, base64, 'base64');
-  return publicPath;
+  // Same fix as exportGroupPdf above: write into the app's own private
+  // document storage (no permission needed, works on every OS version)
+  // instead of the real public Downloads folder, which a raw RNFS write
+  // can't reach on a real device under Android's scoped storage.
+  const filePath = `${RNFS.DocumentDirectoryPath}/${fileName}.xlsx`;
+  await RNFS.writeFile(filePath, base64, 'base64');
+  return filePath;
 }
 
 /* ------------------------------------------------------------------ */
@@ -464,7 +479,8 @@ export async function exportGroupCsv(
   ]);
 
   const csv = [header, ...rows].map(r => r.join(',')).join('\n');
-  const publicPath = `${RNFS.DownloadDirectoryPath}/${fileName}.csv`;
-  await RNFS.writeFile(publicPath, csv, 'utf8');
-  return publicPath;
+  // Same fix as exportGroupPdf/exportGroupExcel above.
+  const filePath = `${RNFS.DocumentDirectoryPath}/${fileName}.csv`;
+  await RNFS.writeFile(filePath, csv, 'utf8');
+  return filePath;
 }

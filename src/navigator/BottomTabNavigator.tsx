@@ -138,7 +138,6 @@ const NAV_FLOAT_GAP = 11;
 // oversized for how little content actually sits in it - a narrower,
 // more centered pill suits three icon+label pairs better.
 const TAB_BAR_SIDE_INSET = 24;
-
 export default function MainTabs() {
   // Real, per-device answer to "how much room does the current navigation
   // mode need at the bottom" - larger under gesture navigation's floating
@@ -183,6 +182,8 @@ export default function MainTabs() {
               paddingTop: PILL_VERTICAL_PADDING,
               paddingBottom: PILL_VERTICAL_PADDING,
               marginBottom: marginBelowPill,
+              marginLeft: TAB_BAR_SIDE_INSET,
+              marginRight: TAB_BAR_SIDE_INSET,
             },
           ],
           tabBarLabelStyle: styles.tabLabel,
@@ -253,7 +254,6 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: theme.color.border,
     borderRadius: theme.radius.pill,
-    marginHorizontal: TAB_BAR_SIDE_INSET,
     paddingTop: 8,
     // Floating overlay, not a row that reserves its own space: with this,
     // each screen renders at full height and its scrollable content

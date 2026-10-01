@@ -19,10 +19,17 @@
 // group's exact name - matching the stakes of an action that erases the
 // group's entire expense history for every member, not just the person
 // tapping the button.
+//
+// Rename (the pencil next to the group name) is the opposite end of that
+// scale: admin-only too (a name change is visible to every member, same
+// reasoning as the lock toggle), but a single-field, no-confirmation
+// write - fixing a typo shouldn't feel like a big decision the way
+// deleting the group does.
 
 import auth from '@react-native-firebase/auth';
 import {useFocusEffect, useNavigation} from '@react-navigation/native';
 import {useBottomTabBarHeight} from '@react-navigation/bottom-tabs';
+import {Pencil} from 'lucide-react-native';
 import React, {useCallback, useState} from 'react';
 import {
   BackHandler,
@@ -39,7 +46,9 @@ import QRCode from 'react-native-qrcode-svg';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import GlassCard from '../../component/glass/GlassCard';
 import GroupSwitcherPill from '../../component/GroupSwitcherPill';
+import HomeIconChip from '../../component/HomeIconChip';
 import {useGroupLedger} from '../../hooks/useGroupLedger';
+import {useGroups} from '../../hooks/useGroups';
 import {useJoinRequests} from '../../hooks/useJoinRequests';
 import {useModalOpenGuard} from '../../hooks/useModalOpenGuard';
 import {Routes} from '../../navigator/constants';
@@ -52,6 +61,7 @@ import {
   deleteGroup,
   leaveGroup,
   removeGuestMember,
+  renameGroup,
   setGroupLocked,
 } from '../../services/ledger/firestoreLedger';
 import {EPSILON} from '../../services/ledger/types';
@@ -73,6 +83,7 @@ const GroupSettingsScreen: React.FC = () => {
   const groupKey = useExpenseState(state => state.groupKey);
   const setGroupKey = useExpenseState(state => state.setGroupKey);
   const ledger = useGroupLedger(groupKey);
+  const {renameGroupLocally} = useGroups();
   const [togglingLock, setTogglingLock] = useState(false);
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
@@ -80,11 +91,18 @@ const GroupSettingsScreen: React.FC = () => {
   const {requests: joinRequests} = useJoinRequests(groupKey);
   const [respondingUid, setRespondingUid] = useState<string | null>(null);
   const [addGuestModalVisible, setAddGuestModalVisible] = useState(false);
+  // Rename: deliberately much lighter than the delete modal below - no
+  // typed confirmation, since fixing a mistaken name is meant to be a
+  // quick, easily-reversible correction, not a high-stakes action.
+  const [renameModalVisible, setRenameModalVisible] = useState(false);
+  const [renameInput, setRenameInput] = useState('');
+  const [renamingGroup, setRenamingGroup] = useState(false);
   // See useModalOpenGuard.ts - both confirm modals below open
   // synchronously from a list-row press, the same shape of bug that
   // hit AddExpenseModal without this guard on their Cancel buttons.
   const canCloseDeleteModal = useModalOpenGuard(deleteModalVisible);
   const canCloseAddGuestModal = useModalOpenGuard(addGuestModalVisible);
+  const canCloseRenameModal = useModalOpenGuard(renameModalVisible);
   const [guestNameInput, setGuestNameInput] = useState('');
   const [addingGuest, setAddingGuest] = useState(false);
   const [removingGuestUid, setRemovingGuestUid] = useState<string | null>(null);
@@ -139,6 +157,48 @@ const GroupSettingsScreen: React.FC = () => {
       });
     } finally {
       setTogglingLock(false);
+    }
+  };
+
+  const openRenameModal = () => {
+    setRenameInput(ledger.group?.name || '');
+    setRenameModalVisible(true);
+  };
+
+  const handleRenameGroup = async () => {
+    if (!groupKey) {
+      return;
+    }
+    const trimmed = renameInput.trim();
+    if (!trimmed) {
+      Toast.show({
+        type: 'info',
+        text1: 'Enter a name',
+        text2: 'The group needs a name.',
+      });
+      return;
+    }
+    // No-op guard: closing without actually changing anything shouldn't
+    // fire a write or a success toast.
+    if (trimmed === (ledger.group?.name || '').trim()) {
+      setRenameModalVisible(false);
+      return;
+    }
+    setRenamingGroup(true);
+    try {
+      await renameGroup(groupKey, trimmed);
+      renameGroupLocally(groupKey, trimmed);
+      setRenameModalVisible(false);
+      haptics.success();
+      Toast.show({type: 'success', text1: 'Group renamed'});
+    } catch (error: any) {
+      Toast.show({
+        type: 'error',
+        text1: 'Could not rename group',
+        text2: error?.message,
+      });
+    } finally {
+      setRenamingGroup(false);
     }
   };
 
@@ -399,13 +459,30 @@ const GroupSettingsScreen: React.FC = () => {
           // rest.
           {paddingTop: insets.top + 24, paddingBottom: tabBarHeight + 24},
         ]}>
-        <Text style={styles.heading}>Settings</Text>
-        <GroupSwitcherPill />
+        <View style={styles.headingRow}>
+          <Text style={[styles.heading, styles.headingNoMargin]}>Settings</Text>
+          <View style={styles.headerRightGroup}>
+            <HomeIconChip />
+            <GroupSwitcherPill iconOnly />
+          </View>
+        </View>
 
         <GlassCard style={styles.groupCard}>
-          <Text style={styles.groupName}>
-            {ledger.group?.name || 'Loading…'}
-          </Text>
+          <View style={styles.groupNameRow}>
+            <Text
+              style={[styles.groupName, styles.groupNameText]}
+              numberOfLines={1}>
+              {ledger.group?.name || 'Loading…'}
+            </Text>
+            {isGroupAdmin && (
+              <TouchableOpacity
+                style={styles.renameBtn}
+                hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}
+                onPress={openRenameModal}>
+                <Pencil size={15} color={theme.color.inkSoft} />
+              </TouchableOpacity>
+            )}
+          </View>
           <View style={styles.groupMetaRow}>
             <Text style={styles.groupMetaText}>
               {ledger.group?.currency || 'INR'} · {ledger.members.length} member
@@ -731,6 +808,53 @@ const GroupSettingsScreen: React.FC = () => {
           </GlassCard>
         </View>
       </Modal>
+
+      <Modal
+        visible={renameModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setRenameModalVisible(false)}>
+        <View style={styles.deleteOverlay}>
+          <GlassCard opaque style={styles.deleteCard}>
+            <Text style={styles.deleteTitle}>Rename group</Text>
+            <Text style={styles.deleteLabel}>Group name</Text>
+            <TextInput
+              style={styles.deleteInput}
+              placeholder="e.g. Goa Trip"
+              placeholderTextColor={theme.color.inkFaint}
+              value={renameInput}
+              onChangeText={setRenameInput}
+              autoFocus
+              maxLength={60}
+              editable={!renamingGroup}
+            />
+            <View style={styles.deleteActions}>
+              <TouchableOpacity
+                style={styles.deleteCancelBtn}
+                onPress={() => {
+                  if (canCloseRenameModal()) {
+                    setRenameModalVisible(false);
+                  }
+                }}
+                disabled={renamingGroup}>
+                <Text style={styles.deleteCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.addGuestConfirmBtn,
+                  (!renameInput.trim() || renamingGroup) &&
+                    styles.deleteConfirmBtnDisabled,
+                ]}
+                onPress={handleRenameGroup}
+                disabled={!renameInput.trim() || renamingGroup}>
+                <Text style={styles.addGuestConfirmText}>
+                  {renamingGroup ? 'Saving…' : 'Save'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </GlassCard>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -748,12 +872,41 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     marginBottom: 16,
   },
+  // Wraps the heading + GroupSwitcherPill on one row (right-aligned pill)
+  // instead of the pill sitting alone on its own line below the title -
+  // the row itself now owns the marginBottom the bare heading used to.
+  headingRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  headingNoMargin: {marginBottom: 0},
+  // GroupSwitcherPill's own default marginTop gave it breathing room
+  // below a title - centered in this row instead, that same margin just
+  // pushed it down and off-center.
+  headerRightGroup: {flexDirection: 'row', alignItems: 'center', gap: 8},
   groupCard: {marginTop: 18, marginBottom: 8},
+  groupNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
   groupName: {
     color: theme.color.ink,
     fontFamily: DisplayFont.bold,
     fontSize: moderateScale(18),
     fontWeight: '700',
+  },
+  groupNameText: {flex: 1},
+  renameBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.color.surfaceStrong,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   groupMetaRow: {marginTop: 4},
   groupMetaText: {

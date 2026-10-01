@@ -16,6 +16,14 @@
             <action android:name="android.intent.action.VIEW" />
     <data android:mimeType="application/pdf" />
         </intent>
+        <!-- So the "Open with" chooser for an exported Excel file (see
+             react-native-file-viewer's usage in Balances.tsx) can
+             actually find Sheets/Excel/WPS on Android 11+, which
+             restricts package visibility to what's declared here. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+    <data android:mimeType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+        </intent>
     </queries>
     <application
       android:name=".MainApplication"
