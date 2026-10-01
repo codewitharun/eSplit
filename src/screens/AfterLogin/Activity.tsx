@@ -32,6 +32,7 @@ import {Calendar} from 'react-native-calendars';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import AddExpenseModal from '../../component/AddExpenseModal';
 import ExpenseItemsSheet from '../../component/ExpenseItemsSheet';
+import GroupInsightsCard from '../../component/GroupInsightsCard';
 import GroupSwitcherPill from '../../component/GroupSwitcherPill';
 import HomeIconChip from '../../component/HomeIconChip';
 import Chip from '../../component/glass/Chip';
@@ -41,6 +42,7 @@ import {useGroupLedger} from '../../hooks/useGroupLedger';
 import {useModalOpenGuard} from '../../hooks/useModalOpenGuard';
 import {formatMoney} from '../../services/ledger/currency';
 import {visibleItems} from '../../services/ledger/expenseItems';
+import {computeGroupInsights} from '../../services/ledger/groupInsights';
 import {addExpense, deleteExpense} from '../../services/ledger/firestoreLedger';
 import {
   EXPENSE_CATEGORIES,
@@ -90,6 +92,17 @@ const ActivityScreen: React.FC = () => {
   // Multi-item expense opened by someone who didn't add it - shown as a
   // read-only breakdown (ExpenseItemsSheet) instead of the edit modal.
   const [viewingItemsOf, setViewingItemsOf] = useState<Expense | null>(null);
+  // Header analytics card - all-time numbers for the whole group (not the
+  // list's search/date filters), from data this screen already loaded.
+  const insights = useMemo(
+    () =>
+      computeGroupInsights(
+        ledger.expenses,
+        user?.uid || '',
+        ledger.netBalances[user?.uid || ''] || 0,
+      ),
+    [ledger.expenses, ledger.netBalances, user?.uid],
+  );
   const [showPastMembers, setShowPastMembers] = useState(false);
   const addExpenseSignal = useExpenseState(state => state.addExpenseSignal);
   const [search, setSearch] = useState('');
@@ -420,11 +433,10 @@ Manage & split expenses easily.
         </View>
       </View>
 
-      <GlassCard style={styles.heroCard}>
-        <Text style={styles.heroLabel}>Total spent</Text>
-        <Text style={styles.heroAmount}>
-          {formatMoney(ledger.totalSpent, ledger.group?.currency)}
-        </Text>
+      <GroupInsightsCard
+        insights={insights}
+        currency={ledger.group?.currency}
+        isPersonal={ledger.group?.type === 'personal'}>
         {/* This used to be gated on "no expenses yet", back when a group
             auto-locked itself on the first expense - at that point "no
             expenses" and "still open to new members" were the same thing.
@@ -450,7 +462,7 @@ Manage & split expenses easily.
             </TouchableOpacity>
           </View>
         )}
-      </GlassCard>
+      </GroupInsightsCard>
 
       {overdueRecurring.map(e => (
         <GlassCard key={e.id} style={styles.recurringBanner}>
@@ -779,19 +791,6 @@ const styles = StyleSheet.create({
     fontFamily: BodyFont.regular,
     fontSize: moderateScale(14),
     marginTop: 6,
-  },
-  heroCard: {marginHorizontal: 20, marginBottom: 14},
-  heroLabel: {
-    color: theme.color.inkFaint,
-    fontFamily: BodyFont.regular,
-    fontSize: moderateScale(12),
-    marginBottom: 4,
-  },
-  heroAmount: {
-    color: theme.color.ink,
-    fontFamily: DisplayFont.extrabold,
-    fontSize: moderateScale(28),
-    fontWeight: '800',
   },
   heroInviteRow: {
     flexDirection: 'row',

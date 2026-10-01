@@ -11,7 +11,10 @@
 // assistantClient.ts and passed in.
 
 import {DEFAULT_CURRENCY, formatMoney} from '../ledger/currency';
-import {computeNetBalances, simplifyDebts} from '../ledger/debtSimplifier';
+import {
+  computeNetBalances,
+  computePairwiseLedger,
+} from '../ledger/debtSimplifier';
 import {visibleItems} from '../ledger/expenseItems';
 import {round2} from '../ledger/splitEngine';
 import {
@@ -369,7 +372,8 @@ function balances(data: AssistantData, input: ToolInput): ToolResult {
         })),
       );
       const mine = net[data.uid] || 0;
-      const details = simplifyDebts(net)
+      // Same pair-by-pair ledger the Balances screen shows (useGroupLedger).
+      const details = computePairwiseLedger(g.expenses, g.settlements)
         .filter(t => t.fromUid === data.uid || t.toUid === data.uid)
         .map(t =>
           t.fromUid === data.uid
@@ -395,7 +399,7 @@ function balances(data: AssistantData, input: ToolInput): ToolResult {
     });
   return {
     groups: result,
-    note: 'Amounts are after recorded settlements, using the app’s simplified who-pays-whom.',
+    note: 'Amounts are after recorded settlements, matching the who-owes-whom list on the app’s Balances screen.',
   };
 }
 
