@@ -53,6 +53,7 @@ import {buildUpiPayUri, isValidUpiVpa} from '../../services/ledger/upi';
 import {
   currencySymbol,
   formatMoney,
+  formatSignedMoney,
   isUpiCurrency,
 } from '../../services/ledger/currency';
 import {Routes, FLOATING_ACTIONS_CLEARANCE} from '../../navigator/constants';
@@ -435,7 +436,7 @@ const BalancesScreen: React.FC = () => {
           </View>
         </View>
 
-        <GlassCard tilt strong style={styles.heroCard}>
+        <GlassCard style={styles.heroCard}>
           {isPersonal ? (
             <>
               <Text style={styles.heroLabel}>Total spent</Text>
@@ -648,6 +649,20 @@ const BalancesScreen: React.FC = () => {
           <>
             <Text style={styles.sectionTitle}>Per-person totals</Text>
             <GlassCard style={styles.perPersonCard}>
+              {/* Legend for the bars: the centre line is zero, left of
+                  it means that person owes, right means they're owed. */}
+              <View style={styles.legendRow}>
+                <View style={styles.legendAvatarSpacer} />
+                <View style={styles.legendMid}>
+                  <Text style={[styles.legendText, styles.negative]}>
+                    ← owes
+                  </Text>
+                  <Text style={[styles.legendText, styles.positive]}>
+                    is owed →
+                  </Text>
+                </View>
+                <View style={styles.amountCol} />
+              </View>
               {ledger.members.map((m, i) => {
                 const bal = ledger.netBalances[m.uid] || 0;
                 return (
@@ -669,16 +684,17 @@ const BalancesScreen: React.FC = () => {
                       />
                     </View>
                     <Text
+                      numberOfLines={1}
                       style={[
                         styles.memberBalance,
+                        styles.amountCol,
                         Math.abs(bal) < 0.01
                           ? styles.neutral
                           : bal > 0
                           ? styles.positive
                           : styles.negative,
                       ]}>
-                      {bal > 0.004 ? '+' : ''}
-                      {formatMoney(bal, ledger.group?.currency)}
+                      {formatSignedMoney(bal, ledger.group?.currency)}
                     </Text>
                   </View>
                 );
@@ -727,11 +743,13 @@ const styles = StyleSheet.create({
   // below a title - centered in this row instead, that same margin just
   // pushed it down and off-center.
   headerRightGroup: {flexDirection: 'row', alignItems: 'center', gap: 8},
+  // Same plain GlassCard as Activity's insights card (no tilt/strong
+  // fill), kept compact.
   heroCard: {
     alignItems: 'center',
-    paddingVertical: 24,
-    paddingHorizontal: 18,
-    marginBottom: 24,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    marginBottom: 20,
   },
   heroLabel: {
     color: theme.color.inkSoft,
@@ -740,15 +758,15 @@ const styles = StyleSheet.create({
   },
   heroAmount: {
     fontFamily: DisplayFont.extrabold,
-    fontSize: moderateScale(40),
+    fontSize: moderateScale(30),
     fontWeight: '800',
-    marginTop: 6,
+    marginTop: 2,
   },
   heroSub: {
     color: theme.color.inkFaint,
     fontFamily: BodyFont.regular,
-    fontSize: moderateScale(12.5),
-    marginTop: 8,
+    fontSize: moderateScale(12),
+    marginTop: 4,
   },
   sectionTitle: {
     color: theme.color.inkSoft,
@@ -833,6 +851,25 @@ const styles = StyleSheet.create({
     borderBottomColor: theme.color.border,
   },
   memberRowLast: {borderBottomWidth: 0},
+  // Fixed-width amount column so every row's bar has the same width and
+  // the zero line sits at the same x on every row.
+  amountCol: {width: moderateScale(96), textAlign: 'right'},
+  legendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingTop: 10,
+  },
+  legendAvatarSpacer: {width: 28},
+  legendMid: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  legendText: {
+    fontFamily: BodyFont.regular,
+    fontSize: moderateScale(10.5),
+  },
   memberMid: {flex: 1, gap: 6},
   perPersonCard: {paddingVertical: 4, paddingHorizontal: 14},
   positive: {color: theme.color.green},
@@ -846,25 +883,25 @@ const styles = StyleSheet.create({
   },
   transferRowMine: {borderColor: 'rgba(56,217,201,0.45)'},
   settledBadge: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(62,207,142,0.14)',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   settledTitle: {
     color: theme.color.ink,
     fontFamily: DisplayFont.bold,
-    fontSize: moderateScale(20),
+    fontSize: moderateScale(18),
     fontWeight: '700',
   },
   heroStats: {
     flexDirection: 'row',
     alignSelf: 'stretch',
-    marginTop: 20,
-    paddingTop: 16,
+    marginTop: 14,
+    paddingTop: 12,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: theme.color.border,
   },
@@ -880,7 +917,7 @@ const styles = StyleSheet.create({
   },
   heroStatValue: {
     fontFamily: DisplayFont.bold,
-    fontSize: moderateScale(17),
+    fontSize: moderateScale(15.5),
     fontWeight: '700',
     marginTop: 2,
   },
@@ -890,7 +927,7 @@ const styles = StyleSheet.create({
     fontSize: moderateScale(11.5),
     marginTop: 2,
   },
-  progressBlock: {alignSelf: 'stretch', marginTop: 16, gap: 6},
+  progressBlock: {alignSelf: 'stretch', marginTop: 12, gap: 5},
   progressLabels: {flexDirection: 'row', justifyContent: 'space-between'},
   progressFoot: {textAlign: 'center'},
   memberName: {

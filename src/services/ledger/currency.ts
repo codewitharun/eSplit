@@ -76,6 +76,18 @@ export function formatMoney(
   return `${symbol}${sep}${amount.toFixed(decimals)}`;
 }
 
+// "+₹443.67" / "−₹2645.99" / "₹0.00" - sign in front of the symbol
+// (formatMoney on a negative number gives "₹-2645.99"). Uses a real minus
+// sign (U+2212) so it lines up with "+" in tabular layouts.
+export function formatSignedMoney(
+  amount: number,
+  code?: string | null,
+  decimals: number = 2,
+): string {
+  const sign = amount > 0.004 ? '+' : amount < -0.004 ? '\u2212' : '';
+  return `${sign}${formatMoney(Math.abs(amount), code, decimals)}`;
+}
+
 export function isUpiCurrency(code?: string | null): boolean {
   return (code || DEFAULT_CURRENCY) === 'INR';
 }

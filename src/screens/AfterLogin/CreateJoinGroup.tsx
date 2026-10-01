@@ -57,13 +57,30 @@ import theme from '../../utils/theme';
 const DEFAULT_COUNTRY: CountryOption =
   COUNTRIES.find(c => c.code === 'IN') || COUNTRIES[0];
 
-const CreateJoinGroup = () => {
-  const navigation = useNavigation<any>();
-  const insets = useSafeAreaInsets();
-  const user = auth().currentUser;
+type EnterGroupFn = (
+  groupId: string,
+  currency?: string,
+  type?: GroupType,
+) => Promise<void>;
+
+interface FormProps {
+  // The caller's useEnterGroup().enterGroup - the caller also owns the
+  // UpiPromptModal that hook drives, so the prompt survives this form
+  // closing (it may live in a panel that closes on success).
+  enterGroup: EnterGroupFn;
+  // Called right before entering a newly created/joined group, and after
+  // a join request is sent - lets a panel close itself.
+  onDone?: () => void;
+}
+
+// The create + join form, without any page chrome. Rendered by the
+// CreateJoinGroup screen below and by NewGroupPanel (the genie panel the
+// "New group" button opens).
+export const CreateJoinGroupForm: React.FC<FormProps> = ({
+  enterGroup,
+  onDone,
+}) => {
   const {createGroup, joinGroupByCode} = useGroups();
-  const {enterGroup, upiPromptVisible, dismissUpiPrompt} =
-    useEnterGroup(navigation);
 
   const [groupName, setGroupName] = useState('');
   // Existing groups (created before this toggle existed) simply have no
@@ -135,6 +152,7 @@ const CreateJoinGroup = () => {
       setGroupName('');
       setCountry(DEFAULT_COUNTRY);
       setGroupType('group');
+      onDone?.();
       await enterGroup(group.id, group.currency, group.type);
     } catch (error: any) {
       Toast.show({
@@ -169,12 +187,14 @@ const CreateJoinGroup = () => {
       if (alreadyMember) {
         // Unchanged behaviour for someone re-entering a group they're
         // already in - straight into the group, no request involved.
+        onDone?.();
         await enterGroup(group.id, group.currency, group.type);
       } else if (requestPending) {
         // New members now need the admin's OK first - see joinGroup() in
         // firestoreLedger.ts. There's nothing to enter yet, so stay on
         // this screen instead of navigating into a group they're not a
         // member of.
+        onDone?.();
         Toast.show({
           type: 'success',
           text1: 'Request sent',
@@ -194,18 +214,7 @@ const CreateJoinGroup = () => {
   };
 
   return (
-    <View style={styles.flex}>
-      <View style={[styles.header, {paddingTop: insets.top + 12}]}>
-        <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}
-          style={styles.backBtn}>
-          <ChevronLeft size={22} color={theme.color.ink} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Create or join a group</Text>
-        <View style={styles.headerSpacer} />
-      </View>
-
+    <View style={styles.formRoot}>
       <KeyboardAwareScrollView
         contentContainerStyle={styles.content}
         enableOnAndroid
@@ -335,13 +344,6 @@ const CreateJoinGroup = () => {
         )}
       </KeyboardAwareScrollView>
 
-      <UpiPromptModal
-        visible={upiPromptVisible}
-        uid={user?.uid || ''}
-        onSkip={dismissUpiPrompt}
-        onSaved={dismissUpiPrompt}
-      />
-
       <Modal
         visible={pickerVisible}
         animationType="fade"
@@ -399,6 +401,7 @@ const CreateJoinGroup = () => {
 
 const styles = StyleSheet.create({
   flex: {flex: 1, backgroundColor: theme.color.ground},
+  formRoot: {flex: 1},
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -596,5 +599,37 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
 });
+
+// The original full-page route (kept so nothing that navigates to
+// 'CreateJoinGroup' breaks). The dashboard and Groups list now open the
+// same form in a genie panel instead - see NewGroupPanel.
+const CreateJoinGroup = () => {
+  const navigation = useNavigation<any>();
+  const insets = useSafeAreaInsets();
+  const user = auth().currentUser;
+  const {enterGroup, upiPromptVisible, dismissUpiPrompt} =
+    useEnterGroup(navigation);
+  return (
+    <View style={styles.flex}>
+      <View style={[styles.header, {paddingTop: insets.top + 12}]}>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}
+          style={styles.backBtn}>
+          <ChevronLeft size={22} color={theme.color.ink} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Create or join a group</Text>
+        <View style={styles.headerSpacer} />
+      </View>
+      <CreateJoinGroupForm enterGroup={enterGroup} />
+      <UpiPromptModal
+        visible={upiPromptVisible}
+        uid={user?.uid || ''}
+        onSkip={dismissUpiPrompt}
+        onSaved={dismissUpiPrompt}
+      />
+    </View>
+  );
+};
 
 export default CreateJoinGroup;

@@ -32,23 +32,31 @@ const BalanceBar: React.FC<Props> = ({value, maxAbs, delay = 0}) => {
   const positive = value >= 0;
 
   return (
-    <View style={styles.track}>
+    <View style={styles.wrap}>
+      <View style={styles.track}>
+        {Math.abs(value) >= 0.01 && (
+          <Animated.View
+            style={[
+              styles.bar,
+              positive ? styles.right : styles.left,
+              {
+                backgroundColor: positive
+                  ? theme.color.green
+                  : theme.color.rose,
+              },
+              barStyle,
+            ]}
+          />
+        )}
+      </View>
+      {/* Zero line, taller than the track so it reads as the axis. */}
       <View style={styles.centre} />
-      {Math.abs(value) >= 0.01 && (
-        <Animated.View
-          style={[
-            styles.bar,
-            positive ? styles.right : styles.left,
-            {backgroundColor: positive ? theme.color.green : theme.color.rose},
-            barStyle,
-          ]}
-        />
-      )}
     </View>
   );
 };
 
 const styles = StyleSheet.create({
+  wrap: {height: 14, justifyContent: 'center'},
   track: {
     height: 8,
     borderRadius: 4,
@@ -59,9 +67,11 @@ const styles = StyleSheet.create({
   centre: {
     position: 'absolute',
     left: '50%',
-    width: 1,
-    height: '100%',
-    backgroundColor: theme.color.borderStrong,
+    marginLeft: -1,
+    width: 2,
+    height: 14,
+    borderRadius: 1,
+    backgroundColor: theme.color.inkFaint,
   },
   bar: {position: 'absolute', height: '100%'},
   right: {left: '50%', borderTopRightRadius: 4, borderBottomRightRadius: 4},

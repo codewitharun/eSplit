@@ -50,6 +50,7 @@ import UpiPromptModal from '../../component/UpiPromptModal';
 import {useExpenseState} from '../../store/useExpenseStore';
 import {haptics} from '../../utils/haptics';
 import {useCollapseFabsOnScroll} from '../../hooks/useCollapseFabsOnScroll';
+import NewGroupPanel from '../../component/NewGroupPanel';
 import theme from '../../utils/theme';
 import {BodyFont, MonoFont, Typography, moderateScale} from '../../utils/fonts';
 
@@ -83,6 +84,8 @@ const GroupsScreen = ({navigation}: any) => {
   const barHeight = useAppBottomBarHeight();
   // Collapses the floating create button to icon-only while scrolling down.
   const onFabScroll = useCollapseFabsOnScroll();
+  // "New group" opens as a genie panel out of the floating button.
+  const [newGroupOpen, setNewGroupOpen] = useState(false);
   const user = auth().currentUser;
   const focused = useIsFocused();
 
@@ -502,7 +505,17 @@ const GroupsScreen = ({navigation}: any) => {
 
       <AddGroupFab
         bottom={barHeight + 24}
-        onPress={() => navigation.navigate('CreateJoinGroup')}
+        onPress={() => setNewGroupOpen(true)}
+      />
+      <NewGroupPanel
+        open={newGroupOpen}
+        onClose={() => setNewGroupOpen(false)}
+        origin={{
+          bottom: barHeight + 24,
+          right: ADD_GROUP_FAB_RIGHT,
+          size: ADD_GROUP_FAB_HEIGHT,
+        }}
+        enterGroup={enterGroup}
       />
       {groups.length > 0 && (
         <AssistantOrb

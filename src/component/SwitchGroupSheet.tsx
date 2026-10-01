@@ -169,9 +169,24 @@ const SwitchGroupSheet: React.FC<SwitchGroupSheetProps> = ({
                 </Text>
               </View>
               <View style={styles.rowBody}>
-                <Text style={styles.groupName} numberOfLines={1}>
-                  {g.name}
-                </Text>
+                <View style={styles.nameRow}>
+                  <Text style={styles.groupName} numberOfLines={1}>
+                    {g.name}
+                  </Text>
+                  {g.type === 'personal' && (
+                    <View style={styles.personalTag}>
+                      <Text style={styles.personalTagText}>Personal</Text>
+                    </View>
+                  )}
+                </View>
+                {g.type === 'personal' && (
+                  <Text style={styles.subtle}>Just you - nothing to split</Text>
+                )}
+                {g.type !== 'personal' &&
+                  overview.perGroupBalance[g.id] != null &&
+                  Math.abs(overview.perGroupBalance[g.id]) <= 0.01 && (
+                    <Text style={styles.subtle}>All settled up</Text>
+                  )}
                 {overview.perGroupBalance[g.id] != null &&
                   Math.abs(overview.perGroupBalance[g.id]) > 0.01 && (
                     <Text
@@ -278,7 +293,30 @@ const styles = StyleSheet.create({
   rowBody: {
     flex: 1,
   },
+  nameRow: {flexDirection: 'row', alignItems: 'center', gap: 6},
+  // Same tag as the dashboard / Groups list rows (GroupCheck.tsx).
+  personalTag: {
+    backgroundColor: theme.color.blueBright + '26',
+    borderRadius: theme.radius.pill,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  personalTagText: {
+    color: theme.color.blueBright,
+    fontFamily: BodyFont.bold,
+    fontSize: moderateScale(10),
+    fontWeight: '700',
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+  },
+  subtle: {
+    color: theme.color.inkFaint,
+    fontFamily: BodyFont.regular,
+    fontSize: moderateScale(12),
+    marginTop: 2,
+  },
   groupName: {
+    flexShrink: 1,
     fontFamily: BodyFont.semibold,
     fontSize: moderateScale(14),
     fontWeight: '600',

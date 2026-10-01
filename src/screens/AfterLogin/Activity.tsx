@@ -32,6 +32,7 @@ import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import AddExpenseModal from '../../component/AddExpenseModal';
 import ExpenseItemsSheet from '../../component/ExpenseItemsSheet';
 import GroupInsightsCard from '../../component/GroupInsightsCard';
+import ExpenseImpactText from '../../component/ExpenseImpactText';
 import GroupSwitcherPill from '../../component/GroupSwitcherPill';
 import HomeIconChip from '../../component/HomeIconChip';
 import Chip from '../../component/glass/Chip';
@@ -42,6 +43,11 @@ import {useModalOpenGuard} from '../../hooks/useModalOpenGuard';
 import {formatMoney} from '../../services/ledger/currency';
 import {visibleItems} from '../../services/ledger/expenseItems';
 import {computeGroupInsights} from '../../services/ledger/groupInsights';
+import {
+  dayKey,
+  dayLabel,
+  timeLabel,
+} from '../../services/ledger/activityFormat';
 import {addExpense, deleteExpense} from '../../services/ledger/firestoreLedger';
 import {
   EXPENSE_CATEGORIES,
@@ -293,6 +299,14 @@ const ActivityScreen: React.FC = () => {
     }
     return true;
   });
+
+  // Per-day totals for the list's day headers (of the filtered rows).
+  const dayTotals: Record<string, number> = {};
+  filteredExpenses.forEach(e => {
+    const k = dayKey(e.createdAt);
+    dayTotals[k] = (dayTotals[k] || 0) + e.amount;
+  });
+  const isPersonalList = ledger.group?.type === 'personal';
 
   const filtersActive = !!categoryFilter || dateFilter !== 'all';
 
@@ -552,41 +566,62 @@ const ActivityScreen: React.FC = () => {
           // last rows would render hidden underneath it at rest.
           {paddingBottom: tabBarHeight + FLOATING_ACTIONS_CLEARANCE},
         ]}
-        renderItem={({item}) => (
-          <SwipeableRow
-            actionLabel="Delete"
-            actionColor={theme.color.rose}
-            onAction={() => onDelete(item.id!)}>
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={() => openEditExpense(item)}>
-              <GlassCard style={styles.expenseRow}>
-                <View style={styles.expenseIcon}>
-                  <Text style={{fontSize: moderateScale(18)}}>
-                    {EXPENSE_CATEGORIES.find(c => c.key === item.category)
-                      ?.icon || '🧾'}
-                  </Text>
-                </View>
-                <View style={styles.expenseMid}>
-                  <Text style={styles.expenseTitle}>{item.description}</Text>
-                  <Text style={styles.expenseSub}>
-                    Paid by{' '}
-                    {item.paidBy === user?.uid
-                      ? 'You'
-                      : ledger.memberName(item.paidBy)}{' '}
-                    ·{' '}
-                    {new Date(item.createdAt).toLocaleDateString('en-IN', {
-                      day: '2-digit',
-                      month: 'short',
-                    })}
-                  </Text>
-                </View>
-                <Text style={styles.expenseAmount}>
-                  {formatMoney(item.amount, ledger.group?.currency)}
+        renderItem={({item, index}) => (
+          <>
+            {(index === 0 ||
+              dayKey(filteredExpenses[index - 1].createdAt) !==
+                dayKey(item.createdAt)) && (
+              <View style={styles.dayHeader}>
+                <Text style={styles.dayHeaderText}>
+                  {dayLabel(item.createdAt)}
                 </Text>
-              </GlassCard>
-            </TouchableOpacity>
-          </SwipeableRow>
+                <Text style={styles.dayHeaderTotal}>
+                  {formatMoney(
+                    dayTotals[dayKey(item.createdAt)] || 0,
+                    ledger.group?.currency,
+                  )}
+                </Text>
+              </View>
+            )}
+            <SwipeableRow
+              actionLabel="Delete"
+              actionColor={theme.color.rose}
+              onAction={() => onDelete(item.id!)}>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => openEditExpense(item)}>
+                <GlassCard style={styles.expenseRow}>
+                  <View style={styles.expenseIcon}>
+                    <Text style={{fontSize: moderateScale(18)}}>
+                      {EXPENSE_CATEGORIES.find(c => c.key === item.category)
+                        ?.icon || '🧾'}
+                    </Text>
+                  </View>
+                  <View style={styles.expenseMid}>
+                    <Text style={styles.expenseTitle}>{item.description}</Text>
+                    <Text style={styles.expenseSub} numberOfLines={1}>
+                      {item.paidBy === user?.uid
+                        ? 'You'
+                        : ledger.memberName(item.paidBy)}{' '}
+                      paid · {timeLabel(item.createdAt)}
+                    </Text>
+                  </View>
+                  <View style={styles.expenseRight}>
+                    <Text style={styles.expenseAmount}>
+                      {formatMoney(item.amount, ledger.group?.currency)}
+                    </Text>
+                    {!isPersonalList && (
+                      <ExpenseImpactText
+                        expense={item}
+                        uid={user?.uid || ''}
+                        currency={ledger.group?.currency}
+                      />
+                    )}
+                  </View>
+                </GlassCard>
+              </TouchableOpacity>
+            </SwipeableRow>
+          </>
         )}
         ListEmptyComponent={
           <Text style={styles.emptyText}>
@@ -901,6 +936,28 @@ const styles = StyleSheet.create({
     color: theme.color.ink,
     fontFamily: BodyFont.bold,
     fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+  },
+  expenseRight: {alignItems: 'flex-end', marginLeft: 8},
+  dayHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    paddingHorizontal: 4,
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  dayHeaderText: {
+    color: theme.color.inkSoft,
+    fontFamily: BodyFont.bold,
+    fontSize: moderateScale(12),
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  dayHeaderTotal: {
+    color: theme.color.inkFaint,
+    fontFamily: BodyFont.regular,
+    fontSize: moderateScale(12),
     fontVariant: ['tabular-nums'],
   },
   emptyState: {
