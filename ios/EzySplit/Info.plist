@@ -60,5 +60,9 @@
 		<string>Manrope-Bold.ttf</string>
 		<string>JetBrainsMono-Medium.ttf</string>
 	</array>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>whatsapp</string>
+	</array>
 </dict>
 </plist>

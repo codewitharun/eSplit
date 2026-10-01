@@ -15,6 +15,12 @@
 
 
 <queries>
+        <!-- Lets Linking.canOpenURL('whatsapp://...') see WhatsApp on
+             Android 11+ (InviteSheet hides its WhatsApp button if absent). -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="whatsapp" />
+        </intent>
         <intent>
             <action android:name="android.intent.action.VIEW" />
     <data android:mimeType="application/pdf" />

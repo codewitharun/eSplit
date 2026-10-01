@@ -4,7 +4,8 @@
 // system share). Never used for personal lists (they have no invite).
 // Links come from src/config/urls.ts.
 
-import {Clipboard, Linking, Share} from 'react-native';
+import Clipboard from '@react-native-clipboard/clipboard';
+import {Linking, Share} from 'react-native';
 import {groupInviteUrl} from '../config/urls';
 import {haptics} from '../utils/haptics';
 import Toast from './toast';
@@ -35,8 +36,8 @@ Manage & split expenses easily.
 🔗 ${groupInviteUrl(groupId)}`;
 }
 
-// RN core's Clipboard is deprecated (moving to a community package) but
-// still ships in 0.74 - used here to avoid adding a new native module.
+// @react-native-clipboard/clipboard - the official replacement for RN
+// core's removed Clipboard (pinned to 1.14.3 for RN 0.74 / old arch).
 export function copyToClipboard(text: string, what: string): void {
   try {
     Clipboard.setString(text);
@@ -48,12 +49,26 @@ export function copyToClipboard(text: string, what: string): void {
   }
 }
 
+const WHATSAPP_URL = 'whatsapp://send';
+
+// Whether WhatsApp is installed - InviteSheet only shows its button when it
+// is. Needs the `whatsapp` scheme declared: a <queries> entry in
+// AndroidManifest.xml (Android 11+) and LSApplicationQueriesSchemes in
+// Info.plist (iOS); without those this always answers false.
+export async function isWhatsAppAvailable(): Promise<boolean> {
+  try {
+    return await Linking.canOpenURL(WHATSAPP_URL);
+  } catch {
+    return false;
+  }
+}
+
 // Opens WhatsApp with the invite prefilled; falls back to the system share
-// sheet if WhatsApp isn't installed.
+// sheet if it can't be opened.
 export async function shareInviteOnWhatsApp(message: string): Promise<void> {
   try {
     await Linking.openURL(
-      `whatsapp://send?text=${encodeURIComponent(message)}`,
+      `${WHATSAPP_URL}?text=${encodeURIComponent(message)}`,
     );
   } catch {
     await shareInviteViaSystem(message);

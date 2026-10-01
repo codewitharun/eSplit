@@ -6,7 +6,7 @@
 // one-tap WhatsApp / Copy link / More (system sheet as the fallback).
 
 import {Copy, Link2, MessageCircle, Share2, X} from 'lucide-react-native';
-import React from 'react';
+import React, {useEffect, useState} from 'react';
 import {
   Modal,
   StyleSheet,
@@ -21,6 +21,7 @@ import {useModalOpenGuard} from '../hooks/useModalOpenGuard';
 import {
   buildInviteMessage,
   copyToClipboard,
+  isWhatsAppAvailable,
   shareInviteOnWhatsApp,
   shareInviteViaSystem,
 } from '../services/invite';
@@ -48,13 +49,21 @@ const InviteSheet: React.FC<Props> = ({
   const insets = useSafeAreaInsets();
   const canClose = useModalOpenGuard(visible);
   const message = buildInviteMessage(groupId, groupName, joinCode);
+  // Only offer WhatsApp when it's actually installed - otherwise it would
+  // just open the same system sheet as "More".
+  const [hasWhatsApp, setHasWhatsApp] = useState(false);
+  useEffect(() => {
+    if (visible) {
+      isWhatsAppAvailable().then(setHasWhatsApp);
+    }
+  }, [visible]);
   const close = () => {
     if (canClose()) {
       onClose();
     }
   };
 
-  const actions = [
+  const allActions = [
     {
       key: 'whatsapp',
       label: 'WhatsApp',
@@ -80,6 +89,8 @@ const InviteSheet: React.FC<Props> = ({
       },
     },
   ];
+
+  const actions = allActions.filter(a => a.key !== 'whatsapp' || hasWhatsApp);
 
   return (
     <Modal

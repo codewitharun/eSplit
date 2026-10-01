@@ -9,8 +9,8 @@
 // leaves the phone - only the specific results Claude asked for.
 
 import auth from '@react-native-firebase/auth';
-import {getGroupSnapshot, getUserGroups} from '../ledger/firestoreLedger';
 import {API_BASE_URL} from '../../config/urls';
+import {getGroupSnapshot, getUserGroups} from '../ledger/firestoreLedger';
 import {AssistantData, runAssistantTool} from './assistantTools';
 
 // Comes from src/config/urls.ts. To test against a local or Vercel-preview
