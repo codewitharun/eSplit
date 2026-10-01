@@ -71,6 +71,7 @@ import {shareGroupInvite} from '../../services/invite';
 import {useExpenseState} from '../../store/useExpenseStore';
 import {haptics} from '../../utils/haptics';
 import {useCollapseFabsOnScroll} from '../../hooks/useCollapseFabsOnScroll';
+import KeyboardSafeOverlay from '../../component/KeyboardSafeOverlay';
 import theme from '../../utils/theme';
 import {
   BodyFont,
@@ -812,7 +813,7 @@ const GroupSettingsScreen: React.FC = () => {
         transparent
         animationType="fade"
         onRequestClose={() => setDeleteModalVisible(false)}>
-        <View style={styles.deleteOverlay}>
+        <KeyboardSafeOverlay style={styles.deleteOverlay}>
           <GlassCard opaque style={styles.deleteCard}>
             <Text style={styles.deleteTitle}>
               Delete "{ledger.group?.name}"?
@@ -859,7 +860,7 @@ const GroupSettingsScreen: React.FC = () => {
               </TouchableOpacity>
             </View>
           </GlassCard>
-        </View>
+        </KeyboardSafeOverlay>
       </Modal>
 
       <Modal
@@ -867,7 +868,7 @@ const GroupSettingsScreen: React.FC = () => {
         transparent
         animationType="fade"
         onRequestClose={() => setAddGuestModalVisible(false)}>
-        <View style={styles.deleteOverlay}>
+        <KeyboardSafeOverlay style={styles.deleteOverlay}>
           <GlassCard opaque style={styles.deleteCard}>
             <Text style={styles.deleteTitle}>Add a guest</Text>
             <Text style={styles.deleteBody}>
@@ -910,7 +911,7 @@ const GroupSettingsScreen: React.FC = () => {
               </TouchableOpacity>
             </View>
           </GlassCard>
-        </View>
+        </KeyboardSafeOverlay>
       </Modal>
 
       <Modal
@@ -918,7 +919,7 @@ const GroupSettingsScreen: React.FC = () => {
         transparent
         animationType="fade"
         onRequestClose={() => setRenameModalVisible(false)}>
-        <View style={styles.deleteOverlay}>
+        <KeyboardSafeOverlay style={styles.deleteOverlay}>
           <GlassCard opaque style={styles.deleteCard}>
             <Text style={styles.deleteTitle}>Rename group</Text>
             <Text style={styles.deleteLabel}>Group name</Text>
@@ -957,7 +958,7 @@ const GroupSettingsScreen: React.FC = () => {
               </TouchableOpacity>
             </View>
           </GlassCard>
-        </View>
+        </KeyboardSafeOverlay>
       </Modal>
     </View>
   );

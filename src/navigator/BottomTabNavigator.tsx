@@ -49,12 +49,12 @@ import {useExpenseState} from '../store/useExpenseStore';
 import {useGroupsStore} from '../store/useGroupsStore';
 import {BodyFont, moderateScale} from '../utils/fonts';
 import theme from '../utils/theme';
-import {Routes} from './constants';
+import {ADD_EXPENSE_FAB, Routes} from './constants';
 
 const Tab = createBottomTabNavigator();
 
-const FAB_SIZE = 54;
-const FAB_RIGHT = 24;
+const FAB_SIZE = ADD_EXPENSE_FAB.size;
+const FAB_RIGHT = ADD_EXPENSE_FAB.right;
 
 // The in-group primary action. UX: an extended pill with a receipt icon
 // and an always-visible "Add expense" label - the filled blue->green
@@ -239,9 +239,9 @@ export default function MainTabs() {
           options={{title: 'Settings'}}
         />
       </Tab.Navigator>
-      <AddFab bottom={tabBarHeight + 46} />
+      <AddFab bottom={tabBarHeight + ADD_EXPENSE_FAB.bottomOffset} />
       <AssistantOrb
-        bottom={tabBarHeight + 46 + FAB_SIZE + 14}
+        bottom={tabBarHeight + ADD_EXPENSE_FAB.bottomOffset + FAB_SIZE + 14}
         right={FAB_RIGHT}
         groupName={groupName}
       />

@@ -14,6 +14,8 @@ export interface AssistantMessage {
   role: 'user' | 'assistant';
   text: string;
   isError?: boolean;
+  // True for a fresh AI answer that should type itself out once.
+  animate?: boolean;
 }
 
 type AssistantState = {
@@ -30,6 +32,7 @@ type AssistantState = {
   append: (m: Omit<AssistantMessage, 'id'>) => void;
   addTurn: (turn: ChatTurn) => void;
   setRemaining: (n: number | null) => void;
+  markAnimated: (id: string) => void;
   reset: () => void;
 };
 
@@ -56,5 +59,11 @@ export const useAssistantStore = create<AssistantState>((set, get) => ({
   addTurn: turn =>
     set(state => ({history: [...state.history, turn].slice(-6)})),
   setRemaining: remaining => set({remaining}),
+  markAnimated: id =>
+    set(state => ({
+      messages: state.messages.map(m =>
+        m.id === id ? {...m, animate: false} : m,
+      ),
+    })),
   reset: () => set({messages: [], history: []}),
 }));

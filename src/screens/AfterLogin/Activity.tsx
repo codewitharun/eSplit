@@ -59,8 +59,12 @@ import {shareGroupInvite} from '../../services/invite';
 import {useExpenseState} from '../../store/useExpenseStore';
 import {BodyFont, DisplayFont, moderateScale} from '../../utils/fonts';
 import {haptics} from '../../utils/haptics';
-import {FLOATING_ACTIONS_CLEARANCE} from '../../navigator/constants';
+import {
+  ADD_EXPENSE_FAB,
+  FLOATING_ACTIONS_CLEARANCE,
+} from '../../navigator/constants';
 import {useCollapseFabsOnScroll} from '../../hooks/useCollapseFabsOnScroll';
+import {GenieOrigin} from '../../component/GeniePanel';
 import theme from '../../utils/theme';
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -97,6 +101,10 @@ const ActivityScreen: React.FC = () => {
   const ledger = useGroupLedger(groupKey);
   const [modalVisible, setModalVisible] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+  // Where the add/edit panel grows from: the FAB, or the tapped row.
+  const [expenseOrigin, setExpenseOrigin] = useState<GenieOrigin | undefined>(
+    undefined,
+  );
   // Multi-item expense opened by someone who didn't add it - shown as a
   // read-only breakdown (ExpenseItemsSheet) instead of the edit modal.
   const [viewingItemsOf, setViewingItemsOf] = useState<Expense | null>(null);
@@ -144,9 +152,16 @@ const ActivityScreen: React.FC = () => {
       lastAddSignalRef.current = addExpenseSignal;
       if (groupKey) {
         setEditingExpense(null);
+        // Grow the panel out of the Add expense button itself.
+        setExpenseOrigin({
+          bottom: tabBarHeight + ADD_EXPENSE_FAB.bottomOffset,
+          right: ADD_EXPENSE_FAB.right,
+          size: ADD_EXPENSE_FAB.size,
+        });
         setModalVisible(true);
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [addExpenseSignal, groupKey]);
 
   const navigation = useNavigation<any>();
@@ -185,7 +200,10 @@ const ActivityScreen: React.FC = () => {
     }, [navigation]),
   );
 
-  const openEditExpense = (expense: Expense) => {
+  const openEditExpense = (
+    expense: Expense,
+    tapPoint?: {x: number; y: number},
+  ) => {
     // Firestore rules only allow the member who created an expense to
     // update or delete it (previously any group member could edit/delete
     // any expense - tightened alongside this). Mirror that here so tapping
@@ -208,12 +226,16 @@ const ActivityScreen: React.FC = () => {
     }
     haptics.tap();
     setEditingExpense(expense);
+    // Grow the edit panel out of the spot the row was tapped.
+    setExpenseOrigin(tapPoint ? {...tapPoint, size: 44} : undefined);
     setModalVisible(true);
   };
 
+  // editingExpense is deliberately left set while the panel animates
+  // closed (so its title doesn't flip to "New expense" mid-animation);
+  // opening Add resets it to null.
   const closeExpenseModal = () => {
     setModalVisible(false);
-    setEditingExpense(null);
   };
 
   const {from, to} = useMemo(() => {
@@ -589,7 +611,12 @@ const ActivityScreen: React.FC = () => {
               onAction={() => onDelete(item.id!)}>
               <TouchableOpacity
                 activeOpacity={0.7}
-                onPress={() => openEditExpense(item)}>
+                onPress={e =>
+                  openEditExpense(item, {
+                    x: e.nativeEvent.pageX,
+                    y: e.nativeEvent.pageY,
+                  })
+                }>
                 <GlassCard style={styles.expenseRow}>
                   <View style={styles.expenseIcon}>
                     <Text style={{fontSize: moderateScale(18)}}>
@@ -650,6 +677,7 @@ const ActivityScreen: React.FC = () => {
           currentUid={user!.uid}
           groupCurrency={ledger.group?.currency}
           editingExpense={editingExpense}
+          origin={expenseOrigin}
         />
       )}
 

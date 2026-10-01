@@ -26,7 +26,9 @@ import {ChevronLeft} from 'lucide-react-native';
 import React, {useMemo, useState} from 'react';
 import {
   FlatList,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   StyleSheet,
   Text,
   TextInput,
@@ -34,7 +36,7 @@ import {
   TouchableWithoutFeedback,
   View,
 } from 'react-native';
-import {KeyboardAwareScrollView} from 'react-native-keyboard-aware-scroll-view';
+import KeyboardSafeScrollView from '../../component/KeyboardSafeScrollView';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import GlassCard from '../../component/glass/GlassCard';
 import GradientView from '../../component/glass/GradientView';
@@ -215,11 +217,7 @@ export const CreateJoinGroupForm: React.FC<FormProps> = ({
 
   return (
     <View style={styles.formRoot}>
-      <KeyboardAwareScrollView
-        contentContainerStyle={styles.content}
-        enableOnAndroid
-        extraScrollHeight={20}
-        keyboardShouldPersistTaps="handled">
+      <KeyboardSafeScrollView contentContainerStyle={styles.content}>
         <Text style={styles.sectionLabel}>Create a new group</Text>
         <GlassCard style={styles.card}>
           <View style={styles.typeToggleRow}>
@@ -342,7 +340,7 @@ export const CreateJoinGroupForm: React.FC<FormProps> = ({
             </GlassCard>
           </>
         )}
-      </KeyboardAwareScrollView>
+      </KeyboardSafeScrollView>
 
       <Modal
         visible={pickerVisible}
@@ -621,7 +619,11 @@ const CreateJoinGroup = () => {
         <Text style={styles.headerTitle}>Create or join a group</Text>
         <View style={styles.headerSpacer} />
       </View>
-      <CreateJoinGroupForm enterGroup={enterGroup} />
+      <KeyboardAvoidingView
+        style={styles.formRoot}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <CreateJoinGroupForm enterGroup={enterGroup} />
+      </KeyboardAvoidingView>
       <UpiPromptModal
         visible={upiPromptVisible}
         uid={user?.uid || ''}

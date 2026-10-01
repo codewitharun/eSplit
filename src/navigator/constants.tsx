@@ -27,3 +27,8 @@ export enum Routes {
 // above it (see BottomTabNavigator.tsx: pill at tabBar+46, 54 tall; orb
 // 14 above it, 46 tall; plus breathing room).
 export const FLOATING_ACTIONS_CLEARANCE = 46 + 54 + 14 + 46 + 16;
+
+// The floating "Add expense" button in the group tabs (BottomTabNavigator)
+// - its bottom is tabBarHeight + ADD_EXPENSE_FAB.bottomOffset. Shared so
+// the Add expense panel can grow out of the exact button.
+export const ADD_EXPENSE_FAB = {bottomOffset: 46, size: 54, right: 24};
