@@ -1,6 +1,6 @@
 // src/services/ai/assistantClient.ts
 // Talks to esplit-backend's POST /ai/chat (routes/ai.js), which holds the
-// AI provider API key (Grok or Claude), checks the Firebase login and enforces the daily limit.
+// AI provider API key (Gemini, Grok or Claude), checks the Firebase login and enforces the daily limit.
 //
 // One question can take a few round trips: the model may ask for a tool
 // (e.g. get_spending_summary for September); we run it locally with

@@ -192,8 +192,8 @@ const AssistantChat: React.FC<Props> = ({groupName, bottomInset}) => {
         <Text style={styles.consentText}>
           To answer, your question and the expense details it needs (amounts,
           categories, dates, descriptions, group and member names) are sent to
-          our server and to our AI provider (currently xAI’s Grok). They’re used
-          only to answer you and aren’t saved by EzySplit.
+          our server and to our AI provider (currently Google Gemini). They’re
+          used only to answer you and aren’t saved by EzySplit.
         </Text>
         <Text style={styles.consentText}>
           AI can make mistakes - double-check anything important in the app.
