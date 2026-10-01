@@ -27,6 +27,7 @@ import {
   ChevronRight,
   Clock,
   Sigma,
+  Sparkles,
 } from 'lucide-react-native';
 import Toast from '../../services/toast';
 import {GroupType} from '../../services/ledger/types';
@@ -669,6 +670,29 @@ const GroupManagement = ({navigation}: any) => {
               </View>
             )}
 
+            {groups.length > 0 && (
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => {
+                  haptics.tap();
+                  navigation.navigate('Assistant');
+                }}
+                accessibilityLabel="Ask EzySplit AI about your spending">
+                <GlassCard style={styles.aiCard}>
+                  <View style={styles.aiIcon}>
+                    <Sparkles size={18} color={theme.color.teal} />
+                  </View>
+                  <View style={styles.aiMid}>
+                    <Text style={styles.aiTitle}>Ask EzySplit AI</Text>
+                    <Text style={styles.aiSub} numberOfLines={1}>
+                      “How much did I spend on food this month?”
+                    </Text>
+                  </View>
+                  <ChevronRight size={18} color={theme.color.inkFaint} />
+                </GlassCard>
+              </TouchableOpacity>
+            )}
+
             <View style={styles.groupsHeaderRow}>
               <Text style={styles.title}>Your groups</Text>
               <View style={styles.groupsHeaderActions}>
@@ -812,6 +836,35 @@ const styles = StyleSheet.create({
     marginBottom: 18,
   },
   emptyCard: {marginBottom: 12},
+  aiCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginBottom: 16,
+    gap: 12,
+  },
+  aiIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(56,217,201,0.12)',
+  },
+  aiMid: {flex: 1},
+  aiTitle: {
+    color: theme.color.ink,
+    fontFamily: BodyFont.bold,
+    fontSize: moderateScale(14.5),
+    fontWeight: '700',
+  },
+  aiSub: {
+    color: theme.color.inkFaint,
+    fontFamily: BodyFont.regular,
+    fontSize: moderateScale(12),
+    marginTop: 2,
+  },
   emptyText: {
     color: theme.color.inkFaint,
     fontFamily: BodyFont.regular,
