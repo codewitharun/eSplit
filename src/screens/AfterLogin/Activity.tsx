@@ -53,6 +53,7 @@ import Toast from '../../services/toast';
 import {useExpenseState} from '../../store/useExpenseStore';
 import {BodyFont, DisplayFont, moderateScale} from '../../utils/fonts';
 import {haptics} from '../../utils/haptics';
+import {FLOATING_ACTIONS_CLEARANCE} from '../../navigator/constants';
 import theme from '../../utils/theme';
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -574,7 +575,7 @@ Manage & split expenses easily.
           // BottomTabNavigator.tsx) instead of reserving its own row, so
           // the list needs real bottom padding for its own height or the
           // last rows would render hidden underneath it at rest.
-          {paddingBottom: tabBarHeight + 24},
+          {paddingBottom: tabBarHeight + FLOATING_ACTIONS_CLEARANCE},
         ]}
         renderItem={({item}) => (
           <SwipeableRow
@@ -615,7 +616,7 @@ Manage & split expenses easily.
         ListEmptyComponent={
           <Text style={styles.emptyText}>
             {ledger.expenses.length === 0
-              ? 'No expenses yet — tap + to add the first one.'
+              ? 'No expenses yet — tap “Add expense” to log the first one.'
               : 'No expenses match this filter.'}
           </Text>
         }

@@ -50,7 +50,7 @@ import {
   formatMoney,
   isUpiCurrency,
 } from '../../services/ledger/currency';
-import {Routes} from '../../navigator/constants';
+import {Routes, FLOATING_ACTIONS_CLEARANCE} from '../../navigator/constants';
 import {useExpenseState} from '../../store/useExpenseStore';
 import {haptics} from '../../utils/haptics';
 import theme from '../../utils/theme';
@@ -392,7 +392,10 @@ const BalancesScreen: React.FC = () => {
           // The tab bar floats over content now instead of reserving
           // its own row (see BottomTabNavigator.tsx) - pad for its real
           // height so the last card isn't hidden underneath it at rest.
-          {paddingTop: insets.top + 24, paddingBottom: tabBarHeight + 24},
+          {
+            paddingTop: insets.top + 24,
+            paddingBottom: tabBarHeight + FLOATING_ACTIONS_CLEARANCE,
+          },
         ]}>
         <View style={styles.headingRow}>
           <Text style={[styles.heading, styles.headingNoMargin]}>Balances</Text>

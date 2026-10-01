@@ -29,11 +29,11 @@ import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import {
   ArrowLeftRight,
   ListChecks,
-  PlusIcon,
+  ReceiptText,
   Settings,
 } from 'lucide-react-native';
 import React, {useEffect} from 'react';
-import {StyleSheet, TouchableOpacity, View} from 'react-native';
+import {StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -41,10 +41,12 @@ import Animated, {
 } from 'react-native-reanimated';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import GradientView from '../component/glass/GradientView';
+import AssistantOrb from '../component/assistant/AssistantOrb';
 import ActivityScreen from '../screens/AfterLogin/Activity';
 import BalancesScreen from '../screens/AfterLogin/Balances';
 import GroupSettingsScreen from '../screens/AfterLogin/GroupSettings';
 import {useExpenseState} from '../store/useExpenseStore';
+import {useGroupsStore} from '../store/useGroupsStore';
 import {BodyFont, moderateScale} from '../utils/fonts';
 import {haptics} from '../utils/haptics';
 import theme from '../utils/theme';
@@ -53,13 +55,21 @@ import {Routes} from './constants';
 const Tab = createBottomTabNavigator();
 
 const FAB_SIZE = 54;
+const FAB_RIGHT = 24;
 
+// The in-group primary action. UX: an extended pill with a receipt icon
+// and an always-visible "Add expense" label - the filled blue->green
+// gradient is reserved for this money action, so it can't be confused
+// with "New group" (outlined, people icon, see AddGroupFab.tsx) or the
+// AI orb (small dark sparkle circle, see AssistantOrb.tsx).
 function AddFab({bottom}: {bottom: number}) {
   const triggerAddExpense = useExpenseState(state => state.triggerAddExpense);
   return (
     <TouchableOpacity
       style={[styles.fabShadow, {bottom}]}
       activeOpacity={0.85}
+      accessibilityRole="button"
+      accessibilityLabel="Add expense"
       onPress={() => {
         haptics.tap();
         triggerAddExpense();
@@ -67,7 +77,8 @@ function AddFab({bottom}: {bottom: number}) {
       <GradientView
         colors={[theme.color.blueBright, theme.color.green]}
         style={styles.fab}>
-        <PlusIcon size={24} color={theme.color.onAccent} />
+        <ReceiptText size={20} color={theme.color.onAccent} />
+        <Text style={styles.fabLabel}>Add expense</Text>
       </GradientView>
     </TouchableOpacity>
   );
@@ -157,6 +168,12 @@ export default function MainTabs() {
   // lives entirely in margin, outside the pill, never inside it.
   const marginBelowPill = NAV_FLOAT_GAP + bottomInset;
   const tabBarHeight = pillHeight + marginBelowPill;
+  // Current group's name, for the AI panel's suggested questions -
+  // already in the groups store, no extra read.
+  const groupKey = useExpenseState(state => state.groupKey);
+  const groupName = useGroupsStore(
+    state => state.groups.find(g => g.id === groupKey)?.name,
+  );
 
   return (
     <View style={styles.flex}>
@@ -229,6 +246,11 @@ export default function MainTabs() {
         />
       </Tab.Navigator>
       <AddFab bottom={tabBarHeight + 46} />
+      <AssistantOrb
+        bottom={tabBarHeight + 46 + FAB_SIZE + 14}
+        right={FAB_RIGHT}
+        groupName={groupName}
+      />
     </View>
   );
 }
@@ -289,8 +311,7 @@ const styles = StyleSheet.create({
   },
   fabShadow: {
     position: 'absolute',
-    right: 24,
-    width: FAB_SIZE,
+    right: FAB_RIGHT,
     height: FAB_SIZE,
     borderRadius: FAB_SIZE / 2,
     shadowColor: theme.color.greenBright,
@@ -300,11 +321,19 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   fab: {
-    width: FAB_SIZE,
     height: FAB_SIZE,
     borderRadius: FAB_SIZE / 2,
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 20,
     justifyContent: 'center',
     alignItems: 'center',
     overflow: 'hidden',
+  },
+  fabLabel: {
+    color: theme.color.onAccent,
+    fontFamily: BodyFont.bold,
+    fontSize: moderateScale(14),
+    fontWeight: '800',
   },
 });

@@ -28,7 +28,13 @@ import Toast from '../../services/toast';
 import Chip from '../../component/glass/Chip';
 import AppAlert from '../../services/appAlert';
 import GroupsListSkeleton from '../../component/glass/GroupsListSkeleton';
-import AddGroupFab, {ADD_GROUP_FAB_HEIGHT} from '../../component/AddGroupFab';
+import AddGroupFab, {
+  ADD_GROUP_FAB_HEIGHT,
+  ADD_GROUP_FAB_RIGHT,
+} from '../../component/AddGroupFab';
+import AssistantOrb, {
+  ASSISTANT_ORB_SIZE,
+} from '../../component/assistant/AssistantOrb';
 import GlassCard from '../../component/glass/GlassCard';
 import SwipeableRow from '../../component/glass/SwipeableRow';
 import Header from '../../component/header';
@@ -480,7 +486,11 @@ const GroupsScreen = ({navigation}: any) => {
             ))}
           </>
         )}
-        <View style={{height: barHeight + ADD_GROUP_FAB_HEIGHT + 24}} />
+        <View
+          style={{
+            height: barHeight + ADD_GROUP_FAB_HEIGHT + ASSISTANT_ORB_SIZE + 38,
+          }}
+        />
       </KeyboardAwareScrollView>
 
       <AppBottomBar active="groups" />
@@ -489,6 +499,12 @@ const GroupsScreen = ({navigation}: any) => {
         bottom={barHeight + 24}
         onPress={() => navigation.navigate('CreateJoinGroup')}
       />
+      {groups.length > 0 && (
+        <AssistantOrb
+          bottom={barHeight + 24 + ADD_GROUP_FAB_HEIGHT + 14}
+          right={ADD_GROUP_FAB_RIGHT}
+        />
+      )}
 
       <UpiPromptModal
         visible={upiPromptVisible}

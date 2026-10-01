@@ -41,7 +41,6 @@ import MainTabs from './src/navigator/BottomTabNavigator';
 import CreateJoinGroup from './src/screens/AfterLogin/CreateJoinGroup';
 import GroupManagement from './src/screens/AfterLogin/GroupCheck';
 import GroupsScreen from './src/screens/AfterLogin/Groups';
-import AssistantScreen from './src/screens/AfterLogin/Assistant';
 import LogoutScreen from './src/screens/AfterLogin/Logout';
 import NotificationsScreen from './src/screens/AfterLogin/NotificationsScreen';
 import ProfileScreen from './src/screens/AfterLogin/Profile';
@@ -370,8 +369,6 @@ const App = () => {
           (AppBottomBar.tsx) - reached via "See All" on the dashboard's
           trimmed group preview, or by tapping Groups in the bar itself. */}
       <Stack.Screen name="Groups" component={GroupsScreen} />
-      {/* "Ask EzySplit" AI assistant - entry card on the dashboard. */}
-      <Stack.Screen name="Assistant" component={AssistantScreen} />
       <Stack.Screen name="CreateJoinGroup" component={CreateJoinGroup} />
       <Stack.Screen name="Home" component={MainTabs} />
       {/* Reached by tapping the avatar in the dashboard header

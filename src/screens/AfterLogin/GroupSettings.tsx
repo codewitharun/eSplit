@@ -51,7 +51,7 @@ import {useGroupLedger} from '../../hooks/useGroupLedger';
 import {useGroups} from '../../hooks/useGroups';
 import {useJoinRequests} from '../../hooks/useJoinRequests';
 import {useModalOpenGuard} from '../../hooks/useModalOpenGuard';
-import {Routes} from '../../navigator/constants';
+import {Routes, FLOATING_ACTIONS_CLEARANCE} from '../../navigator/constants';
 import AppAlert from '../../services/appAlert';
 import {formatMoney} from '../../services/ledger/currency';
 import {
@@ -457,7 +457,10 @@ const GroupSettingsScreen: React.FC = () => {
           // its own row (see BottomTabNavigator.tsx) - pad for its real
           // height so the Danger Zone card isn't hidden underneath it at
           // rest.
-          {paddingTop: insets.top + 24, paddingBottom: tabBarHeight + 24},
+          {
+            paddingTop: insets.top + 24,
+            paddingBottom: tabBarHeight + FLOATING_ACTIONS_CLEARANCE,
+          },
         ]}>
         <View style={styles.headingRow}>
           <Text style={[styles.heading, styles.headingNoMargin]}>Settings</Text>
