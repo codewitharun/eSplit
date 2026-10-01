@@ -23,6 +23,7 @@ import {
   loadAssistantData,
 } from '../../services/ai/assistantClient';
 import {AssistantData} from '../../services/ai/assistantTools';
+import {useAiAccessStore} from '../../store/useAiAccessStore';
 import {
   AssistantMessage,
   useAssistantStore,
@@ -145,6 +146,14 @@ const AssistantChat: React.FC<Props> = ({groupName, bottomInset}) => {
       const after = useAssistantStore.getState();
       if (error instanceof AssistantError && error.code === 'limit') {
         after.setRemaining(0);
+        haptics.warning();
+      } else if (
+        error instanceof AssistantError &&
+        error.code === 'no_access'
+      ) {
+        // Access was switched off in the admin panel - the orb disappears
+        // once this panel closes.
+        useAiAccessStore.getState().revoke();
         haptics.warning();
       } else {
         haptics.error();

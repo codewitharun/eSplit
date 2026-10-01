@@ -7,8 +7,9 @@
 // group); the orb is smaller, circular, dark glass with a teal sparkle and
 // a slow "alive" glow, stacked just above the primary action.
 
+import {useFocusEffect} from '@react-navigation/native';
 import {RotateCcw, Sparkles} from 'lucide-react-native';
-import React, {useEffect, useState} from 'react';
+import React, {useCallback, useEffect, useState} from 'react';
 import {StyleSheet, TouchableOpacity, View} from 'react-native';
 import Animated, {
   Easing,
@@ -20,6 +21,7 @@ import Animated, {
   withSequence,
   withTiming,
 } from 'react-native-reanimated';
+import {useAiAccessStore} from '../../store/useAiAccessStore';
 import {useAssistantStore} from '../../store/useAssistantStore';
 import {haptics} from '../../utils/haptics';
 import theme from '../../utils/theme';
@@ -44,6 +46,22 @@ const AssistantOrb: React.FC<Props> = ({bottom, right, groupName}) => {
   const busy = useAssistantStore(s => s.busy);
   const glow = useSharedValue(0);
   const hidden = useSharedValue(0);
+  // Only users an admin enabled (backend GET /ai/access) see the orb.
+  const aiEnabled = useAiAccessStore(s => s.enabled);
+  const aiRemaining = useAiAccessStore(s => s.remaining);
+  useFocusEffect(
+    useCallback(() => {
+      useAiAccessStore.getState().refresh();
+    }, []),
+  );
+  // Seed "N questions left today" from the access check, before the first
+  // question of the session is asked.
+  useEffect(() => {
+    const s = useAssistantStore.getState();
+    if (aiRemaining !== null && s.remaining === null) {
+      s.setRemaining(aiRemaining);
+    }
+  }, [aiRemaining]);
 
   // Slow breathing glow ring - a calm "this is alive / smart" cue that
   // none of the create buttons have.
@@ -71,6 +89,12 @@ const AssistantOrb: React.FC<Props> = ({bottom, right, groupName}) => {
     transform: [{scale: interpolate(glow.value, [0, 1], [1, 1.55])}],
   }));
   const orbStyle = useAnimatedStyle(() => ({opacity: 1 - hidden.value}));
+
+  // Keep the panel mounted if it's already open when access is revoked, so
+  // the user sees the "not available" reply; hide the orb otherwise.
+  if (!aiEnabled && !open) {
+    return null;
+  }
 
   return (
     <>
