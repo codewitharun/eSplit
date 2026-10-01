@@ -16,6 +16,14 @@ import RNHTMLtoPDF from 'react-native-html-to-pdf';
 import * as XLSX from 'xlsx';
 import {Expense, GroupMember, Settlement} from './types';
 import {formatMoney} from './currency';
+import {visibleItems} from './expenseItems';
+
+// "Bread 12; Milk 30; Eggs 44" for a multi-item expense, '' otherwise
+// (every single-line / pre-existing expense exports exactly as before).
+function itemsBreakdown(e: Expense): string {
+  const items = visibleItems(e);
+  return items ? items.map(i => `${i.name} ${i.price}`).join('; ') : '';
+}
 
 const BRAND = {
   blue: '#0082B0',
@@ -109,7 +117,11 @@ export async function exportGroupPdf(
       .map(
         e => `<tr>
         <td>${fmtDate(e.createdAt)}</td>
-        <td>${e.description}<div class="tag">${e.category}</div></td>
+        <td>${e.description}${
+          itemsBreakdown(e)
+            ? `<div class="muted">${itemsBreakdown(e)}</div>`
+            : ''
+        }<div class="tag">${e.category}</div></td>
         <td>${name(e.paidBy)}</td>
         <td class="amount">${fmtMoney(e.amount)}</td>
       </tr>`,
@@ -375,7 +387,9 @@ export async function exportGroupExcel(
     .sort((a, b) => +new Date(a.createdAt) - +new Date(b.createdAt))
     .map(e => [
       new Date(e.createdAt).toISOString().slice(0, 10),
-      e.description,
+      itemsBreakdown(e)
+        ? `${e.description} (${itemsBreakdown(e)})`
+        : e.description,
       e.category,
       name(e.paidBy),
       e.splitType,
@@ -469,7 +483,10 @@ export async function exportGroupCsv(
   ];
   const rows = expenses.map(e => [
     new Date(e.createdAt).toISOString().slice(0, 10),
-    e.description.replace(/,/g, ' '),
+    (itemsBreakdown(e)
+      ? `${e.description} (${itemsBreakdown(e)})`
+      : e.description
+    ).replace(/,/g, ' '),
     e.category,
     name(e.paidBy),
     e.amount.toFixed(2),

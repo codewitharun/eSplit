@@ -31,6 +31,7 @@ import {
 import {Calendar} from 'react-native-calendars';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import AddExpenseModal from '../../component/AddExpenseModal';
+import ExpenseItemsSheet from '../../component/ExpenseItemsSheet';
 import GroupSwitcherPill from '../../component/GroupSwitcherPill';
 import HomeIconChip from '../../component/HomeIconChip';
 import Chip from '../../component/glass/Chip';
@@ -39,6 +40,7 @@ import SwipeableRow from '../../component/glass/SwipeableRow';
 import {useGroupLedger} from '../../hooks/useGroupLedger';
 import {useModalOpenGuard} from '../../hooks/useModalOpenGuard';
 import {formatMoney} from '../../services/ledger/currency';
+import {visibleItems} from '../../services/ledger/expenseItems';
 import {addExpense, deleteExpense} from '../../services/ledger/firestoreLedger';
 import {
   EXPENSE_CATEGORIES,
@@ -85,6 +87,9 @@ const ActivityScreen: React.FC = () => {
   const ledger = useGroupLedger(groupKey);
   const [modalVisible, setModalVisible] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+  // Multi-item expense opened by someone who didn't add it - shown as a
+  // read-only breakdown (ExpenseItemsSheet) instead of the edit modal.
+  const [viewingItemsOf, setViewingItemsOf] = useState<Expense | null>(null);
   const [showPastMembers, setShowPastMembers] = useState(false);
   const addExpenseSignal = useExpenseState(state => state.addExpenseSignal);
   const [search, setSearch] = useState('');
@@ -164,6 +169,11 @@ const ActivityScreen: React.FC = () => {
     // someone else's expense gives a clear reason instead of a silent
     // permission-denied write once they hit Save.
     if (expense.createdBy !== user?.uid) {
+      if (visibleItems(expense)) {
+        haptics.tap();
+        setViewingItemsOf(expense);
+        return;
+      }
       Toast.show({
         type: 'info',
         text1: 'Only the person who added this can edit it',
@@ -257,7 +267,10 @@ const ActivityScreen: React.FC = () => {
     }
     if (
       search.trim() &&
-      !e.description.toLowerCase().includes(search.trim().toLowerCase())
+      !e.description.toLowerCase().includes(search.trim().toLowerCase()) &&
+      !(visibleItems(e) || []).some(i =>
+        i.name.toLowerCase().includes(search.trim().toLowerCase()),
+      )
     ) {
       return false;
     }
@@ -291,6 +304,7 @@ const ActivityScreen: React.FC = () => {
         splitType: source.splitType,
         participantUids: Object.keys(source.shares),
         splitParams: source.splitParams,
+        items: visibleItems(source) || undefined,
         isRecurring: true,
         recurrenceIntervalDays: source.recurrenceIntervalDays,
       });
@@ -615,6 +629,18 @@ Manage & split expenses easily.
           editingExpense={editingExpense}
         />
       )}
+
+      <ExpenseItemsSheet
+        expense={viewingItemsOf}
+        onClose={() => setViewingItemsOf(null)}
+        currency={ledger.group?.currency}
+        paidByLabel={
+          viewingItemsOf?.paidBy === user?.uid
+            ? 'You'
+            : ledger.memberName(viewingItemsOf?.paidBy || '')
+        }
+        createdByLabel={ledger.memberName(viewingItemsOf?.createdBy || '')}
+      />
 
       <Modal
         visible={showPastMembers}

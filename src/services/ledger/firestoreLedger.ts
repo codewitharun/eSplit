@@ -13,6 +13,7 @@ import {formatMoney} from './currency';
 import {
   Expense,
   ExpenseCategory,
+  ExpenseItem,
   Group,
   GroupMember,
   GroupType,
@@ -485,6 +486,10 @@ export interface AddExpenseInput {
   splitParams?: SplitParams;
   isRecurring?: boolean;
   recurrenceIntervalDays?: number;
+  // Multi-item expenses only (see expenseItems.ts). Omitted or empty for a
+  // normal single-line expense, which is then saved in exactly the same
+  // shape as before this field existed.
+  items?: ExpenseItem[];
 }
 
 export async function addExpense(input: AddExpenseInput): Promise<void> {
@@ -518,6 +523,7 @@ export async function addExpense(input: AddExpenseInput): Promise<void> {
     splitType: input.splitType,
     splitParams: input.splitParams,
     shares,
+    items: input.items && input.items.length > 1 ? input.items : undefined,
     isRecurring: !!input.isRecurring,
     recurrenceIntervalDays: input.recurrenceIntervalDays,
     createdBy: input.createdBy,
@@ -626,6 +632,10 @@ export interface EditExpenseInput {
   splitType: SplitType;
   participantUids: string[];
   splitParams?: SplitParams;
+  // 2+ items for a multi-item expense; empty/omitted removes any `items`
+  // the doc had (it was edited down to a single line). Removing a field
+  // that was never there - every pre-existing expense - is a no-op.
+  items?: ExpenseItem[];
 }
 
 export async function editExpense(
@@ -673,6 +683,10 @@ export async function editExpense(
       // rather than relying on stripUndefined to drop the key.
       splitParams: changes.splitParams ?? firestore.FieldValue.delete(),
       shares,
+      items:
+        changes.items && changes.items.length > 1
+          ? changes.items
+          : firestore.FieldValue.delete(),
       editedAt: nowIso(),
       editHistory: firestore.FieldValue.arrayUnion({
         editedAt: nowIso(),

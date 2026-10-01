@@ -114,6 +114,14 @@ export interface EditHistoryEntry {
   change: string;
 }
 
+// One line of a multi-item expense (see expenseItems.ts). OPTIONAL on
+// Expense and only written when an expense has 2+ items - every existing
+// expense has no `items` and is unaffected.
+export interface ExpenseItem {
+  name: string;
+  price: number;
+}
+
 export interface Expense {
   id?: string;
   description: string;
@@ -124,6 +132,7 @@ export interface Expense {
   splitType: SplitType;
   splitParams?: SplitParams;
   shares: Record<string, number>; // uid -> that uid's share of this expense
+  items?: ExpenseItem[]; // only on multi-item expenses; `amount` === sum of prices
   isRecurring?: boolean;
   recurrenceIntervalDays?: number;
   receiptUrl?: string;

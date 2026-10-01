@@ -5,7 +5,7 @@
 // exact amount / percentage / share weight, validated live against the
 // same rules the Firestore layer enforces.
 
-import {X} from 'lucide-react-native';
+import {Plus, X} from 'lucide-react-native';
 import React, {useEffect, useMemo, useState} from 'react';
 import {
   KeyboardAvoidingView,
@@ -22,6 +22,15 @@ import {GestureHandlerRootView} from 'react-native-gesture-handler';
 import {KeyboardAwareScrollView} from 'react-native-keyboard-aware-scroll-view';
 import {useModalOpenGuard} from '../hooks/useModalOpenGuard';
 import {currencySymbol, formatMoney} from '../services/ledger/currency';
+import {
+  ItemRow,
+  itemsChanged,
+  newItemRow,
+  rowsFromExpense,
+  rowsToExpenseFields,
+  rowsTotal,
+  visibleItems,
+} from '../services/ledger/expenseItems';
 import {addExpense, editExpense} from '../services/ledger/firestoreLedger';
 import {
   computeSplits,
@@ -32,6 +41,7 @@ import {
   EXPENSE_CATEGORIES,
   Expense,
   ExpenseCategory,
+  ExpenseItem,
   GroupMember,
   SplitType,
 } from '../services/ledger/types';
@@ -98,9 +108,17 @@ function buildChangeSummary(
     paidBy: string;
     splitType: SplitType;
     participantUids: string[];
+    items: ExpenseItem[];
   },
 ): string {
   const parts: string[] = [];
+  if (itemsChanged(visibleItems(before), after.items)) {
+    parts.push(
+      `items: ${visibleItems(before)?.length || 1} -> ${
+        after.items.length || 1
+      }`,
+    );
+  }
   if (before.description !== after.description) {
     parts.push(
       `description: "${before.description}" -> "${after.description}"`,
@@ -175,8 +193,13 @@ const AddExpenseModal: React.FC<Props> = ({
 }) => {
   const isEditMode = !!editingExpense;
   const moneySymbol = currencySymbol(groupCurrency);
-  const [description, setDescription] = useState('');
-  const [amount, setAmount] = useState('');
+  // Item rows - one row is a normal expense (name + amount, saved exactly
+  // as before this feature); tapping + adds more rows like a to-do list,
+  // and the expense total becomes the sum of the rows. See expenseItems.ts.
+  const [rows, setRows] = useState<ItemRow[]>(() => [newItemRow()]);
+  // The row whose name field should grab focus - set when + adds a row.
+  const [focusKey, setFocusKey] = useState<string | null>(null);
+  const isMultiItem = rows.length > 1;
   const [category, setCategory] = useState<ExpenseCategory>('other');
   const [splitType, setSplitType] = useState<SplitType>('equal');
   const [paidBy, setPaidBy] = useState(currentUid);
@@ -192,7 +215,19 @@ const AddExpenseModal: React.FC<Props> = ({
   // it opens.
   const canClose = useModalOpenGuard(visible);
 
-  const amountValue = parseFloat(amount) || 0;
+  const amountValue = rowsTotal(rows);
+
+  const updateRow = (key: string, patch: Partial<ItemRow>) => {
+    setRows(prev => prev.map(r => (r.key === key ? {...r, ...patch} : r)));
+  };
+  const addRow = () => {
+    const row = newItemRow();
+    setRows(prev => [...prev, row]);
+    setFocusKey(row.key);
+  };
+  const removeRow = (key: string) => {
+    setRows(prev => (prev.length > 1 ? prev.filter(r => r.key !== key) : prev));
+  };
 
   const toggleParticipant = (uid: string) => {
     setParticipantUids(prev =>
@@ -360,8 +395,8 @@ const AddExpenseModal: React.FC<Props> = ({
   ]);
 
   const reset = () => {
-    setDescription('');
-    setAmount('');
+    setRows([newItemRow()]);
+    setFocusKey(null);
     setCategory('other');
     setSplitType('equal');
     setPaidBy(currentUid);
@@ -378,8 +413,8 @@ const AddExpenseModal: React.FC<Props> = ({
       return;
     }
     if (editingExpense) {
-      setDescription(editingExpense.description);
-      setAmount(String(editingExpense.amount));
+      setRows(rowsFromExpense(editingExpense));
+      setFocusKey(null);
       setCategory(editingExpense.category);
       setSplitType(editingExpense.splitType);
       setPaidBy(editingExpense.paidBy);
@@ -392,11 +427,12 @@ const AddExpenseModal: React.FC<Props> = ({
   }, [visible, editingExpense]);
 
   const handleSubmit = async () => {
-    if (!description.trim()) {
+    const fields = rowsToExpenseFields(rows);
+    if (!fields.ok) {
       Toast.show({
         type: 'info',
-        text1: 'Add a description',
-        text2: 'What was this expense for?',
+        text1: isMultiItem ? 'Check your items' : 'Add a description',
+        text2: fields.error,
       });
       throw new Error('missing-description');
     }
@@ -412,8 +448,9 @@ const AddExpenseModal: React.FC<Props> = ({
     try {
       if (isEditMode && editingExpense?.id) {
         const nextValues = {
-          description: description.trim(),
-          amount: amountValue,
+          description: fields.description,
+          amount: fields.amount,
+          items: fields.items,
           category,
           paidBy,
           splitType,
@@ -430,8 +467,9 @@ const AddExpenseModal: React.FC<Props> = ({
       } else {
         await addExpense({
           groupId,
-          description: description.trim(),
-          amount: amountValue,
+          description: fields.description,
+          amount: fields.amount,
+          items: fields.items,
           currency: groupCurrency || 'INR',
           category,
           paidBy,
@@ -501,21 +539,64 @@ const AddExpenseModal: React.FC<Props> = ({
                 {isEditMode ? 'Edit expense' : 'New expense'}
               </Text>
 
-              <TextInput
-                style={styles.input}
-                placeholder="What was it for?"
-                placeholderTextColor={theme.color.inkFaint}
-                value={description}
-                onChangeText={setDescription}
-              />
-              <TextInput
-                style={styles.input}
-                placeholder={`Amount (${moneySymbol})`}
-                placeholderTextColor={theme.color.inkFaint}
-                keyboardType="decimal-pad"
-                value={amount}
-                onChangeText={t => setAmount(t.replace(/[^0-9.]/g, ''))}
-              />
+              {isMultiItem && <Text style={styles.sectionLabel}>Items</Text>}
+              {rows.map((row, index) => {
+                const isLast = index === rows.length - 1;
+                return (
+                  <View key={row.key} style={styles.itemRow}>
+                    <TextInput
+                      style={[styles.input, styles.itemName]}
+                      placeholder={
+                        isMultiItem ? `Item ${index + 1}` : 'What was it for?'
+                      }
+                      placeholderTextColor={theme.color.inkFaint}
+                      value={row.name}
+                      autoFocus={row.key === focusKey}
+                      onChangeText={t => updateRow(row.key, {name: t})}
+                    />
+                    <TextInput
+                      style={[styles.input, styles.itemPrice]}
+                      placeholder={
+                        isMultiItem ? moneySymbol : `Amount (${moneySymbol})`
+                      }
+                      placeholderTextColor={theme.color.inkFaint}
+                      keyboardType="decimal-pad"
+                      value={row.price}
+                      onChangeText={t =>
+                        updateRow(row.key, {price: t.replace(/[^0-9.]/g, '')})
+                      }
+                    />
+                    {isMultiItem && (
+                      <TouchableOpacity
+                        style={styles.itemIconBtn}
+                        onPress={() => removeRow(row.key)}
+                        accessibilityLabel={`Remove item ${index + 1}`}
+                        hitSlop={{top: 8, bottom: 8, left: 6, right: 6}}>
+                        <X size={16} color={theme.color.inkSoft} />
+                      </TouchableOpacity>
+                    )}
+                    {isLast && (
+                      <TouchableOpacity
+                        style={[styles.itemIconBtn, styles.itemAddBtn]}
+                        onPress={addRow}
+                        accessibilityLabel="Add another item"
+                        hitSlop={{top: 8, bottom: 8, left: 6, right: 6}}>
+                        <Plus size={18} color={theme.color.onAccent} />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                );
+              })}
+              {isMultiItem && (
+                <View style={styles.itemsTotalRow}>
+                  <Text style={styles.itemsTotalLabel}>
+                    Total · {rows.length} items
+                  </Text>
+                  <Text style={styles.itemsTotalValue}>
+                    {formatMoney(amountValue, groupCurrency)}
+                  </Text>
+                </View>
+              )}
 
               <Text style={styles.sectionLabel}>Category</Text>
               <View style={styles.rowWrap}>
@@ -764,6 +845,44 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   rowWrap: {flexDirection: 'row', flexWrap: 'wrap'},
+  itemRow: {flexDirection: 'row', alignItems: 'flex-start', gap: 8},
+  itemName: {flex: 1},
+  itemPrice: {width: moderateScale(104)},
+  itemIconBtn: {
+    width: 36,
+    height: 36,
+    marginTop: 6,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: theme.color.border,
+  },
+  itemAddBtn: {
+    backgroundColor: theme.color.blue,
+    borderColor: theme.color.blue,
+  },
+  itemsTotalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+    marginTop: -2,
+    marginBottom: 12,
+  },
+  itemsTotalLabel: {
+    color: theme.color.inkSoft,
+    fontFamily: BodyFont.semibold,
+    fontSize: moderateScale(13),
+    fontWeight: '600',
+  },
+  itemsTotalValue: {
+    color: theme.color.ink,
+    fontFamily: DisplayFont.bold,
+    fontSize: moderateScale(16),
+    fontWeight: '700',
+  },
   hintText: {
     color: theme.color.inkFaint,
     fontFamily: BodyFont.regular,
