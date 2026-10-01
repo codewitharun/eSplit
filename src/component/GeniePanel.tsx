@@ -44,6 +44,7 @@ import Animated, {
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useKeyboardOverlap} from '../hooks/useKeyboardOverlap';
 import theme from '../utils/theme';
+import {ToastLayer} from './glass/ToastHost';
 
 // Either a floating button's corner placement, or a point (e.g. the tap
 // position, from a press event's pageX/pageY) - both with a size.
@@ -208,6 +209,8 @@ const GeniePanel: React.FC<Props> = ({
               {children}
             </Animated.View>
           </Animated.View>
+          {/* Toasts fired while this panel is open show above it. */}
+          <ToastLayer />
         </View>
       </GestureHandlerRootView>
     </Modal>

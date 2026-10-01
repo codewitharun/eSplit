@@ -36,6 +36,7 @@ import {createNativeStackNavigator} from '@react-navigation/native-stack';
 import FileViewer from 'react-native-file-viewer';
 import AppAlertHost from './src/component/glass/AppAlertHost';
 import ForceUpdateGate from './src/component/glass/ForceUpdateGate';
+import {DEEP_LINK_PREFIXES} from './src/config/urls';
 import ToastHost from './src/component/glass/ToastHost';
 import MainTabs from './src/navigator/BottomTabNavigator';
 import CreateJoinGroup from './src/screens/AfterLogin/CreateJoinGroup';
@@ -82,7 +83,7 @@ const App = () => {
   // Group-Check (already-mounted screen, stuck de-dupe flag, no remount to
   // reset it) - removed in favor of this single source of truth.
   const linking = {
-    prefixes: ['ezysplit://', 'https://ezysplit.arun.codes/app/'], // note the trailing slash
+    prefixes: DEEP_LINK_PREFIXES, // src/config/urls.ts (note the trailing slash)
     config: {
       screens: {
         'Group-Check': {

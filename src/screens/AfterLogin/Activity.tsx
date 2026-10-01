@@ -55,7 +55,7 @@ import {
   ExpenseCategory,
 } from '../../services/ledger/types';
 import Toast from '../../services/toast';
-import {shareGroupInvite} from '../../services/invite';
+import InviteSheet from '../../component/InviteSheet';
 import {useExpenseState} from '../../store/useExpenseStore';
 import {BodyFont, DisplayFont, moderateScale} from '../../utils/fonts';
 import {haptics} from '../../utils/haptics';
@@ -372,11 +372,13 @@ const ActivityScreen: React.FC = () => {
     }
   };
 
+  const [inviteOpen, setInviteOpen] = useState(false);
   const onShareInvite = () => {
     if (!groupKey) {
       return;
     }
-    shareGroupInvite(groupKey, ledger.group?.name, ledger.group?.joinCode);
+    haptics.tap();
+    setInviteOpen(true);
   };
 
   const onDelete = (expenseId: string) => {
@@ -678,6 +680,16 @@ const ActivityScreen: React.FC = () => {
           groupCurrency={ledger.group?.currency}
           editingExpense={editingExpense}
           origin={expenseOrigin}
+        />
+      )}
+
+      {!!groupKey && (
+        <InviteSheet
+          visible={inviteOpen}
+          onClose={() => setInviteOpen(false)}
+          groupId={groupKey}
+          groupName={ledger.group?.name}
+          joinCode={ledger.group?.joinCode}
         />
       )}
 

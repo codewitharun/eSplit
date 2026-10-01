@@ -953,10 +953,9 @@ const styles = StyleSheet.create({
   },
   // Floating above the sheet, outside the card, centered - replaces the
   // old in-row Cancel button now that the slider owns the full width.
-  swipeConfirm: {
-    width: '90%',
-    alignSelf: 'center',
-  },
+  // Full width of the footer (which already has the body's 16px side
+  // padding), so its edges line up with the fields above.
+  swipeConfirm: {width: '100%'},
   submitBtn: {
     flex: 2,
     paddingVertical: 13,

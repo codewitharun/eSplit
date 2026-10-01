@@ -5,25 +5,17 @@
 // match the rest of the app's dark glass cards instead of the library's
 // default white banner.
 //
-// Wrapped in a transparent Modal (added after a report that a toast fired
-// while AddExpenseModal was open rendered wrong, half-hidden behind its
-// backdrop) - a plain absolutely-positioned view lives in the normal view
-// hierarchy, which a real native Modal (like AddExpenseModal or
-// GroupNameModal) always renders above regardless of zIndex/elevation, so
-// a toast could never reliably show on top of one. Putting the toast in
-// its own Modal puts it in the same native stacking layer, where the most
-// recently shown Modal reliably wins - same reason AppAlertHost already
-// works correctly over other open modals.
+// NOT wrapped in a Modal any more: a Modal is a full-screen native window
+// that swallows every touch, so while a toast was showing nothing behind it
+// could be tapped (reported Oct 2026). It's now a plain absolute,
+// pointerEvents="box-none" layer - only the toast card itself takes taps.
+// Because a real native Modal always renders above the normal view
+// hierarchy, the same <ToastLayer /> is also mounted inside the app's own
+// modals (GeniePanel, KeyboardSafeOverlay, UpiPromptModal), so a toast
+// fired while one is open still shows on top of it.
 
 import React, {useEffect, useRef} from 'react';
-import {
-  Animated,
-  Modal,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import {Animated, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {CircleCheck, CircleX, Info} from 'lucide-react-native';
 import {useToastStore} from '../../services/toast';
@@ -42,7 +34,7 @@ const ACCENTS = {
   info: theme.color.blue,
 };
 
-const ToastHost: React.FC = () => {
+export const ToastLayer: React.FC = () => {
   const toast = useToastStore(s => s.toast);
   const insets = useSafeAreaInsets();
   const translateY = useRef(new Animated.Value(-40)).current;
@@ -89,12 +81,7 @@ const ToastHost: React.FC = () => {
   const accent = ACCENTS[toast.type];
 
   return (
-    <Modal
-      transparent
-      visible
-      animationType="none"
-      statusBarTranslucent
-      onRequestClose={() => {}}>
+    <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
       <Animated.View
         pointerEvents="box-none"
         style={[
@@ -116,9 +103,12 @@ const ToastHost: React.FC = () => {
           </View>
         </TouchableOpacity>
       </Animated.View>
-    </Modal>
+    </View>
   );
 };
+
+// Mounted once at the app root (App.jsx).
+const ToastHost = ToastLayer;
 
 const styles = StyleSheet.create({
   wrap: {

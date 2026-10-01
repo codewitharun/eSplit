@@ -67,11 +67,12 @@ import {
 } from '../../services/ledger/firestoreLedger';
 import {EPSILON} from '../../services/ledger/types';
 import Toast from '../../services/toast';
-import {shareGroupInvite} from '../../services/invite';
+import InviteSheet from '../../component/InviteSheet';
 import {useExpenseState} from '../../store/useExpenseStore';
 import {haptics} from '../../utils/haptics';
 import {useCollapseFabsOnScroll} from '../../hooks/useCollapseFabsOnScroll';
 import KeyboardSafeOverlay from '../../component/KeyboardSafeOverlay';
+import {groupInviteUrl} from '../../config/urls';
 import theme from '../../utils/theme';
 import {
   BodyFont,
@@ -140,6 +141,7 @@ const GroupSettingsScreen: React.FC = () => {
   const myRole = ledger.members.find(m => m.uid === user?.uid)?.role;
   const isGroupAdmin = myRole === 'admin';
   const isPersonalList = ledger.group?.type === 'personal';
+  const [inviteOpen, setInviteOpen] = useState(false);
   // Delete group needs EVERYONE settled, not just the admin - unlike
   // leaving, where only the leaver's own balance matters, deleting wipes
   // every member's history at once.
@@ -587,11 +589,7 @@ const GroupSettingsScreen: React.FC = () => {
                     style={styles.shareBtn}
                     onPress={() => {
                       haptics.tap();
-                      shareGroupInvite(
-                        ledger.group!.id,
-                        ledger.group!.name,
-                        ledger.group!.joinCode,
-                      );
+                      setInviteOpen(true);
                     }}>
                     <Share2 size={14} color={theme.color.ink} />
                     <Text style={styles.shareText}>Invite</Text>
@@ -749,7 +747,7 @@ const GroupSettingsScreen: React.FC = () => {
               <GlassCard opaque style={styles.qrCard}>
                 <View style={styles.qrBox}>
                   <QRCode
-                    value={`https://ezysplit.arun.codes/app/Group-Check/${ledger.group.id}`}
+                    value={groupInviteUrl(ledger.group.id)}
                     size={168}
                     color={theme.color.onAccent}
                     backgroundColor="#FFFFFF"
@@ -960,6 +958,16 @@ const GroupSettingsScreen: React.FC = () => {
           </GlassCard>
         </KeyboardSafeOverlay>
       </Modal>
+
+      {!!ledger.group?.id && !isPersonalList && (
+        <InviteSheet
+          visible={inviteOpen}
+          onClose={() => setInviteOpen(false)}
+          groupId={ledger.group.id}
+          groupName={ledger.group.name}
+          joinCode={ledger.group.joinCode}
+        />
+      )}
     </View>
   );
 };

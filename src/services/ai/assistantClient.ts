@@ -10,11 +10,13 @@
 
 import auth from '@react-native-firebase/auth';
 import {getGroupSnapshot, getUserGroups} from '../ledger/firestoreLedger';
+import {API_BASE_URL} from '../../config/urls';
 import {AssistantData, runAssistantTool} from './assistantTools';
 
-// To test against a local or Vercel-preview backend, point this at it
-// (e.g. 'http://192.168.1.5:4100') - must be the prod URL in a release.
-export const AI_BASE_URL = 'https://ezysplit.arun.codes';
+// Comes from src/config/urls.ts. To test against a local or Vercel-preview
+// backend, temporarily set this to e.g. 'http://192.168.1.5:4000' - it must
+// be API_BASE_URL in a release.
+export const AI_BASE_URL = API_BASE_URL;
 
 const MAX_ROUND_TRIPS = 6;
 const REQUEST_TIMEOUT_MS = 30000;

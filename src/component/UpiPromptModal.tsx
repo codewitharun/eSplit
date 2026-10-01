@@ -30,6 +30,7 @@ import Toast from '../services/toast';
 import GlassCard from './glass/GlassCard';
 import {isValidUpiVpa} from '../services/ledger/upi';
 import {haptics} from '../utils/haptics';
+import {ToastLayer} from './glass/ToastHost';
 import theme from '../utils/theme';
 import {BodyFont, DisplayFont, moderateScale} from '../utils/fonts';
 
@@ -149,6 +150,8 @@ const UpiPromptModal: React.FC<UpiPromptModalProps> = ({
           </View>
         </GlassCard>
       </KeyboardAvoidingView>
+      {/* Toasts fired while this prompt is open show above it. */}
+      <ToastLayer />
     </Modal>
   );
 };

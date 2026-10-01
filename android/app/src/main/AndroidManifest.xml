@@ -78,7 +78,11 @@
     <category android:name="android.intent.category.DEFAULT" />
     <category android:name="android.intent.category.BROWSABLE" />
 
-    <!-- HTTPS support -->
+    <!-- HTTPS support. The host below must match WEB_BASE_URL in
+         src/config/urls.ts - update both together when the domain changes
+         (native config can't read the JS constant). Tip: keep the old
+         host as an extra <data> entry too, so links already shared keep
+         opening the app. -->
     <data
         android:scheme="https"
         android:host="ezysplit.arun.codes"
