@@ -1,12 +1,12 @@
 // src/services/ai/assistantClient.ts
 // Talks to esplit-backend's POST /ai/chat (routes/ai.js), which holds the
-// Claude API key, checks the Firebase login and enforces the daily limit.
+// AI provider API key (Grok or Claude), checks the Firebase login and enforces the daily limit.
 //
-// One question can take a few round trips: Claude may ask for a tool
+// One question can take a few round trips: the model may ask for a tool
 // (e.g. get_spending_summary for September); we run it locally with
 // runAssistantTool() on the user's own data and send back only that
-// result, then Claude writes the answer. The raw expense list never
-// leaves the phone - only the specific results Claude asked for.
+// result, then the model writes the answer. The raw expense list never
+// leaves the phone - only the specific results the model asked for.
 
 import auth from '@react-native-firebase/auth';
 import {API_BASE_URL} from '../../config/urls';

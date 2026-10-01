@@ -3,7 +3,7 @@
 // for their definitions). They run HERE, on the phone, against the
 // signed-in user's own data, using the same ledger code the rest of the
 // app uses - so every number the assistant quotes is computed exactly
-// like the app's own screens compute it. Claude only phrases the answer.
+// like the app's own screens compute it. The AI model only phrases the answer.
 //
 // Read-only by design: nothing in this file writes anything.
 //
