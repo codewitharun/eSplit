@@ -158,7 +158,15 @@ const config: { expo: ExpoConfig } = {
       googleWebClientId: googleWebClientId(),
     },
     plugins: [
-      "@react-native-firebase/app",
+      [
+        "@react-native-firebase/app",
+        {
+          // iOS: get the Firebase SDK from CocoaPods instead of Swift Package
+          // Manager. SPM + use_frameworks static = duplicate Firebase symbols
+          // ("SPM + static linkage is not supported" on pod install).
+          ios: { disableSPM: true },
+        },
+      ],
       "@react-native-firebase/crashlytics",
       [
         "@react-native-firebase/messaging",
