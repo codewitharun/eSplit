@@ -45,6 +45,10 @@ import {
   SplitType,
 } from '../services/ledger/types';
 
+// RNFirebase gotcha: doc(parent, ...) calls parent.doc(), so the parent must
+// be the Firestore instance or a CollectionReference - NEVER a
+// DocumentReference (fails with "parent.doc is not a function"). For a
+// subcollection doc use doc(collection(docRef, 'sub'), id).
 const groupsRef = () => collection(db(), 'groups');
 const groupDoc = (groupId: string) => doc(db(), 'groups', groupId);
 const userDoc = (uid: string) => doc(db(), 'users', uid);
@@ -125,7 +129,7 @@ export async function createGroup(
   // is rolled back so we don't leave a group with no members at all.
   await setDoc(groupRef, group);
   try {
-    await setDoc(doc(groupRef, 'members', user.uid), {
+    await setDoc(doc(collection(groupRef, 'members'), user.uid), {
         uid: user.uid,
         displayName: user.displayName || 'Member',
         photoUrl: user.photoURL || '',
@@ -209,7 +213,7 @@ export async function joinGroup(
     );
   }
 
-  const requestRef = doc(groupSnap.ref, 'joinRequests', user.uid);
+  const requestRef = doc(collection(groupSnap.ref, 'joinRequests'), user.uid);
   const existingRequest = await getDoc(requestRef);
   if (
     existingRequest.exists() &&
@@ -286,7 +290,7 @@ export async function approveJoinRequest(
   requesterUid: string,
 ): Promise<void> {
   const groupRef = groupDoc(groupId);
-  const requestRef = doc(groupRef, 'joinRequests', requesterUid);
+  const requestRef = doc(collection(groupRef, 'joinRequests'), requesterUid);
   const [groupSnap, requestDoc] = await Promise.all([
     getDoc(groupRef),
     getDoc(requestRef),
@@ -309,7 +313,7 @@ export async function approveJoinRequest(
     memberIds: arrayUnion(requesterUid),
   });
   try {
-    await setDoc(doc(groupRef, 'members', requesterUid), {
+    await setDoc(doc(collection(groupRef, 'members'), requesterUid), {
         uid: requesterUid,
         displayName: request.displayName || 'Member',
         photoUrl: request.photoUrl || '',
@@ -358,7 +362,7 @@ export async function declineJoinRequest(
   requesterUid: string,
 ): Promise<void> {
   const groupRef = groupDoc(groupId);
-  const requestRef = doc(groupRef, 'joinRequests', requesterUid);
+  const requestRef = doc(collection(groupRef, 'joinRequests'), requesterUid);
   const [groupSnap, requestDoc] = await Promise.all([
     getDoc(groupRef),
     getDoc(requestRef),
