@@ -13,6 +13,10 @@
  *     gradle hook no longer registers it with Gradle 9 / RN 0.86, so the
  *     build fails with "Could not find app.notifee:core:+". Register it in
  *     allprojects.repositories, resolved via node so it works in CI too.
+ *  4. Faster builds: parallel project builds, Gradle build cache, more heap.
+ *  5. Smaller app: keep only English resources (libraries like Play
+ *     Services ship 80+ translations the app never shows). The app's own UI
+ *     is English-only. Minify/shrinkResources come from expo-build-properties.
  *
  * (The old AD_SERVICES_CONFIG tools:replace fix is gone: it only existed for
  *  the firebase-analytics vs google-mobile-ads collision, and AdMob was never
@@ -23,7 +27,9 @@ const path = require('path');
 const {
   withAndroidColors,
   withAndroidManifest,
+  withAppBuildGradle,
   withDangerousMod,
+  withGradleProperties,
   withProjectBuildGradle,
 } = require('expo/config-plugins');
 
@@ -116,11 +122,47 @@ function withNotifeeRepo(config) {
   });
 }
 
+const GRADLE_PROPS = {
+  'org.gradle.parallel': 'true',
+  'org.gradle.caching': 'true',
+  'org.gradle.jvmargs': '-Xmx4096m -XX:MaxMetaspaceSize=1024m -Dfile.encoding=UTF-8',
+};
+
+function withBuildTuning(config) {
+  config = withGradleProperties(config, cfg => {
+    for (const [key, value] of Object.entries(GRADLE_PROPS)) {
+      const existing = cfg.modResults.find(p => p.type === 'property' && p.key === key);
+      if (existing) {
+        existing.value = value;
+      } else {
+        cfg.modResults.push({type: 'property', key, value});
+      }
+    }
+    return cfg;
+  });
+  return withAppBuildGradle(config, cfg => {
+    const MARK = '// @ezysplit-locales';
+    let g = cfg.modResults.contents;
+    if (!g.includes(MARK)) {
+      if (!/defaultConfig\s*\{/.test(g)) {
+        throw new Error('[withEzySplitAndroid] defaultConfig not found in app/build.gradle');
+      }
+      g = g.replace(
+        /defaultConfig\s*\{/,
+        m => `${m}\n        ${MARK}\n        resourceConfigurations += ["en"]`,
+      );
+      cfg.modResults.contents = g;
+    }
+    return cfg;
+  });
+}
+
 module.exports = function withEzySplitAndroid(config) {
   config = withAndroidManifest(config, cfg => {
     addQueries(cfg.modResults);
     return cfg;
   });
   config = withNotifeeRepo(config);
+  config = withBuildTuning(config);
   return withNotificationIcon(config);
 };

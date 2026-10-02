@@ -9,12 +9,12 @@
 import {
   collection,
   limit,
-  onSnapshot,
   orderBy,
   query,
   type Timestamp,
 } from '@react-native-firebase/firestore';
 import {db} from './firebase';
+import {listenQuery} from './realtime';
 
 export interface AdminNotification {
   id: string;
@@ -33,7 +33,7 @@ export function subscribeAdminNotifications(
   onChange: (notifications: AdminNotification[]) => void,
   onError?: (error: Error) => void,
 ): () => void {
-  return onSnapshot(
+  return listenQuery(
     query(
       collection(db(), 'users', uid, 'notifications'),
       orderBy('createdAt', 'desc'),

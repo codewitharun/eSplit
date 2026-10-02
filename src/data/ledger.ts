@@ -18,7 +18,6 @@ import {
   getDocsFromCache,
   getDocsFromServer,
   limit,
-  onSnapshot,
   orderBy,
   query,
   setDoc,
@@ -28,6 +27,7 @@ import {
   type DocumentReference,
 } from '@react-native-firebase/firestore';
 import {db} from './firebase';
+import {listenDoc, listenQuery} from './realtime';
 import {computeSplits, validateSplitInput} from '../services/ledger/splitEngine';
 import {stripUndefined} from '../services/ledger/firestoreUtils';
 import {sendPushNotification} from '../services/notifications';
@@ -404,7 +404,7 @@ export function subscribeJoinRequests(
   groupId: string,
   onChange: (requests: JoinRequest[]) => void,
 ): () => void {
-  return onSnapshot(
+  return listenQuery(
     query(sub(groupId, 'joinRequests'), where('status', '==', 'pending')),
     snap => {
       onChange(snap.docs.map(d => d.data() as JoinRequest));
@@ -476,7 +476,7 @@ export function subscribeGroup(
   groupId: string,
   onChange: (group: Group | null) => void,
 ): () => void {
-  return onSnapshot(groupDoc(groupId), snap =>
+  return listenDoc(groupDoc(groupId), snap =>
     onChange(snap.exists() ? (snap.data() as Group) : null),
   );
 }
@@ -485,7 +485,7 @@ export function subscribeGroupMembers(
   groupId: string,
   onChange: (members: GroupMember[]) => void,
 ): () => void {
-  return onSnapshot(sub(groupId, 'members'), snap => {
+  return listenQuery(sub(groupId, 'members'), snap => {
     onChange(snap.docs.map(d => d.data() as GroupMember));
   });
 }
@@ -727,7 +727,7 @@ export function subscribeExpenses(
   onChange: (expenses: Expense[]) => void,
   onError?: (error: Error) => void,
 ): () => void {
-  return onSnapshot(
+  return listenQuery(
     query(sub(groupId, 'expenses'), orderBy('createdAt', 'desc')),
     snap =>
       onChange(snap.docs.map(d => ({...(d.data() as Expense), id: d.id}))),
@@ -751,7 +751,7 @@ export function subscribeSettlements(
   groupId: string,
   onChange: (settlements: Settlement[]) => void,
 ): () => void {
-  return onSnapshot(
+  return listenQuery(
     query(sub(groupId, 'settlements'), orderBy('createdAt', 'desc')),
     snap =>
       onChange(snap.docs.map(d => ({...(d.data() as Settlement), id: d.id}))),

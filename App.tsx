@@ -90,7 +90,9 @@ const App = () => {
     config: {
       screens: {
         "Group-Check": {
-          path: "Group-Check/:groupId",
+          // Optional param: opening Group-Check without a group (normal
+          // navigation) must not produce /Group-Check/undefined on web.
+          path: "Group-Check/:groupId?",
           parse: {
             groupId: (id: string) => `${id}`,
           },

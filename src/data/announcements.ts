@@ -7,12 +7,12 @@
 
 import {
   collection,
-  onSnapshot,
   query,
   where,
   type Timestamp,
 } from '@react-native-firebase/firestore';
 import {db} from './firebase';
+import {listenQuery} from './realtime';
 
 export interface Announcement {
   id: string;
@@ -38,7 +38,7 @@ export function subscribeActiveAnnouncements(
   onChange: (announcements: Announcement[]) => void,
   onError?: (error: Error) => void,
 ): () => void {
-  return onSnapshot(
+  return listenQuery(
     query(collection(db(), 'announcements'), where('active', '==', true)),
       snap => {
         const list = snap.docs.map(d => {

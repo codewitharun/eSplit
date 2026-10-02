@@ -8,18 +8,22 @@
 //   - when its own viewport shrinks (the panel got shorter), and
 //   - when focus moves to another field while the keyboard is up.
 
-import React, {useCallback, useEffect, useRef} from 'react';
+import React, {useCallback, useEffect, useImperativeHandle, useRef} from 'react';
 import {Keyboard, LayoutChangeEvent, NativeScrollEvent, NativeSyntheticEvent, Platform, ScrollView, ScrollViewProps, TextInput, View} from 'react-native';
 
 const MARGIN = 24;
 
-const KeyboardSafeScrollView: React.FC<ScrollViewProps> = ({
+// React 19: `ref` is a normal prop. Callers get the underlying ScrollView
+// (scrollTo, scrollToEnd, ...).
+const KeyboardSafeScrollView = ({
   children,
   onLayout,
   onScroll,
+  ref,
   ...rest
-}) => {
+}: ScrollViewProps & {ref?: React.Ref<ScrollView | null>}) => {
   const scrollRef = useRef<ScrollView>(null);
+  useImperativeHandle(ref, () => scrollRef.current as ScrollView, []);
   const contentRef = useRef<View>(null);
   const scrollY = useRef(0);
   const viewportH = useRef(0);

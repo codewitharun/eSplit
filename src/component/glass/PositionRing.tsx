@@ -96,7 +96,9 @@ const PositionRing: React.FC<Props> = ({
   return (
     <View style={{width: size, height: size}}>
       <Svg width={size} height={size}>
-        <G rotation={-90} origin={`${size / 2}, ${size / 2}`}>
+        {/* SVG transform string (not rotation/origin props): the props version
+            renders an invalid `transform-origin` DOM attribute on web. */}
+        <G transform={`rotate(-90 ${size / 2} ${size / 2})`}>
           <Circle
             cx={size / 2}
             cy={size / 2}

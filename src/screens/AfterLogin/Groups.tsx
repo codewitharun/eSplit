@@ -11,11 +11,11 @@
 // groups do I have" and "what's my balance in each" can never drift
 // between the dashboard preview and this full list.
 
+import KeyboardSafeScrollView from '../../component/KeyboardSafeScrollView';
 import {useIsFocused} from '@react-navigation/native';
 import React, {useEffect, useRef, useState} from 'react';
 import {ScrollView, StyleSheet, TouchableOpacity, View} from 'react-native';
 import {Text, TextInput} from '../../component/ui/AppText';
-import {KeyboardAwareScrollView} from 'react-native-keyboard-aware-scroll-view';
 import {ChevronRight, Search, SlidersHorizontal, X} from 'lucide-react-native';
 import Toast from '../../services/toast';
 import Chip from '../../component/glass/Chip';
@@ -87,15 +87,15 @@ const GroupsScreen = ({navigation}: any) => {
   const [searchVisible, setSearchVisible] = useState(false);
   // Same "snap back to top the moment search opens" fix as GroupCheck's
   // own list - see that screen's identical comment for why.
-  const scrollRef = useRef<any>(null);
+  const scrollRef = useRef<ScrollView | null>(null);
   useEffect(() => {
     if (searchVisible) {
-      scrollRef.current?.scrollToPosition(0, 0, true);
+      scrollRef.current?.scrollTo({y: 0, animated: true});
     }
   }, [searchVisible]);
   const rescrollToTopOnFocus = () => {
     setTimeout(() => {
-      scrollRef.current?.scrollToPosition(0, 0, true);
+      scrollRef.current?.scrollTo({y: 0, animated: true});
     }, 80);
   };
 
@@ -247,7 +247,7 @@ const GroupsScreen = ({navigation}: any) => {
   return (
     <View style={styles.flex}>
       <Header />
-      <KeyboardAwareScrollView
+      <KeyboardSafeScrollView
         onScroll={onFabScroll}
         scrollEventThrottle={16}
         ref={scrollRef}
@@ -255,8 +255,6 @@ const GroupsScreen = ({navigation}: any) => {
           styles.content,
           {paddingBottom: barHeight + ADD_GROUP_FAB_HEIGHT + 24},
         ]}
-        enableOnAndroid
-        extraScrollHeight={20}
         keyboardShouldPersistTaps="handled">
         {loading ? (
           <GroupsListSkeleton />
@@ -493,7 +491,7 @@ const GroupsScreen = ({navigation}: any) => {
             height: barHeight + ADD_GROUP_FAB_HEIGHT + ASSISTANT_ORB_SIZE + 38,
           }}
         />
-      </KeyboardAwareScrollView>
+      </KeyboardSafeScrollView>
 
       <AppBottomBar active="groups" />
 

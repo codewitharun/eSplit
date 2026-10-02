@@ -6,12 +6,12 @@
 // target (Group-Check/:groupId), and reachable any time from Activity's
 // header pill or the You tab's "Switch or create a group".
 
+import KeyboardSafeScrollView from '../../component/KeyboardSafeScrollView';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {useIsFocused, useRoute} from '@react-navigation/native';
 import React, {useEffect, useRef, useState} from 'react';
 import {ActivityIndicator, LayoutChangeEvent, StyleSheet, TouchableOpacity, View} from 'react-native';
 import {Text} from '../../component/ui/AppText';
-import {KeyboardAwareScrollView} from 'react-native-keyboard-aware-scroll-view';
 import {
   ArrowDown,
   ArrowUp,
@@ -506,15 +506,13 @@ const GroupManagement = ({navigation}: any) => {
   return (
     <View style={styles.flex}>
       <Header />
-      <KeyboardAwareScrollView
+      <KeyboardSafeScrollView
         onScroll={onFabScroll}
         scrollEventThrottle={16}
         contentContainerStyle={[
           styles.content,
           {paddingBottom: barHeight + ADD_GROUP_FAB_HEIGHT + 24},
         ]}
-        enableOnAndroid
-        extraScrollHeight={20}
         keyboardShouldPersistTaps="handled">
         {loading ? (
           <DashboardSkeleton />
@@ -781,7 +779,7 @@ const GroupManagement = ({navigation}: any) => {
             height: barHeight + ADD_GROUP_FAB_HEIGHT + ASSISTANT_ORB_SIZE + 38,
           }}
         />
-      </KeyboardAwareScrollView>
+      </KeyboardSafeScrollView>
 
       <AppBottomBar active="home" />
 

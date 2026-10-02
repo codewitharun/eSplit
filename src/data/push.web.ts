@@ -11,8 +11,10 @@ export async function requestPushPermission(): Promise<boolean> {
   return false;
 }
 export async function registerForRemotePush(): Promise<void> {}
+// '' = no token; App.tsx only stores a non-empty token, so web logins skip
+// the fcmToken field quietly instead of logging an error.
 export async function getPushToken(): Promise<string> {
-  throw new Error('Push notifications are not available on web');
+  return '';
 }
 export function onForegroundPush(_cb: (m: PushMessage) => void): () => void {
   return () => {};
