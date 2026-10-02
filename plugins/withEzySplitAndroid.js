@@ -8,6 +8,11 @@
  *     @color/notification_icon_color. The RNFirebase messaging plugin points
  *     FCM's default_notification_icon/color at these (it doesn't create
  *     them), and notifee uses smallIcon 'notification_icon'.
+ *  3. Notifee's core AAR ships INSIDE the npm package as a local Maven repo
+ *     (node_modules/@notifee/react-native/android/libs). Notifee's own
+ *     gradle hook no longer registers it with Gradle 9 / RN 0.86, so the
+ *     build fails with "Could not find app.notifee:core:+". Register it in
+ *     allprojects.repositories, resolved via node so it works in CI too.
  *
  * (The old AD_SERVICES_CONFIG tools:replace fix is gone: it only existed for
  *  the firebase-analytics vs google-mobile-ads collision, and AdMob was never
@@ -19,6 +24,7 @@ const {
   withAndroidColors,
   withAndroidManifest,
   withDangerousMod,
+  withProjectBuildGradle,
 } = require('expo/config-plugins');
 
 const QUERY_INTENTS = [
@@ -83,10 +89,38 @@ function withNotificationIcon(config) {
   });
 }
 
+const NOTIFEE_MARK = '// @ezysplit-notifee-repo';
+const NOTIFEE_REPO = `    ${NOTIFEE_MARK}
+    maven {
+      url = uri(new File(
+        ["node", "--print", "require.resolve('@notifee/react-native/package.json')"]
+          .execute(null, rootDir).text.trim()
+      ).getParentFile().absolutePath + "/android/libs")
+    }
+`;
+
+function withNotifeeRepo(config) {
+  return withProjectBuildGradle(config, cfg => {
+    let g = cfg.modResults.contents;
+    if (g.includes(NOTIFEE_MARK)) {
+      return cfg;
+    }
+    const re = /allprojects\s*\{\s*repositories\s*\{/;
+    if (!re.test(g)) {
+      throw new Error(
+        '[withEzySplitAndroid] allprojects.repositories not found in android/build.gradle - update the notifee repo patch.',
+      );
+    }
+    cfg.modResults.contents = g.replace(re, m => `${m}\n${NOTIFEE_REPO}`);
+    return cfg;
+  });
+}
+
 module.exports = function withEzySplitAndroid(config) {
   config = withAndroidManifest(config, cfg => {
     addQueries(cfg.modResults);
     return cfg;
   });
+  config = withNotifeeRepo(config);
   return withNotificationIcon(config);
 };
