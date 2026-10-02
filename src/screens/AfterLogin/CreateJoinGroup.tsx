@@ -20,22 +20,11 @@
 // wrapper is needed: this screen already sits inside the app's
 // top-level one from App.jsx.
 
-import auth from '@react-native-firebase/auth';
 import {useNavigation} from '@react-navigation/native';
 import {ChevronLeft} from 'lucide-react-native';
 import React, {useMemo, useState} from 'react';
-import {
-  FlatList,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  TouchableWithoutFeedback,
-  View,
-} from 'react-native';
+import {FlatList, KeyboardAvoidingView, Modal, Platform, StyleSheet, TouchableOpacity, TouchableWithoutFeedback, View} from 'react-native';
+import {Text, TextInput} from '../../component/ui/AppText';
 import KeyboardSafeScrollView from '../../component/KeyboardSafeScrollView';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import GlassCard from '../../component/glass/GlassCard';
@@ -55,6 +44,7 @@ import {
   moderateScale,
 } from '../../utils/fonts';
 import theme from '../../utils/theme';
+import {currentUser} from '../../data/firebase';
 
 const DEFAULT_COUNTRY: CountryOption =
   COUNTRIES.find(c => c.code === 'IN') || COUNTRIES[0];
@@ -604,7 +594,7 @@ const styles = StyleSheet.create({
 const CreateJoinGroup = () => {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
-  const user = auth().currentUser;
+  const user = currentUser();
   const {enterGroup, upiPromptVisible, dismissUpiPrompt} =
     useEnterGroup(navigation);
   return (

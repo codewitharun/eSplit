@@ -6,13 +6,17 @@
 // summary, per-person balances, the full expense history, and a
 // settlements history table.
 //
+// Expo build: files are written to the app's private cache (Paths.cache) -
+// no storage permission on any Android version - and returned as file://
+// URIs that Balances.tsx hands to expo-sharing (open/save/send sheet).
+//
 // Excel: a genuine multi-sheet .xlsx workbook (via SheetJS `xlsx` — pure
 // JS, no native module) with separate "Summary", "Expenses", "Balances"
 // and "Settlements" sheets, so the file opens cleanly in Excel/Sheets
 // with real columns instead of a flat CSV dump.
 
-import RNFS from 'react-native-fs';
-import RNHTMLtoPDF from 'react-native-html-to-pdf';
+import * as Print from 'expo-print';
+import {File, Paths} from 'expo-file-system';
 import * as XLSX from 'xlsx';
 import {Expense, GroupMember, Settlement} from './types';
 import {formatMoney} from './currency';
@@ -43,6 +47,19 @@ function fileBaseName(groupName: string) {
   })}-${date.getFullYear()}`;
   const slug = groupName.trim().toLowerCase().replace(/\s+/g, '-');
   return `ezysplit-${slug}-${monthYear}`;
+}
+
+// Writes text/base64 into the app's private cache under a readable name
+// (overwriting an older export of the same group/month) and returns its URI.
+function writeCacheFile(
+  name: string,
+  content: string,
+  encoding: 'utf8' | 'base64',
+): string {
+  const file = new File(Paths.cache, name);
+  file.create({overwrite: true});
+  file.write(content, {encoding});
+  return file.uri;
 }
 
 function globalFmtMoney(n: number, currency?: string | null) {
@@ -158,12 +175,13 @@ export async function exportGroupPdf(
     <head>
       <meta charset="utf-8" />
       <style>
+        @page { margin: 22px 0; }
         * { box-sizing: border-box; }
         body {
           font-family: -apple-system, Helvetica, Arial, sans-serif;
           color: ${BRAND.ink};
           margin: 0;
-          padding: 28px 32px 40px;
+          padding: 6px 32px 18px;
         }
         .header {
           display: flex;
@@ -309,26 +327,13 @@ export async function exportGroupPdf(
   </html>
   `;
 
-  // `directory: 'Download'` here does NOT write to the device's public
-  // Downloads folder - react-native-html-to-pdf resolves it under the
-  // app's own scoped external-files directory (getExternalFilesDir/
-  // Download on Android), which every app can always write to with zero
-  // storage permission, on every Android version including the
-  // scoped-storage ones. A previous version of this function then
-  // manually copied that file out to RNFS.DownloadDirectoryPath (the
-  // REAL public Downloads folder) - that raw filesystem write is exactly
-  // what Android's scoped storage blocks on real devices (Android 10+,
-  // this app's targetSdk 35), which is what caused "PDF export failed:
-  // ENOENT: open failed: EACCES (Permission denied)" for real users. The
-  // already-private file is safe to hand straight to FileViewer (see
-  // Balances.tsx's onExportPdf) - no copy needed, and nothing for the
-  // user to grant.
-  const file = await RNHTMLtoPDF.convert({
-    html,
-    fileName,
-    directory: 'Download',
-  });
-  return file.filePath;
+  // expo-print renders the HTML into a randomly named PDF in the cache;
+  // move it to a readable name so the share sheet / saved file shows
+  // "ezysplit-<group>-<Month-Year>.pdf". A4 at 72dpi = 595x842pt.
+  const {uri} = await Print.printToFileAsync({html, width: 595, height: 842});
+  const dest = new File(Paths.cache, `${fileName}.pdf`);
+  new File(uri).move(dest, {overwrite: true});
+  return dest.uri;
 }
 
 /* ------------------------------------------------------------------ */
@@ -450,13 +455,7 @@ export async function exportGroupExcel(
   XLSX.utils.book_append_sheet(wb, settlementSheet, 'Settlements');
 
   const base64 = XLSX.write(wb, {type: 'base64', bookType: 'xlsx'});
-  // Same fix as exportGroupPdf above: write into the app's own private
-  // document storage (no permission needed, works on every OS version)
-  // instead of the real public Downloads folder, which a raw RNFS write
-  // can't reach on a real device under Android's scoped storage.
-  const filePath = `${RNFS.DocumentDirectoryPath}/${fileName}.xlsx`;
-  await RNFS.writeFile(filePath, base64, 'base64');
-  return filePath;
+  return writeCacheFile(`${fileName}.xlsx`, base64, 'base64');
 }
 
 /* ------------------------------------------------------------------ */
@@ -496,8 +495,5 @@ export async function exportGroupCsv(
   ]);
 
   const csv = [header, ...rows].map(r => r.join(',')).join('\n');
-  // Same fix as exportGroupPdf/exportGroupExcel above.
-  const filePath = `${RNFS.DocumentDirectoryPath}/${fileName}.csv`;
-  await RNFS.writeFile(filePath, csv, 'utf8');
-  return filePath;
+  return writeCacheFile(`${fileName}.csv`, csv, 'utf8');
 }

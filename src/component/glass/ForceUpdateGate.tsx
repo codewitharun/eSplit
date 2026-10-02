@@ -8,14 +8,8 @@
 // hardware back button so it can't be bypassed.
 
 import React, {useEffect, useState} from 'react';
-import {
-  BackHandler,
-  Modal,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import {BackHandler, Modal, StyleSheet, TouchableOpacity, View} from 'react-native';
+import {Text} from '../ui/AppText';
 import GlassCard from './GlassCard';
 import theme from '../../utils/theme';
 import {BodyFont, DisplayFont, moderateScale} from '../../utils/fonts';

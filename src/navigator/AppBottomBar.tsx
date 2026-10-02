@@ -23,9 +23,10 @@
 // why Activity/Balances/GroupSettings each pad their scroll content).
 
 import {useNavigation} from '@react-navigation/native';
-import {Home, User, Users} from 'lucide-react-native';
+import {House as Home, User, Users} from 'lucide-react-native';
 import React from 'react';
-import {Image, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import {Image, StyleSheet, TouchableOpacity, View} from 'react-native';
+import {Text} from '../component/ui/AppText';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useAuthStore} from '../store/useAuthStore';
 import {haptics} from '../utils/haptics';

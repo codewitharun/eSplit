@@ -5,7 +5,8 @@
 // yourself. Text always carries the meaning; colour only reinforces it.
 
 import React from 'react';
-import {StyleSheet, Text} from 'react-native';
+import {StyleSheet} from 'react-native';
+import {Text} from './ui/AppText';
 import {expenseImpact} from '../services/ledger/activityFormat';
 import {formatMoney} from '../services/ledger/currency';
 import {Expense} from '../services/ledger/types';

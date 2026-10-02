@@ -12,21 +12,12 @@
 // month/All time/Custom range, same client-side logic as
 // PersonalExpenses.tsx) added alongside the existing category filter.
 
-import auth from '@react-native-firebase/auth';
 import {useBottomTabBarHeight} from '@react-navigation/bottom-tabs';
 import {useFocusEffect, useNavigation} from '@react-navigation/native';
 import {Search, SlidersHorizontal, X} from 'lucide-react-native';
 import React, {useCallback, useMemo, useRef, useState} from 'react';
-import {
-  BackHandler,
-  FlatList,
-  Modal,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import {BackHandler, FlatList, Modal, StyleSheet, TouchableOpacity, View} from 'react-native';
+import {Text, TextInput} from '../../component/ui/AppText';
 import {Calendar} from 'react-native-calendars';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import AddExpenseModal from '../../component/AddExpenseModal';
@@ -48,7 +39,7 @@ import {
   dayLabel,
   timeLabel,
 } from '../../services/ledger/activityFormat';
-import {addExpense, deleteExpense} from '../../services/ledger/firestoreLedger';
+import {addExpense, deleteExpense} from '../../data/ledger';
 import {
   EXPENSE_CATEGORIES,
   Expense,
@@ -66,6 +57,7 @@ import {
 import {useCollapseFabsOnScroll} from '../../hooks/useCollapseFabsOnScroll';
 import {GenieOrigin} from '../../component/GeniePanel';
 import theme from '../../utils/theme';
+import {currentUser} from '../../data/firebase';
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -96,7 +88,7 @@ function inRange(iso: string, from: Date | null, to: Date | null): boolean {
 }
 
 const ActivityScreen: React.FC = () => {
-  const user = auth().currentUser;
+  const user = currentUser();
   const groupKey = useExpenseState(state => state.groupKey);
   const ledger = useGroupLedger(groupKey);
   const [modalVisible, setModalVisible] = useState(false);

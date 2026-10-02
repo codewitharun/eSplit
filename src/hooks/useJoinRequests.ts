@@ -6,7 +6,7 @@
 // approve/decline actions, not part of the balance/ledger computation.
 
 import {useEffect, useState} from 'react';
-import {subscribeJoinRequests} from '../services/ledger/firestoreLedger';
+import {subscribeJoinRequests} from '../data/ledger';
 import {JoinRequest} from '../services/ledger/types';
 
 export interface JoinRequestsState {

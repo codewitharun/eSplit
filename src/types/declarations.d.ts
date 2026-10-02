@@ -1,1 +1,2 @@
-declare module 'react-native-html-to-pdf';
+// Ambient module declarations (none needed in the Expo build).
+export {};

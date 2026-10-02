@@ -9,17 +9,7 @@
 //   - when focus moves to another field while the keyboard is up.
 
 import React, {useCallback, useEffect, useRef} from 'react';
-import {
-  Keyboard,
-  LayoutChangeEvent,
-  NativeScrollEvent,
-  NativeSyntheticEvent,
-  Platform,
-  ScrollView,
-  ScrollViewProps,
-  TextInput,
-  View,
-} from 'react-native';
+import {Keyboard, LayoutChangeEvent, NativeScrollEvent, NativeSyntheticEvent, Platform, ScrollView, ScrollViewProps, TextInput, View} from 'react-native';
 
 const MARGIN = 24;
 

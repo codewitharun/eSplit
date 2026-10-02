@@ -30,14 +30,8 @@
 
 import {Check, ChevronRight, TriangleAlert} from 'lucide-react-native';
 import React, {useCallback, useEffect, useState} from 'react';
-import {
-  ActivityIndicator,
-  LayoutChangeEvent,
-  StyleSheet,
-  Text,
-  View,
-  ViewStyle,
-} from 'react-native';
+import {ActivityIndicator, LayoutChangeEvent, StyleSheet, View, ViewStyle} from 'react-native';
+import {Text} from '../ui/AppText';
 import {Gesture, GestureDetector} from 'react-native-gesture-handler';
 import Animated, {
   Easing,
@@ -247,7 +241,7 @@ const SwipeToConfirm: React.FC<Props> = ({
       <Animated.View style={[StyleSheet.absoluteFill, fillStyle]}>
         <GradientView
           colors={trackColors}
-          style={StyleSheet.absoluteFillObject}
+          style={StyleSheet.absoluteFill}
         />
       </Animated.View>
       <Animated.View style={[styles.labelRow, labelStyle]}>

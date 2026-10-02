@@ -16,17 +16,17 @@
 // successful "leave group" with zero extra reads.
 
 import {useCallback, useEffect} from 'react';
-import auth from '@react-native-firebase/auth';
 import {
   createGroup as createGroupApi,
   getGroupByJoinCode,
   joinGroup as joinGroupApi,
-} from '../services/ledger/firestoreLedger';
+} from '../data/ledger';
 import {GroupType} from '../services/ledger/types';
 import {useGroupsStore} from '../store/useGroupsStore';
+import {currentUser} from '../data/firebase';
 
 export function useGroups() {
-  const user = auth().currentUser;
+  const user = currentUser();
   const groups = useGroupsStore(state => state.groups);
   const loading = useGroupsStore(state => state.loading);
   const fetchGroups = useGroupsStore(state => state.fetchGroups);

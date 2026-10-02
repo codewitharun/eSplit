@@ -13,25 +13,14 @@
 // for every OTHER member (unchanged) and now also read/written here for
 // the current user instead of in Profile.tsx.
 
-import auth from '@react-native-firebase/auth';
-import firestore from '@react-native-firebase/firestore';
 import {useFocusEffect, useNavigation} from '@react-navigation/native';
 import {useBottomTabBarHeight} from '@react-navigation/bottom-tabs';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {
-  AppState,
-  BackHandler,
-  Linking,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import {AppState, BackHandler, Linking, ScrollView, StyleSheet, TouchableOpacity, View} from 'react-native';
+import {Text, TextInput} from '../../component/ui/AppText';
 import Toast from '../../services/toast';
-import FileViewer from 'react-native-file-viewer';
+import {openExportedFile} from '../../services/ledger/openExport';
 import AppAlert from '../../services/appAlert';
 import AnimatedNumber from '../../component/glass/AnimatedNumber';
 import BalanceBar from '../../component/BalanceBar';
@@ -44,7 +33,7 @@ import GroupSwitcherPill from '../../component/GroupSwitcherPill';
 import HomeIconChip from '../../component/HomeIconChip';
 import SwipeableRow from '../../component/glass/SwipeableRow';
 import {useGroupLedger} from '../../hooks/useGroupLedger';
-import {addSettlement} from '../../services/ledger/firestoreLedger';
+import {addSettlement} from '../../data/ledger';
 import {
   exportGroupExcel,
   exportGroupPdf,
@@ -62,9 +51,11 @@ import {haptics} from '../../utils/haptics';
 import {useCollapseFabsOnScroll} from '../../hooks/useCollapseFabsOnScroll';
 import theme from '../../utils/theme';
 import {BodyFont, DisplayFont, moderateScale} from '../../utils/fonts';
+import {currentUser} from '../../data/firebase';
+import {getUserUpiId, setUserUpiId} from '../../data/users';
 
 const BalancesScreen: React.FC = () => {
-  const user = auth().currentUser;
+  const user = currentUser();
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
   // Real height of the floating tab bar (it overlays content now
@@ -106,8 +97,7 @@ const BalancesScreen: React.FC = () => {
     (async () => {
       const entries = await Promise.all(
         ledger.members.map(async m => {
-          const doc = await firestore().collection('users').doc(m.uid).get();
-          return [m.uid, doc.exists ? doc.data()?.upiId || '' : ''] as const;
+          return [m.uid, await getUserUpiId(m.uid)] as const;
         }),
       );
       setUpiIds(Object.fromEntries(entries));
@@ -137,10 +127,7 @@ const BalancesScreen: React.FC = () => {
     }
     setSavingUpi(true);
     try {
-      await firestore()
-        .collection('users')
-        .doc(user.uid)
-        .set({upiId: myUpiId.trim()}, {merge: true});
+      await setUserUpiId(user.uid, myUpiId.trim());
       setUpiIds(prev => ({...prev, [user.uid]: myUpiId.trim()}));
       haptics.success();
       Toast.show({type: 'success', text1: 'UPI ID saved'});
@@ -359,12 +346,12 @@ const BalancesScreen: React.FC = () => {
       Toast.show({type: 'success', text1: 'PDF exported'});
       // The file lives in the app's own private storage (see
       // exportReport.ts) - there's nothing at a path the user could
-      // browse to, so hand it straight to the OS "Open with" chooser
+      // browse to, so hand it straight to the OS share sheet (expo-sharing)
       // where they can view it or save/share it wherever they like.
       // Best-effort: the export itself already succeeded and the toast
       // above already said so, so a viewer failure (e.g. no PDF app on
       // the device) shouldn't read as the export having failed.
-      FileViewer.open(path, {showOpenWithDialog: true}).catch(() => {});
+      openExportedFile(path, 'pdf').catch(() => {});
     } catch (error: any) {
       haptics.warning();
       Toast.show({
@@ -392,7 +379,7 @@ const BalancesScreen: React.FC = () => {
       haptics.success();
       Toast.show({type: 'success', text1: 'Excel exported'});
       // Same hand-off as onExportPdf above.
-      FileViewer.open(path, {showOpenWithDialog: true}).catch(() => {});
+      openExportedFile(path, 'xlsx').catch(() => {});
     } catch (error: any) {
       haptics.warning();
       Toast.show({

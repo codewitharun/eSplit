@@ -6,7 +6,8 @@
 // re-animated when the panel is reopened.
 
 import React, {useEffect, useRef, useState} from 'react';
-import {Text, TextStyle} from 'react-native';
+import {TextStyle} from 'react-native';
+import {Text} from '../ui/AppText';
 import {haptics} from '../../utils/haptics';
 
 interface Props {

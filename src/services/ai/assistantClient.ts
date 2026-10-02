@@ -8,10 +8,10 @@
 // result, then the model writes the answer. The raw expense list never
 // leaves the phone - only the specific results the model asked for.
 
-import auth from '@react-native-firebase/auth';
 import {API_BASE_URL} from '../../config/urls';
-import {getGroupSnapshot, getUserGroups} from '../ledger/firestoreLedger';
+import {getGroupSnapshot, getUserGroups} from '../../data/ledger';
 import {AssistantData, runAssistantTool} from './assistantTools';
+import {currentUser} from '../../data/firebase';
 
 // Comes from src/config/urls.ts. To test against a local or Vercel-preview
 // backend, temporarily set this to e.g. 'http://192.168.1.5:4000' - it must
@@ -74,7 +74,7 @@ async function postChat(
   messages: ApiMessage[],
   userName: string,
 ): Promise<{content: ContentBlock[]; stopReason: string; remaining?: number}> {
-  const user = auth().currentUser;
+  const user = currentUser();
   if (!user) {
     throw new AssistantError('auth', 'Please sign in again.');
   }

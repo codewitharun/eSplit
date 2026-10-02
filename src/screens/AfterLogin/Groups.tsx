@@ -11,17 +11,10 @@
 // groups do I have" and "what's my balance in each" can never drift
 // between the dashboard preview and this full list.
 
-import auth from '@react-native-firebase/auth';
 import {useIsFocused} from '@react-navigation/native';
 import React, {useEffect, useRef, useState} from 'react';
-import {
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import {ScrollView, StyleSheet, TouchableOpacity, View} from 'react-native';
+import {Text, TextInput} from '../../component/ui/AppText';
 import {KeyboardAwareScrollView} from 'react-native-keyboard-aware-scroll-view';
 import {ChevronRight, Search, SlidersHorizontal, X} from 'lucide-react-native';
 import Toast from '../../services/toast';
@@ -44,7 +37,7 @@ import AppBottomBar, {
 import {useGroups} from '../../hooks/useGroups';
 import {useGroupsOverview} from '../../hooks/useGroupsOverview';
 import {useEnterGroup} from '../../hooks/useEnterGroup';
-import {leaveGroup} from '../../services/ledger/firestoreLedger';
+import {leaveGroup} from '../../data/ledger';
 import {formatMoney} from '../../services/ledger/currency';
 import UpiPromptModal from '../../component/UpiPromptModal';
 import {useExpenseState} from '../../store/useExpenseStore';
@@ -53,6 +46,7 @@ import {useCollapseFabsOnScroll} from '../../hooks/useCollapseFabsOnScroll';
 import NewGroupPanel from '../../component/NewGroupPanel';
 import theme from '../../utils/theme';
 import {BodyFont, MonoFont, Typography, moderateScale} from '../../utils/fonts';
+import {currentUser} from '../../data/firebase';
 
 // Same deterministic accent-color-per-id scheme as GroupCheck's group
 // list - duplicated rather than shared (see AppBottomBar.tsx's own
@@ -86,7 +80,7 @@ const GroupsScreen = ({navigation}: any) => {
   const onFabScroll = useCollapseFabsOnScroll();
   // "New group" opens as a genie panel out of the floating button.
   const [newGroupOpen, setNewGroupOpen] = useState(false);
-  const user = auth().currentUser;
+  const user = currentUser();
   const focused = useIsFocused();
 
   const [searchQuery, setSearchQuery] = useState('');

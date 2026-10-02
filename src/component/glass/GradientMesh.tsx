@@ -44,7 +44,7 @@ const GradientMesh: React.FC<Props> = ({style}) => (
 );
 
 const styles = StyleSheet.create({
-  container: {...StyleSheet.absoluteFillObject},
+  container: {...StyleSheet.absoluteFill},
 });
 
 export default GradientMesh;

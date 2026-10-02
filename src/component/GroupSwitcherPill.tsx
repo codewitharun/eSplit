@@ -21,7 +21,8 @@
 
 import {ArrowLeftRight} from 'lucide-react-native';
 import React, {useState} from 'react';
-import {StyleSheet, Text, TouchableOpacity, ViewStyle} from 'react-native';
+import {StyleSheet, TouchableOpacity, ViewStyle} from 'react-native';
+import {Text} from './ui/AppText';
 import SwitchGroupSheet from './SwitchGroupSheet';
 import theme from '../utils/theme';
 import {haptics} from '../utils/haptics';

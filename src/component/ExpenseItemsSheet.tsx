@@ -7,15 +7,8 @@
 
 import {X} from 'lucide-react-native';
 import React from 'react';
-import {
-  Modal,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  TouchableWithoutFeedback,
-  View,
-} from 'react-native';
+import {Modal, ScrollView, StyleSheet, TouchableOpacity, TouchableWithoutFeedback, View} from 'react-native';
+import {Text} from './ui/AppText';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useModalOpenGuard} from '../hooks/useModalOpenGuard';
 import {formatMoney} from '../services/ledger/currency';

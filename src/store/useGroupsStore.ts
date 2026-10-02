@@ -22,7 +22,7 @@
 // accurate. Only the group list's own metadata (name, members, join
 // code, type) is what rarely changes and is worth caching.
 import {create} from 'zustand';
-import {getUserGroups} from '../services/ledger/firestoreLedger';
+import {getUserGroups} from '../data/ledger';
 import {Group} from '../services/ledger/types';
 
 interface GroupsStoreState {

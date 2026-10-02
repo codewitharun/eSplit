@@ -11,20 +11,13 @@
 // never cascade into anyone else's shared data - unlike Delete group in
 // GroupSettings.tsx, which erases data every member of that group shares.
 // The actual deletion (personal expenses, the users/{uid} doc, then the
-// Firebase Auth login) lives in src/services/auth.js's deleteAccount().
+// Firebase Auth login) lives in src/data/auth.ts's deleteAccount().
 
-import auth from '@react-native-firebase/auth';
 import {useNavigation} from '@react-navigation/native';
 import {ChevronLeft} from 'lucide-react-native';
 import React, {useState} from 'react';
-import {
-  Image,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import {Image, ScrollView, StyleSheet, TouchableOpacity, View} from 'react-native';
+import {Text} from '../../component/ui/AppText';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import GlassCard from '../../component/glass/GlassCard';
 import AppBottomBar, {
@@ -33,16 +26,17 @@ import AppBottomBar, {
 import TechTitanFooter from '../../component/glass/TechTitanFooter';
 import {useGroups} from '../../hooks/useGroups';
 import AppAlert from '../../services/appAlert';
-import {deleteAccount, signOut} from '../../services/auth';
+import {deleteAccount, signOut} from '../../data/auth';
 import Toast from '../../services/toast';
 import {BodyFont, DisplayFont, moderateScale} from '../../utils/fonts';
 import theme from '../../utils/theme';
+import {currentUser} from '../../data/firebase';
 
 const ProfileScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
   const barHeight = useAppBottomBarHeight();
-  const user = auth().currentUser;
+  const user = currentUser();
   const {groups, loading: groupsLoading} = useGroups();
   const [deletingAccount, setDeletingAccount] = useState(false);
 

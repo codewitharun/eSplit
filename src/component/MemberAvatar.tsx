@@ -4,7 +4,8 @@
 // group chips). Purely cosmetic; nothing stored.
 
 import React from 'react';
-import {StyleSheet, Text, View, ViewStyle} from 'react-native';
+import {StyleSheet, View, ViewStyle} from 'react-native';
+import {Text} from './ui/AppText';
 import {BodyFont} from '../utils/fonts';
 import theme from '../utils/theme';
 

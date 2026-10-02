@@ -15,7 +15,8 @@
 // fired while one is open still shows on top of it.
 
 import React, {useEffect, useRef} from 'react';
-import {Animated, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import {Animated, StyleSheet, TouchableOpacity, View} from 'react-native';
+import {Text} from '../ui/AppText';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {CircleCheck, CircleX, Info} from 'lucide-react-native';
 import {useToastStore} from '../../services/toast';

@@ -9,9 +9,9 @@
 // screen with the orb comes into focus, so switching a user on/off in the
 // admin panel shows up without an app update.
 
-import auth from '@react-native-firebase/auth';
 import {create} from 'zustand';
 import {API_BASE_URL} from '../config/urls';
+import {currentUser} from '../data/firebase';
 
 const STALE_MS = 2 * 60 * 1000;
 
@@ -34,7 +34,7 @@ export const useAiAccessStore = create<AiAccessState>((set, get) => ({
   fetchedAt: 0,
   inFlight: false,
   refresh: async (force = false) => {
-    const user = auth().currentUser;
+    const user = currentUser();
     if (!user) {
       set({uid: null, enabled: false, remaining: null, fetchedAt: 0});
       return;
@@ -58,7 +58,7 @@ export const useAiAccessStore = create<AiAccessState>((set, get) => ({
         headers: {Authorization: `Bearer ${token}`},
       });
       const body = res.ok ? await res.json() : {enabled: false};
-      if (auth().currentUser?.uid !== user.uid) {
+      if (currentUser()?.uid !== user.uid) {
         return; // signed out / switched account meanwhile
       }
       set({

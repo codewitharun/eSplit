@@ -12,19 +12,11 @@
 // bottom-sheet dependency - this app has no bottom-sheet library
 // installed and none should be added without Arun installing it himself.
 
-import auth from '@react-native-firebase/auth';
 import {useNavigation} from '@react-navigation/native';
 import {ChevronRight, X} from 'lucide-react-native';
 import React, {useMemo} from 'react';
-import {
-  ActivityIndicator,
-  Modal,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  TouchableWithoutFeedback,
-  View,
-} from 'react-native';
+import {ActivityIndicator, Modal, StyleSheet, TouchableOpacity, TouchableWithoutFeedback, View} from 'react-native';
+import {Text} from './ui/AppText';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useEnterGroup} from '../hooks/useEnterGroup';
 import {useGroups} from '../hooks/useGroups';
@@ -36,6 +28,7 @@ import {BodyFont, DisplayFont, moderateScale} from '../utils/fonts';
 import {haptics} from '../utils/haptics';
 import theme from '../utils/theme';
 import GlassCard from './glass/GlassCard';
+import {currentUser} from '../data/firebase';
 
 const MAX_SHOWN = 5;
 
@@ -71,7 +64,7 @@ const SwitchGroupSheet: React.FC<SwitchGroupSheetProps> = ({
 }) => {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
-  const user = auth().currentUser;
+  const user = currentUser();
   const {groups, loading} = useGroups();
   const overview = useGroupsOverview(groups, user?.uid);
   const {enterGroup} = useEnterGroup(navigation);

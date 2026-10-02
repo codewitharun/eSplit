@@ -1,37 +1,28 @@
 // src/utils/haptics.ts
-// Deliberately built on React Native's built-in Vibration API rather than
-// react-native-haptic-feedback: that library needs native linking, and
-// this project's Gradle build has been fragile. Vibration needs no new
-// native module; swap the implementation for a haptics library later -
-// call sites (tap/tick/success/warning/error) won't need to change.
-//
-// ANDROID: needs <uses-permission android:name="android.permission.VIBRATE"/>
-// in AndroidManifest.xml - without it every call here is a silent no-op
-// (that was why no haptics fired on real Android devices before Oct 2026).
-//
-// iOS: RN's Vibration ignores durations and always plays a full ~400ms
-// buzz, so the very light `tick` is Android-only (on iOS it would feel
-// like a phone call, not a tap).
+// Expo build: real haptic effects via expo-haptics (VIBRATE permission is
+// added by its config plugin). The call-site API is unchanged from the old
+// Vibration-based version: haptics.tap/tick/success/warning/error.
+// Every call is fire-and-forget and never throws - a phone with haptics
+// turned off must not break a button press.
+import * as Haptics from 'expo-haptics';
 
-import {Platform, Vibration} from 'react-native';
-
-const isAndroid = Platform.OS === 'android';
+const safe = (p: Promise<unknown>) => {
+  p.catch(() => {});
+};
 
 export const haptics = {
   // A normal button press / selection.
-  tap: () => Vibration.vibrate(isAndroid ? 10 : 8),
+  tap: () => safe(Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)),
   // The lightest possible pulse - for repeated feedback like the AI's
-  // "typing" and text streaming in. Android only (see above).
-  tick: () => {
-    if (isAndroid) {
-      Vibration.vibrate(4);
-    }
-  },
+  // "typing" and text streaming in.
+  tick: () => safe(Haptics.selectionAsync()),
   // Something was created / saved / answered.
   success: () =>
-    Vibration.vibrate(isAndroid ? [0, 15, 40, 15] : [0, 12, 40, 12]),
+    safe(Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)),
   // A soft "that didn't work" - validation, blocked action.
-  warning: () => Vibration.vibrate(25),
+  warning: () =>
+    safe(Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning)),
   // A real failure (network/server error).
-  error: () => Vibration.vibrate(isAndroid ? [0, 30, 60, 30, 60, 30] : 25),
+  error: () =>
+    safe(Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error)),
 };

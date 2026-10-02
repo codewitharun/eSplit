@@ -26,22 +26,12 @@
 // write - fixing a typo shouldn't feel like a big decision the way
 // deleting the group does.
 
-import auth from '@react-native-firebase/auth';
 import {useFocusEffect, useNavigation} from '@react-navigation/native';
 import {useBottomTabBarHeight} from '@react-navigation/bottom-tabs';
 import {Pencil, Share2, UserRound, UsersRound} from 'lucide-react-native';
 import React, {useCallback, useState} from 'react';
-import {
-  BackHandler,
-  Modal,
-  ScrollView,
-  StyleSheet,
-  Switch,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import {BackHandler, Modal, ScrollView, StyleSheet, Switch, TouchableOpacity, View} from 'react-native';
+import {Text, TextInput} from '../../component/ui/AppText';
 import QRCode from 'react-native-qrcode-svg';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import GlassCard from '../../component/glass/GlassCard';
@@ -64,7 +54,7 @@ import {
   removeGuestMember,
   renameGroup,
   setGroupLocked,
-} from '../../services/ledger/firestoreLedger';
+} from '../../data/ledger';
 import {EPSILON} from '../../services/ledger/types';
 import Toast from '../../services/toast';
 import InviteSheet from '../../component/InviteSheet';
@@ -80,6 +70,7 @@ import {
   MonoFont,
   moderateScale,
 } from '../../utils/fonts';
+import {currentUser} from '../../data/firebase';
 
 const GroupSettingsScreen: React.FC = () => {
   const navigation = useNavigation<any>();
@@ -91,7 +82,7 @@ const GroupSettingsScreen: React.FC = () => {
   const tabBarHeight = useBottomTabBarHeight();
   // Collapses the floating create button to icon-only while scrolling down.
   const onFabScroll = useCollapseFabsOnScroll();
-  const user = auth().currentUser;
+  const user = currentUser();
   const groupKey = useExpenseState(state => state.groupKey);
   const setGroupKey = useExpenseState(state => state.setGroupKey);
   const ledger = useGroupLedger(groupKey);

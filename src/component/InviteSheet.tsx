@@ -7,14 +7,8 @@
 
 import {Copy, Link2, MessageCircle, Share2, X} from 'lucide-react-native';
 import React, {useEffect, useState} from 'react';
-import {
-  Modal,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  TouchableWithoutFeedback,
-  View,
-} from 'react-native';
+import {Modal, StyleSheet, TouchableOpacity, TouchableWithoutFeedback, View} from 'react-native';
+import {Text} from './ui/AppText';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {groupInviteUrl} from '../config/urls';
 import {useModalOpenGuard} from '../hooks/useModalOpenGuard';

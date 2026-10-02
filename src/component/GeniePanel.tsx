@@ -220,7 +220,7 @@ const GeniePanel: React.FC<Props> = ({
 const styles = StyleSheet.create({
   flex: {flex: 1},
   backdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(4,7,15,0.7)',
   },
   card: {

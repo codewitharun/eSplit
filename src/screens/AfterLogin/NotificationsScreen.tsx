@@ -14,15 +14,10 @@
 import {useNavigation} from '@react-navigation/native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import React, {useMemo, useState} from 'react';
-import {
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import {ScrollView, StyleSheet, TouchableOpacity, View} from 'react-native';
+import {Text} from '../../component/ui/AppText';
 import {ChevronLeft} from 'lucide-react-native';
-import moment from 'moment';
+import {timeAgo} from '../../utils/timeAgo';
 import Toast from '../../services/toast';
 import GlassCard from '../../component/glass/GlassCard';
 import {
@@ -34,7 +29,7 @@ import {useAdminNotifications} from '../../hooks/useAdminNotifications';
 import {
   approveJoinRequest,
   declineJoinRequest,
-} from '../../services/ledger/firestoreLedger';
+} from '../../data/ledger';
 import {haptics} from '../../utils/haptics';
 import {BodyFont, DisplayFont, moderateScale} from '../../utils/fonts';
 import theme from '../../utils/theme';
@@ -190,7 +185,7 @@ const NotificationsScreen: React.FC = () => {
                 <View style={styles.updateHeaderRow}>
                   <Text style={styles.updateTitle}>{item.title}</Text>
                   <Text style={styles.updateTime}>
-                    {moment(item.at).fromNow()}
+                    {timeAgo(item.at)}
                   </Text>
                 </View>
                 <Text style={styles.updateBody}>{item.body}</Text>

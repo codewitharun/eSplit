@@ -180,8 +180,9 @@ export default function MainTabs() {
         // showed up as a stray white bar around/behind the pill on a
         // real device. sceneContainerStyle covers each screen's own
         // background for the same reason.
-        sceneContainerStyle={{backgroundColor: theme.color.ground}}
         screenOptions={({route}) => ({
+          // v7: sceneContainerStyle moved into screenOptions as sceneStyle.
+          sceneStyle: {backgroundColor: theme.color.ground},
           headerShown: false,
           tabBarShowLabel: true,
           tabBarActiveTintColor: theme.color.ink,
@@ -299,7 +300,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   iconSlotPill: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderRadius: theme.radius.pill,
     backgroundColor: 'rgba(255,255,255,0.08)',
   },

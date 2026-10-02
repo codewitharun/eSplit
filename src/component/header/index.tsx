@@ -16,7 +16,8 @@
 import React from 'react';
 import {useNavigation} from '@react-navigation/native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
-import {Image, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import {Image, StyleSheet, TouchableOpacity, View} from 'react-native';
+import {Text} from '../ui/AppText';
 import {Bell, User} from 'lucide-react-native';
 import {useAuthStore} from '../../store/useAuthStore';
 import GradientView from '../glass/GradientView';
@@ -66,7 +67,7 @@ const Header = () => {
         hitSlop={{top: 6, bottom: 6, left: 6, right: 6}}>
         <GradientView
           colors={theme.gradient.hero}
-          style={StyleSheet.absoluteFillObject}
+          style={StyleSheet.absoluteFill}
         />
         <View style={styles.avatarRingInner}>
           {user?.photoURL ? (

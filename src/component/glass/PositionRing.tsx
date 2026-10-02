@@ -17,7 +17,8 @@
 // idea as the approved web mockup's own Personal-mode ring state.
 
 import React, {useEffect} from 'react';
-import {StyleSheet, Text, View} from 'react-native';
+import {StyleSheet, View} from 'react-native';
+import {Text} from '../ui/AppText';
 import Svg, {Circle, G} from 'react-native-svg';
 import Animated, {
   Easing,

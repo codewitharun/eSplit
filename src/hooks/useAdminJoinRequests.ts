@@ -13,10 +13,10 @@
 // createdBy - noted here so that future change doesn't miss this spot.
 
 import {useEffect, useMemo, useState} from 'react';
-import auth from '@react-native-firebase/auth';
 import {useGroups} from './useGroups';
-import {subscribeJoinRequests} from '../services/ledger/firestoreLedger';
+import {subscribeJoinRequests} from '../data/ledger';
 import {JoinRequest} from '../services/ledger/types';
+import {currentUser} from '../data/firebase';
 
 export interface AdminJoinRequest extends JoinRequest {
   groupId: string;
@@ -24,7 +24,7 @@ export interface AdminJoinRequest extends JoinRequest {
 }
 
 export function useAdminJoinRequests(): AdminJoinRequest[] {
-  const user = auth().currentUser;
+  const user = currentUser();
   const {groups} = useGroups();
   const [requests, setRequests] = useState<AdminJoinRequest[]>([]);
 

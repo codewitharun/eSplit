@@ -15,13 +15,8 @@
 // edge stays anchored.
 
 import React, {useEffect, useState} from 'react';
-import {
-  LayoutChangeEvent,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import {LayoutChangeEvent, StyleSheet, TouchableOpacity, View} from 'react-native';
+import {Text} from './ui/AppText';
 import Animated, {
   FadeInDown,
   interpolate,

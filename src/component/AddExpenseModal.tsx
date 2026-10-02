@@ -7,13 +7,8 @@
 
 import {Plus, ReceiptText, X} from 'lucide-react-native';
 import React, {useEffect, useMemo, useRef, useState} from 'react';
-import {
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import {StyleSheet, TouchableOpacity, View} from 'react-native';
+import {Text, TextInput} from './ui/AppText';
 import {useModalOpenGuard} from '../hooks/useModalOpenGuard';
 import {currencySymbol, formatMoney} from '../services/ledger/currency';
 import {
@@ -25,7 +20,7 @@ import {
   rowsTotal,
   visibleItems,
 } from '../services/ledger/expenseItems';
-import {addExpense, editExpense} from '../services/ledger/firestoreLedger';
+import {addExpense, editExpense} from '../data/ledger';
 import {
   computeSplits,
   round2,

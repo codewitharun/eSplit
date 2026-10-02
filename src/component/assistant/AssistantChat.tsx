@@ -5,18 +5,10 @@
 // produced and what data leaves the phone. Read-only: never writes data.
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import auth from '@react-native-firebase/auth';
 import {SendHorizontal, Sparkles} from 'lucide-react-native';
 import React, {useEffect, useRef, useState} from 'react';
-import {
-  ActivityIndicator,
-  FlatList,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import {ActivityIndicator, FlatList, StyleSheet, TouchableOpacity, View} from 'react-native';
+import {Text, TextInput} from '../ui/AppText';
 import {
   AssistantError,
   askAssistant,
@@ -32,6 +24,7 @@ import {BodyFont, DisplayFont, moderateScale} from '../../utils/fonts';
 import {haptics} from '../../utils/haptics';
 import theme from '../../utils/theme';
 import TypewriterText from './TypewriterText';
+import {currentUser} from '../../data/firebase';
 
 const CONSENT_KEY = 'ezysplit.aiAssistantConsent.v1';
 // Data older than this is re-read before the next question, so an
@@ -62,7 +55,7 @@ interface Props {
 }
 
 const AssistantChat: React.FC<Props> = ({groupName, bottomInset}) => {
-  const user = auth().currentUser;
+  const user = currentUser();
   const userName = (user?.displayName || '').split(' ')[0] || 'there';
   const store = useAssistantStore();
   const [consent, setConsent] = useState<boolean | null>(null);

@@ -35,7 +35,7 @@
 
 import {useCallback, useEffect, useState} from 'react';
 import {computeNetBalances} from '../services/ledger/debtSimplifier';
-import {getGroupSnapshot} from '../services/ledger/firestoreLedger';
+import {getGroupSnapshot} from '../data/ledger';
 import {DEFAULT_CURRENCY} from '../services/ledger/currency';
 import {
   mergeCurrencyTotals,

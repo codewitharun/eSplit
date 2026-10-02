@@ -4,7 +4,7 @@
 // system share). Never used for personal lists (they have no invite).
 // Links come from src/config/urls.ts.
 
-import Clipboard from '@react-native-clipboard/clipboard';
+import * as Clipboard from 'expo-clipboard';
 import {Linking, Share} from 'react-native';
 import {groupInviteUrl} from '../config/urls';
 import {haptics} from '../utils/haptics';
@@ -36,11 +36,10 @@ Manage & split expenses easily.
 🔗 ${groupInviteUrl(groupId)}`;
 }
 
-// @react-native-clipboard/clipboard - the official replacement for RN
-// core's removed Clipboard (pinned to 1.14.3 for RN 0.74 / old arch).
-export function copyToClipboard(text: string, what: string): void {
+// expo-clipboard (RN core's Clipboard was removed).
+export async function copyToClipboard(text: string, what: string): Promise<void> {
   try {
-    Clipboard.setString(text);
+    await Clipboard.setStringAsync(text);
     haptics.success();
     Toast.show({type: 'success', text1: `${what} copied`});
   } catch {

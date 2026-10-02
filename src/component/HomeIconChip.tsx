@@ -15,7 +15,7 @@
 // backwards navigation elsewhere; this is a distinct "go to dashboard"
 // action, so it gets its own glyph and its own chip).
 
-import {Home as HomeIcon} from 'lucide-react-native';
+import {House as HomeIcon} from 'lucide-react-native';
 import {useNavigation} from '@react-navigation/native';
 import React from 'react';
 import {StyleSheet, TouchableOpacity, ViewStyle} from 'react-native';

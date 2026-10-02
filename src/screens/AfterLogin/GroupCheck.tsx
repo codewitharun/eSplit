@@ -6,19 +6,11 @@
 // target (Group-Check/:groupId), and reachable any time from Activity's
 // header pill or the You tab's "Switch or create a group".
 
-import auth from '@react-native-firebase/auth';
-import firestore from '@react-native-firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {useIsFocused, useRoute} from '@react-navigation/native';
 import React, {useEffect, useRef, useState} from 'react';
-import {
-  ActivityIndicator,
-  LayoutChangeEvent,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import {ActivityIndicator, LayoutChangeEvent, StyleSheet, TouchableOpacity, View} from 'react-native';
+import {Text} from '../../component/ui/AppText';
 import {KeyboardAwareScrollView} from 'react-native-keyboard-aware-scroll-view';
 import {
   ArrowDown,
@@ -41,7 +33,7 @@ import AppBottomBar, {
 } from '../../navigator/AppBottomBar';
 import {useGroups} from '../../hooks/useGroups';
 import {useGroupsOverview} from '../../hooks/useGroupsOverview';
-import {leaveGroup} from '../../services/ledger/firestoreLedger';
+import {leaveGroup} from '../../data/ledger';
 import {mergeCurrencyTotals} from '../../services/ledger/spendTotals';
 import GradientView from '../../component/glass/GradientView';
 import AddGroupFab, {
@@ -66,6 +58,8 @@ import Animated, {
 } from 'react-native-reanimated';
 import {BodyFont, MonoFont, Typography, moderateScale} from '../../utils/fonts';
 import {useCountUp} from '../../utils/animation';
+import {currentUser} from '../../data/firebase';
+import {getUserUpiId} from '../../data/users';
 
 // Deterministic accent color per group (from its id) for the lettered
 // avatar chip in the groups list - purely cosmetic variety, not tied to
@@ -91,7 +85,7 @@ const GroupManagement = ({navigation}: any) => {
   const setGroupKey = useExpenseState(state => state.setGroupKey);
   const currentGroupKey = useExpenseState(state => state.groupKey);
   const [loader, setLoader] = useState(false);
-  const user = auth().currentUser;
+  const user = currentUser();
   const focused = useIsFocused();
   const barHeight = useAppBottomBarHeight();
   // Collapses the floating create button to icon-only while scrolling down.
@@ -206,11 +200,7 @@ const GroupManagement = ({navigation}: any) => {
       return;
     }
     try {
-      const doc = await firestore()
-        .collection('users')
-        .doc(currentUser.uid)
-        .get();
-      const hasUpiId = !!(doc.exists && doc.data()?.upiId);
+      const hasUpiId = !!(await getUserUpiId(currentUser.uid));
       if (hasUpiId) {
         return;
       }
@@ -534,7 +524,7 @@ const GroupManagement = ({navigation}: any) => {
               <GlassCard style={styles.heroCard}>
                 <GradientView
                   colors={theme.gradient.heroDark}
-                  style={StyleSheet.absoluteFillObject}
+                  style={StyleSheet.absoluteFill}
                 />
                 <View style={styles.heroTopRow}>
                   <Text style={styles.heroKicker}>YOUR POSITION</Text>
@@ -614,7 +604,7 @@ const GroupManagement = ({navigation}: any) => {
                       ]}>
                       <GradientView
                         colors={theme.gradient.fab}
-                        style={StyleSheet.absoluteFillObject}
+                        style={StyleSheet.absoluteFill}
                       />
                     </Animated.View>
                   )}
@@ -1093,7 +1083,7 @@ const styles = StyleSheet.create({
   },
   addGroupBtnActive: {borderColor: theme.color.blueBright},
   loaderOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(6,5,12,0.5)',
     justifyContent: 'center',
     alignItems: 'center',

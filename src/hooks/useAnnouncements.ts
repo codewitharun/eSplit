@@ -5,7 +5,7 @@ import {useEffect, useState} from 'react';
 import {
   Announcement,
   subscribeActiveAnnouncements,
-} from '../services/announcements';
+} from '../data/announcements';
 
 export interface AnnouncementsState {
   loading: boolean;
