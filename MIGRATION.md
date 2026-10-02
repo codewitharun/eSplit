@@ -74,3 +74,32 @@ npx tsc --noEmit
 npx jest
 npm run prebuild && npx expo run:android
 ```
+
+## Dev vs prod builds
+One `android/` (and `ios/`) folder serves both variants. `scripts/native.js` remembers which
+variant it was generated for, and re-runs `prebuild --clean` only when you switch.
+
+| command | builds |
+|---|---|
+| `npm run android` / `npm run ios:device` | **prod** — EzySplit, live Firebase |
+| `npm run android:dev` / `npm run ios:dev` | **dev** — EzySplit Dev (orange DEV icon), dev Firebase |
+| `npm start` / `npm run start:dev` | Metro only. Use `start:dev` with a dev build, because the Google client ID is baked in at Metro start. |
+
+### Setting up the dev Firebase project (one time)
+1. Firebase console → Add project, e.g. `ezysplit-dev`. The free Spark plan is fine.
+2. Add an **Android app**:
+   - package `com.techtitens.ezysplit.dev`
+   - debug SHA-1 `5E:8F:16:06:2E:A3:CD:2C:4A:0D:54:78:76:BA:A6:F3:8C:AB:F6:25`
+3. Add an **iOS app** with bundle ID `com.techtitens.ezysplit.dev` (optional, only for iPhone dev builds).
+4. Authentication → Sign-in method → enable **Google**.
+5. Firestore Database → Create (production mode, same region as prod).
+6. Rules:
+   - `npm i -g firebase-tools` and `firebase login`
+   - `firebase use --add`, pick the dev project, alias it `dev`
+   - `firebase deploy --only firestore:rules --project dev`
+7. Download the files *after* steps 2–4, so they include the Google client IDs:
+   - `google-services.json` → `firebase/dev/google-services.json`
+   - `GoogleService-Info.plist` → `firebase/dev/GoogleService-Info.plist`
+8. `npm run android:dev`
+
+Known gap: the AI assistant and push *sending* go through esplit-backend, which trusts only prod tokens. Both fail in the dev app until the backend gets a dev mode.

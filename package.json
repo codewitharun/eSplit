@@ -54,19 +54,19 @@
     "typescript": "~6.0.3"
   },
   "scripts": {
-    "start": "expo start",
-    "android": "expo run:android",
-    "prebuild": "expo prebuild --platform android --clean",
+    "start": "expo start --dev-client",
+    "android": "node scripts/native.js android prod",
+    "prebuild": "node scripts/native.js android prod --prebuild-only",
     "typecheck": "tsc --noEmit",
     "test": "jest",
-    "android:dev": "APP_VARIANT=development expo run:android",
-    "prebuild:dev": "APP_VARIANT=development expo prebuild --platform android --clean",
+    "android:dev": "node scripts/native.js android dev",
+    "prebuild:dev": "node scripts/native.js android dev --prebuild-only",
     "start:dev": "APP_VARIANT=development expo start --dev-client",
-    "ios": "expo run:ios",
-    "ios:device": "expo run:ios --device",
-    "ios:dev": "APP_VARIANT=development expo run:ios --device",
+    "ios": "node scripts/native.js ios prod",
+    "ios:device": "node scripts/native.js ios prod --device",
+    "ios:dev": "node scripts/native.js ios dev --device",
     "web": "expo start --web",
-    "prebuild:ios": "expo prebuild --platform ios --clean"
+    "prebuild:ios": "node scripts/native.js ios prod --prebuild-only"
   },
   "private": true
 }
