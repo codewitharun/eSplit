@@ -43,6 +43,16 @@ const IS_DEV = process.env.APP_VARIANT === "development";
 const GOOGLE_SERVICES = IS_DEV
   ? "./firebase/dev/google-services.json"
   : "./google-services.json";
+const GOOGLE_SERVICES_IOS = IS_DEV
+  ? "./firebase/dev/GoogleService-Info.plist"
+  : "./GoogleService-Info.plist";
+
+// Dev builds get an orange "DEV" band on the icon so the two apps are
+// easy to tell apart when both are installed (assets/dev/*).
+const ICON = IS_DEV ? "./assets/dev/icon.png" : "./assets/icon.png";
+const ANDROID_FOREGROUND = IS_DEV
+  ? "./assets/dev/android-icon-foreground.png"
+  : "./assets/android-icon-foreground.png";
 
 // Google Sign-In needs the project's *web* OAuth client id (client_type 3),
 // which is inside google-services.json once Google sign-in is enabled in
@@ -70,11 +80,30 @@ const config: { expo: ExpoConfig } = {
     slug: "ezysplit",
     version,
     orientation: "portrait",
-    icon: "./assets/icon.png",
+    icon: ICON,
     scheme: IS_DEV ? "ezysplit-dev" : "ezysplit",
     userInterfaceStyle: "dark",
     backgroundColor: BG,
-    platforms: ["android"],
+    // web: for Arun's own quick testing only (not shipped to users).
+    platforms: ["android", "ios", "web"],
+    ios: {
+      // Same bundle id + GoogleService-Info.plist as the CLI app's iOS target.
+      bundleIdentifier: IS_DEV
+        ? "com.techtitens.ezysplit.dev"
+        : "com.techtitens.ezysplit",
+      buildNumber: String(VERSION_CODE),
+      googleServicesFile: GOOGLE_SERVICES_IOS,
+      supportsTablet: false,
+      infoPlist: {
+        // Linking.canOpenURL('whatsapp://...') for the invite sheet.
+        LSApplicationQueriesSchemes: ["whatsapp"],
+        ITSAppUsesNonExemptEncryption: false,
+      },
+    },
+    web: {
+      favicon: "./assets/favicon.png",
+      bundler: "metro",
+    },
     android: {
       package: IS_DEV
         ? "com.techtitens.ezysplit.dev"
@@ -82,12 +111,10 @@ const config: { expo: ExpoConfig } = {
       versionCode: VERSION_CODE,
       googleServicesFile: GOOGLE_SERVICES,
       adaptiveIcon: {
-        foregroundImage: "./assets/android-icon-foreground.png",
+        foregroundImage: ANDROID_FOREGROUND,
         backgroundImage: "./assets/android-icon-background.png",
         backgroundColor: BG,
       },
-      // Same as the CLI app: no Android auto-backup. A restored backup on a
-      // new phone could bring back a stale groupKey/userToken in AsyncStorage.
       allowBackup: false,
       softwareKeyboardLayoutMode: "resize",
       predictiveBackGestureEnabled: false,
@@ -151,6 +178,13 @@ const config: { expo: ExpoConfig } = {
             targetSdkVersion: 36,
             enableMinifyInReleaseBuilds: true,
             enableShrinkResourcesInReleaseBuilds: true,
+          },
+          ios: {
+            // RNFirebase on iOS needs static frameworks; with use_frameworks
+            // React Native is compiled from source instead of the
+            // precompiled xcframeworks (slower first build, but compatible).
+            useFrameworks: "static",
+            buildReactNativeFromSource: true,
           },
         },
       ],

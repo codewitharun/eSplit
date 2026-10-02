@@ -3,6 +3,7 @@
   "version": "2.3.0",
   "main": "index.ts",
   "dependencies": {
+    "@expo/metro-runtime": "~57.0.16",
     "@notifee/react-native": "^9.1.8",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-firebase/analytics": "^26.4.0",
@@ -30,6 +31,7 @@
     "jest-expo": "~57.0.5",
     "lucide-react-native": "^1.50.0",
     "react": "19.2.3",
+    "react-dom": "19.2.3",
     "react-native": "0.86.3",
     "react-native-calendars": "^1.1314.0",
     "react-native-gesture-handler": "~2.32.0",
@@ -39,6 +41,7 @@
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "~4.26.0",
     "react-native-svg": "15.15.4",
+    "react-native-web": "~0.21.0",
     "react-native-worklets": "0.10.1",
     "xlsx": "^0.18.5",
     "zustand": "^5.0.15"
@@ -58,7 +61,12 @@
     "test": "jest",
     "android:dev": "APP_VARIANT=development expo run:android",
     "prebuild:dev": "APP_VARIANT=development expo prebuild --platform android --clean",
-    "start:dev": "APP_VARIANT=development expo start --dev-client"
+    "start:dev": "APP_VARIANT=development expo start --dev-client",
+    "ios": "expo run:ios",
+    "ios:device": "expo run:ios --device",
+    "ios:dev": "APP_VARIANT=development expo run:ios --device",
+    "web": "expo start --web",
+    "prebuild:ios": "expo prebuild --platform ios --clean"
   },
   "private": true
 }
