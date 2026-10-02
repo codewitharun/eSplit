@@ -1,6 +1,7 @@
 {
   "projects": {
-    "EzySplit": "esplit-d362c"
+    "EzySplit": "esplit-d362c",
+    "dev": "ezysplit-dev"
   },
   "targets": {},
   "etags": {}

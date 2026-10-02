@@ -1,3 +1,5 @@
+// FIRST: on web this initializes Firebase (bootstrap.web.ts); no-op on native.
+import './src/data/bootstrap';
 import 'react-native-gesture-handler';
 import {registerRootComponent} from 'expo';
 

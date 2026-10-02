@@ -28,6 +28,7 @@
     "expo-sharing": "~57.0.22",
     "expo-splash-screen": "~57.0.9",
     "expo-system-ui": "~57.0.4",
+    "firebase": "12.17.1",
     "jest-expo": "~57.0.5",
     "lucide-react-native": "^1.50.0",
     "react": "19.2.3",

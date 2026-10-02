@@ -12,7 +12,10 @@ import { navigationRef } from "./src/services/NavigationService";
 // so there's exactly one place this ever needs to be bumped by hand.
 const pkg = require("./package.json");
 
-import notifee, { AuthorizationStatus, EventType } from "@notifee/react-native";
+import {
+  onLocalNotificationPress,
+  requestLocalNotificationPermission,
+} from "./src/services/localNotifications";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   NavigationContainer,
@@ -164,22 +167,19 @@ const App = () => {
       }
     });
 
-    const unsubscribeForegroundEvent = notifee.onForegroundEvent(
-      async ({ type, detail }) => {
+    const unsubscribeForegroundEvent = onLocalNotificationPress(
+      async (detail) => {
         try {
-          if (type !== EventType.PRESS) {
-            return;
-          }
-          if (detail.pressAction?.id === "open-pdf") {
-            const filePath = detail.notification?.data?.filePath;
+          if (detail.actionId === "open-pdf") {
+            const filePath = detail.data?.filePath;
             if (typeof filePath === "string") {
               await openExportedFile(
                 filePath,
                 String(filePath).endsWith(".xlsx") ? "xlsx" : "pdf",
               );
             }
-          } else if (detail.pressAction?.id === "join-notification") {
-            await handleNotificationTap(detail.notification?.data);
+          } else if (detail.actionId === "join-notification") {
+            await handleNotificationTap(detail.data);
           }
         } catch (error) {
           console.log("🚀 ~ notifee.onForegroundEvent ~ error:", error);
@@ -233,17 +233,10 @@ const App = () => {
   }, []);
 
   const checkPermission = async () => {
-    const settings = await notifee.requestPermission();
-
-    if (settings.authorizationStatus === AuthorizationStatus.DENIED) {
+    const status = await requestLocalNotificationPermission();
+    if (status === "denied") {
       console.log("User denied permissions request");
-    } else if (
-      settings.authorizationStatus === AuthorizationStatus.AUTHORIZED
-    ) {
-      // console.log('User granted permissions request');
-    } else if (
-      settings.authorizationStatus === AuthorizationStatus.PROVISIONAL
-    ) {
+    } else if (status === "provisional") {
       console.log("User provisionally granted permissions request");
     }
   };

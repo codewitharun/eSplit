@@ -13,7 +13,7 @@ import {
   GoogleSignin,
   isSuccessResponse,
 } from '@react-native-google-signin/google-signin';
-import {GOOGLE_WEB_CLIENT_ID} from '../config/appEnv';
+import {GOOGLE_WEB_CLIENT_ID, IS_DEV_VARIANT} from '../config/appEnv';
 import {useAuthStore} from '../store/useAuthStore';
 import {currentUser, firebaseAuth} from './firebase';
 import {deleteUserDoc} from './users';
@@ -21,9 +21,13 @@ import {deleteUserDoc} from './users';
 // Per-variant web client id, read from that variant's google-services.json
 // by app.config.ts. The fallback is prod's id (same value the CLI app used).
 GoogleSignin.configure({
+  // Prod-only fallback: a dev build must never borrow prod's client id
+  // (mixing projects gives DEVELOPER_ERROR at best).
   webClientId:
     GOOGLE_WEB_CLIENT_ID ??
-    '564933121716-dp36e59rrft18pnlgjve3gn3edo3vfr7.apps.googleusercontent.com',
+    (IS_DEV_VARIANT
+      ? undefined
+      : '564933121716-dp36e59rrft18pnlgjve3gn3edo3vfr7.apps.googleusercontent.com'),
 });
 
 // Google Sign-In v13+ returns {type: 'success' | 'cancelled', data} instead
