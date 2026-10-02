@@ -91,6 +91,9 @@ const config: { expo: ExpoConfig } = {
       bundleIdentifier: IS_DEV
         ? "com.techtitens.ezysplit.dev"
         : "com.techtitens.ezysplit",
+      // Personal (free) team "Arun Kumar" - same DEVELOPMENT_TEAM as the CLI
+      // app's Xcode project. Keeps signing set after every prebuild --clean.
+      appleTeamId: "L2559D894B",
       buildNumber: String(VERSION_CODE),
       googleServicesFile: GOOGLE_SERVICES_IOS,
       supportsTablet: false,
