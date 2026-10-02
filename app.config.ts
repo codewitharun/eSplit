@@ -86,6 +86,9 @@ const config: { expo: ExpoConfig } = {
         backgroundImage: "./assets/android-icon-background.png",
         backgroundColor: BG,
       },
+      // Same as the CLI app: no Android auto-backup. A restored backup on a
+      // new phone could bring back a stale groupKey/userToken in AsyncStorage.
+      allowBackup: false,
       softwareKeyboardLayoutMode: "resize",
       predictiveBackGestureEnabled: false,
       permissions: [

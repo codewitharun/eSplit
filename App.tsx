@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Platform, StyleSheet } from "react-native";
+import { Platform, StatusBar, StyleSheet } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { navigationRef } from "./src/services/NavigationService";
@@ -395,6 +395,8 @@ const App = () => {
   if (loading) {
     return (
       <SafeAreaProvider>
+        {/* Light status-bar icons on the dark app, like the CLI app (edge-to-edge, transparent bar). */}
+        <StatusBar barStyle="light-content" />
         <GestureHandlerRootView style={styles.flex}>
           <SplashScreen />
         </GestureHandlerRootView>
@@ -404,6 +406,8 @@ const App = () => {
 
   return (
     <SafeAreaProvider>
+      {/* Light status-bar icons on the dark app, like the CLI app (edge-to-edge, transparent bar). */}
+      <StatusBar barStyle="light-content" />
       <GestureHandlerRootView style={styles.flex}>
         <NavigationContainer
           linking={linking}
