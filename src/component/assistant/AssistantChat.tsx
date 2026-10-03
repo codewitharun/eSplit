@@ -96,21 +96,12 @@ const AssistantChat: React.FC<Props> = ({groupName, bottomInset}) => {
     if (!question || s.busy || !user) {
       return;
     }
+    // Haptics: one tap when the question goes out (thinking starts) and
+    // one light tick when the answer arrives - nothing in between.
     haptics.tap();
     setInput('');
     s.append({role: 'user', text: question});
     s.setBusy(true, 'Thinking…');
-    // "Thinking" feel: soft haptic ticks at irregular intervals, like
-    // someone typing, until the answer arrives (Android only - see
-    // haptics.tick).
-    let thinkingTimer: ReturnType<typeof setTimeout> | null = null;
-    const scheduleTick = () => {
-      thinkingTimer = setTimeout(() => {
-        haptics.tick();
-        scheduleTick();
-      }, 180 + Math.random() * 520);
-    };
-    scheduleTick();
     try {
       const data = await getData(user.uid);
       const result = await askAssistant({
@@ -125,17 +116,9 @@ const AssistantChat: React.FC<Props> = ({groupName, bottomInset}) => {
       if (typeof result.remaining === 'number') {
         after.setRemaining(result.remaining);
       }
-      if (thinkingTimer) {
-        clearTimeout(thinkingTimer);
-        thinkingTimer = null;
-      }
-      haptics.success();
+      haptics.tick();
       after.append({role: 'assistant', text: result.answer, animate: true});
     } catch (error: any) {
-      if (thinkingTimer) {
-        clearTimeout(thinkingTimer);
-        thinkingTimer = null;
-      }
       const after = useAssistantStore.getState();
       if (error instanceof AssistantError && error.code === 'limit') {
         after.setRemaining(0);
@@ -160,9 +143,6 @@ const AssistantChat: React.FC<Props> = ({groupName, bottomInset}) => {
         isError: true,
       });
     } finally {
-      if (thinkingTimer) {
-        clearTimeout(thinkingTimer);
-      }
       useAssistantStore.getState().setBusy(false);
     }
   };

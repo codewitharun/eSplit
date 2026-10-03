@@ -24,6 +24,7 @@
     "expo-file-system": "~57.0.7",
     "expo-font": "~57.0.4",
     "expo-haptics": "~57.0.3",
+    "expo-linear-gradient": "~57.0.2",
     "expo-print": "~57.0.2",
     "expo-sharing": "~57.0.22",
     "expo-splash-screen": "~57.0.9",
@@ -54,19 +55,23 @@
     "typescript": "~6.0.3"
   },
   "scripts": {
-    "start": "expo start --dev-client",
-    "android": "node scripts/native.js android prod",
-    "prebuild": "node scripts/native.js android prod --prebuild-only",
+    "start": "APP_VARIANT=development expo start --dev-client",
+    "start:prod": "expo start --dev-client",
+    "android": "node scripts/native.js android dev",
+    "android:prod": "node scripts/native.js android prod",
+    "ios": "node scripts/native.js ios dev --device",
+    "ios:prod": "node scripts/native.js ios prod --device",
+    "ios:sim": "node scripts/native.js ios dev",
+    "ios:sim:prod": "node scripts/native.js ios prod",
+    "prebuild": "node scripts/native.js android dev --prebuild-only && node scripts/native.js ios dev --prebuild-only",
+    "prebuild:prod": "node scripts/native.js android prod --prebuild-only && node scripts/native.js ios prod --prebuild-only",
+    "prebuild:android": "node scripts/native.js android dev --prebuild-only",
+    "prebuild:android:prod": "node scripts/native.js android prod --prebuild-only",
+    "prebuild:ios": "node scripts/native.js ios dev --prebuild-only",
+    "prebuild:ios:prod": "node scripts/native.js ios prod --prebuild-only",
+    "web": "APP_VARIANT=development expo start --web",
     "typecheck": "tsc --noEmit",
-    "test": "jest",
-    "android:dev": "node scripts/native.js android dev",
-    "prebuild:dev": "node scripts/native.js android dev --prebuild-only",
-    "start:dev": "APP_VARIANT=development expo start --dev-client",
-    "ios": "node scripts/native.js ios prod",
-    "ios:device": "node scripts/native.js ios prod --device",
-    "ios:dev": "node scripts/native.js ios dev --device",
-    "web": "expo start --web",
-    "prebuild:ios": "node scripts/native.js ios prod --prebuild-only"
+    "test": "jest"
   },
   "private": true
 }

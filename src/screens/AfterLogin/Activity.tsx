@@ -16,7 +16,15 @@ import {useBottomTabBarHeight} from '@react-navigation/bottom-tabs';
 import {useFocusEffect, useNavigation} from '@react-navigation/native';
 import {Search, SlidersHorizontal, X} from 'lucide-react-native';
 import React, {useCallback, useMemo, useRef, useState} from 'react';
-import {BackHandler, FlatList, Modal, StyleSheet, TouchableOpacity, View} from 'react-native';
+import {
+  BackHandler,
+  FlatList,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import {Text, TextInput} from '../../component/ui/AppText';
 import {Calendar} from 'react-native-calendars';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
@@ -323,6 +331,12 @@ const ActivityScreen: React.FC = () => {
   const isPersonalList = ledger.group?.type === 'personal';
 
   const filtersActive = !!categoryFilter || dateFilter !== 'all';
+  const clearFilters = () => {
+    haptics.tap();
+    setCategoryFilter(null);
+    setDateFilter('all');
+    setSearch('');
+  };
 
   const overdueRecurring = ledger.expenses.filter(
     e =>
@@ -436,141 +450,167 @@ const ActivityScreen: React.FC = () => {
         </View>
       </View>
 
-      <GroupInsightsCard
-        insights={insights}
-        currency={ledger.group?.currency}
-        isPersonal={ledger.group?.type === 'personal'}>
-        {/* This used to be gated on "no expenses yet", back when a group
-            auto-locked itself on the first expense - at that point "no
-            expenses" and "still open to new members" were the same thing.
-            Locking is now a separate, explicit admin toggle (see
-            GroupSettings.tsx), so the Invite row needs to follow that flag
-            directly instead - otherwise it silently disappears the moment
-            someone logs an expense, and toggling the lock does nothing to
-            it either way, which is the bug being fixed here. */}
-        {/* No invite on a personal list - it's just you by design. */}
-        {!ledger.group?.isLocked && ledger.group?.type !== 'personal' && (
-          <View style={styles.heroInviteRow}>
-            {!!ledger.group?.joinCode && (
-              // Plain, selectable text rather than a copy icon + clipboard
-              // library - `selectable` still gives a native long-press
-              // "Copy" on both platforms with no new native dependency,
-              // and the code is readable at a glance for anyone typing it
-              // in manually.
-              <Text style={styles.joinCodeText} selectable>
-                Code: {ledger.group.joinCode}
-              </Text>
-            )}
-            <TouchableOpacity onPress={onShareInvite} style={styles.inviteBtn}>
-              <Text style={styles.inviteText}>Invite</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-      </GroupInsightsCard>
-
-      {overdueRecurring.map(e => (
-        <GlassCard key={e.id} style={styles.recurringBanner}>
-          <Text style={styles.recurringText}>
-            🔁 “{e.description}” looks due again
-          </Text>
-          <TouchableOpacity onPress={() => reAddRecurring(e.id!)}>
-            <Text style={styles.recurringAction}>Add again</Text>
-          </TouchableOpacity>
-        </GlassCard>
-      ))}
-
-      <View style={styles.expensesHeaderRow}>
-        <Text style={styles.expensesTitle}>Expenses</Text>
-        <View style={styles.expensesHeaderActions}>
-          <TouchableOpacity
-            style={styles.iconBtn}
-            hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}
-            onPress={() => {
-              setSearchVisible(v => !v);
-              if (searchVisible) {
-                setSearch('');
-              }
-            }}>
-            {searchVisible ? (
-              <X size={17} color={theme.color.ink} />
-            ) : (
-              <Search size={17} color={theme.color.ink} />
-            )}
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.iconBtn, filtersActive && styles.iconBtnActive]}
-            hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}
-            onPress={() => setFiltersVisible(v => !v)}>
-            <SlidersHorizontal
-              size={17}
-              color={filtersActive ? theme.color.blueBright : theme.color.ink}
-            />
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {searchVisible && (
-        <TextInput
-          style={styles.search}
-          placeholder="Search expenses"
-          placeholderTextColor={theme.color.inkFaint}
-          value={search}
-          onChangeText={setSearch}
-          autoFocus
-        />
-      )}
-
-      {filtersVisible && (
-        <>
-          <View style={styles.filterRow}>
-            <Chip
-              label="All"
-              active={!categoryFilter}
-              onPress={() => setCategoryFilter(null)}
-            />
-            {EXPENSE_CATEGORIES.map(c => (
-              <Chip
-                key={c.key}
-                label={`${c.icon} ${c.label}`}
-                active={categoryFilter === c.key}
-                onPress={() =>
-                  setCategoryFilter(categoryFilter === c.key ? null : c.key)
-                }
-              />
-            ))}
-          </View>
-          <View style={styles.filterRow}>
-            <Chip
-              label="This week"
-              active={dateFilter === 'week'}
-              onPress={() => selectDateFilter('week')}
-            />
-            <Chip
-              label="This month"
-              active={dateFilter === 'month'}
-              onPress={() => selectDateFilter('month')}
-            />
-            <Chip
-              label="All time"
-              active={dateFilter === 'all'}
-              onPress={() => selectDateFilter('all')}
-            />
-            <Chip
-              label={
-                dateFilter === 'custom' && customRangeLabel
-                  ? `📅 ${customRangeLabel}`
-                  : '📅 Custom range'
-              }
-              active={dateFilter === 'custom'}
-              onPress={() => selectDateFilter('custom')}
-            />
-          </View>
-        </>
-      )}
-
-      <Text style={styles.hint}>Tap an expense to edit, swipe to delete.</Text>
+      {/* Everything below the group title scrolls with the list now.
+          Before, the summary card, search and filter chips were pinned
+          above the FlatList, so opening search + filters left only a
+          sliver of the screen for the expenses themselves. */}
       <FlatList
         onScroll={onFabScroll}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        // Passed as an element (not a component) so the search field
+        // keeps focus while typing re-renders the list.
+        ListHeaderComponent={
+          <View style={styles.listHeader}>
+          <GroupInsightsCard
+            insights={insights}
+            currency={ledger.group?.currency}
+            isPersonal={ledger.group?.type === 'personal'}>
+            {/* This used to be gated on "no expenses yet", back when a group
+                auto-locked itself on the first expense - at that point "no
+                expenses" and "still open to new members" were the same thing.
+                Locking is now a separate, explicit admin toggle (see
+                GroupSettings.tsx), so the Invite row needs to follow that flag
+                directly instead - otherwise it silently disappears the moment
+                someone logs an expense, and toggling the lock does nothing to
+                it either way, which is the bug being fixed here. */}
+            {/* No invite on a personal list - it's just you by design. */}
+            {!ledger.group?.isLocked && ledger.group?.type !== 'personal' && (
+              <View style={styles.heroInviteRow}>
+                {!!ledger.group?.joinCode && (
+                  // Plain, selectable text rather than a copy icon + clipboard
+                  // library - `selectable` still gives a native long-press
+                  // "Copy" on both platforms with no new native dependency,
+                  // and the code is readable at a glance for anyone typing it
+                  // in manually.
+                  <Text style={styles.joinCodeText} selectable>
+                    Code: {ledger.group.joinCode}
+                  </Text>
+                )}
+                <TouchableOpacity onPress={onShareInvite} style={styles.inviteBtn}>
+                  <Text style={styles.inviteText}>Invite</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </GroupInsightsCard>
+
+          {overdueRecurring.map(e => (
+            <GlassCard key={e.id} style={styles.recurringBanner}>
+              <Text style={styles.recurringText}>
+                🔁 “{e.description}” looks due again
+              </Text>
+              <TouchableOpacity onPress={() => reAddRecurring(e.id!)}>
+                <Text style={styles.recurringAction}>Add again</Text>
+              </TouchableOpacity>
+            </GlassCard>
+          ))}
+
+          <View style={styles.expensesHeaderRow}>
+            {searchVisible ? (
+              // Search takes the title's place instead of adding a new row,
+              // so opening it costs no vertical space.
+              <TextInput
+                style={styles.search}
+                placeholder="Search expenses"
+                placeholderTextColor={theme.color.inkFaint}
+                value={search}
+                onChangeText={setSearch}
+                returnKeyType="search"
+                autoFocus
+              />
+            ) : (
+              <Text style={styles.expensesTitle}>Expenses</Text>
+            )}
+            <View style={styles.expensesHeaderActions}>
+              <TouchableOpacity
+                style={styles.iconBtn}
+                hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}
+                onPress={() => {
+                  setSearchVisible(v => !v);
+                  if (searchVisible) {
+                    setSearch('');
+                  }
+                }}>
+                {searchVisible ? (
+                  <X size={17} color={theme.color.ink} />
+                ) : (
+                  <Search size={17} color={theme.color.ink} />
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.iconBtn, filtersActive && styles.iconBtnActive]}
+                hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}
+                onPress={() => setFiltersVisible(v => !v)}>
+                <SlidersHorizontal
+                  size={17}
+                  color={filtersActive ? theme.color.blueBright : theme.color.ink}
+                />
+                {filtersActive && <View style={styles.filterDot} />}
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {filtersVisible && (
+            <>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={styles.filterRow}>
+                <Chip
+                  label="All"
+                  active={!categoryFilter}
+                  onPress={() => setCategoryFilter(null)}
+                />
+                {EXPENSE_CATEGORIES.map(c => (
+                  <Chip
+                    key={c.key}
+                    label={`${c.icon} ${c.label}`}
+                    active={categoryFilter === c.key}
+                    onPress={() =>
+                      setCategoryFilter(categoryFilter === c.key ? null : c.key)
+                    }
+                  />
+                ))}
+              </ScrollView>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={styles.filterRow}>
+                <Chip
+                  label="This week"
+                  active={dateFilter === 'week'}
+                  onPress={() => selectDateFilter('week')}
+                />
+                <Chip
+                  label="This month"
+                  active={dateFilter === 'month'}
+                  onPress={() => selectDateFilter('month')}
+                />
+                <Chip
+                  label="All time"
+                  active={dateFilter === 'all'}
+                  onPress={() => selectDateFilter('all')}
+                />
+                <Chip
+                  label={
+                    dateFilter === 'custom' && customRangeLabel
+                      ? `📅 ${customRangeLabel}`
+                      : '📅 Custom range'
+                  }
+                  active={dateFilter === 'custom'}
+                  onPress={() => selectDateFilter('custom')}
+                />
+              </ScrollView>
+            </>
+          )}
+
+          {filteredExpenses.length > 0 && (
+            <Text style={styles.hint}>Tap an expense to edit, swipe to delete.</Text>
+          )}
+          </View>
+        }
         scrollEventThrottle={16}
         data={filteredExpenses}
         keyExtractor={item => item.id!}
@@ -645,11 +685,20 @@ const ActivityScreen: React.FC = () => {
           </>
         )}
         ListEmptyComponent={
-          <Text style={styles.emptyText}>
-            {ledger.expenses.length === 0
-              ? 'No expenses yet — tap “Add expense” to log the first one.'
-              : 'No expenses match this filter.'}
-          </Text>
+          ledger.expenses.length === 0 ? (
+            <Text style={styles.emptyText}>
+              No expenses yet — tap “Add expense” to log the first one.
+            </Text>
+          ) : (
+            <View style={styles.noMatch}>
+              <Text style={styles.emptyText}>
+                Nothing matches these filters.
+              </Text>
+              <TouchableOpacity onPress={clearFilters} style={styles.clearBtn}>
+                <Text style={styles.clearBtnText}>Clear filters</Text>
+              </TouchableOpacity>
+            </View>
+          )
         }
       />
       {/*
@@ -889,6 +938,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    minHeight: 38,
     paddingHorizontal: 20,
     marginBottom: 10,
   },
@@ -911,21 +961,47 @@ const styles = StyleSheet.create({
   },
   iconBtnActive: {borderColor: theme.color.blueBright},
   search: {
-    marginHorizontal: 20,
+    flex: 1,
+    height: 38,
+    marginRight: 10,
     backgroundColor: theme.color.surface,
     borderWidth: 1,
     borderColor: theme.color.border,
-    borderRadius: theme.radius.md,
+    borderRadius: theme.radius.pill,
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 0,
     color: theme.color.ink,
-    marginBottom: 10,
   },
+  filterDot: {
+    position: 'absolute',
+    top: 5,
+    right: 5,
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: theme.color.blueBright,
+  },
+  // listContent pads 20px each side; the header spans edge to edge so
+  // its own 20px margins line up as before and chip rows swipe to the edge.
+  listHeader: {marginHorizontal: -20},
   filterRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     paddingHorizontal: 20,
-    marginBottom: 4,
+    marginBottom: 2,
+  },
+  noMatch: {alignItems: 'center'},
+  clearBtn: {
+    marginTop: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: theme.radius.pill,
+    borderWidth: 1,
+    borderColor: theme.color.border,
+  },
+  clearBtnText: {
+    color: theme.color.blueBright,
+    fontFamily: BodyFont.semibold,
+    fontSize: moderateScale(13),
   },
   hint: {
     color: theme.color.inkFaint,
