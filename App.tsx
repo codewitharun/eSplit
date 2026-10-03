@@ -51,6 +51,7 @@ import { identifyUser, trackScreenView } from "./src/services/crashReporting";
 import { openExportedFile } from "./src/services/ledger/openExport";
 import type { NotificationData } from "./src/services/notificationNavigation";
 import { handleNotificationTap } from "./src/services/notificationNavigation";
+import JoinRequestsSync from "./src/component/JoinRequestsSync";
 import Toast from "./src/services/toast";
 import { useAuthStore } from "./src/store/useAuthStore";
 
@@ -425,6 +426,9 @@ const App = () => {
           }}
         >
           {user ? <AfterLogin /> : <BeforeLogin />}
+          {/* Keeps pending join requests (for groups you admin) live for
+              the badges + Notifications screen. Renders nothing. */}
+          {user && <JoinRequestsSync />}
 
           <ToastHost />
         </NavigationContainer>

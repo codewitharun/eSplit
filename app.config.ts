@@ -178,7 +178,7 @@ const config: { expo: ExpoConfig } = {
           android: {
             // drawable + color are created by plugins/withEzySplitAndroid.js
             notificationIcon: "./assets/notification-icon/xxxhdpi.png",
-            notificationColor: "#3ECF8E",
+            notificationColor: "#0082B0",
           },
         },
       ],

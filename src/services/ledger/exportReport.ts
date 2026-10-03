@@ -21,6 +21,12 @@ import * as XLSX from 'xlsx';
 import {Expense, GroupMember, Settlement} from './types';
 import {formatMoney} from './currency';
 import {visibleItems} from './expenseItems';
+import {EZYSPLIT_ICON_DATA_URI} from '../../assets/brand/ezysplitIcon';
+import {TECHTITAN_LOGO_SVG} from '../../assets/svgs/techtitanLogo';
+
+const TECHTITAN_ABOUT_URL = 'https://techtiten.com/about';
+const PLAY_STORE_URL =
+  'https://play.google.com/store/apps/details?id=com.techtitens.ezysplit';
 
 // "Bread 12; Milk 30; Eggs 44" for a multi-item expense, '' otherwise
 // (every single-line / pre-existing expense exports exactly as before).
@@ -38,7 +44,15 @@ const BRAND = {
   inkSoft: '#5B6B8C',
   border: '#E4E9F2',
   surface: '#F5F8FF',
+  teal: '#38D9C9',
 };
+
+// The Techtitan wordmark is drawn light (#F5F4F0) for the app's dark UI -
+// recolour it to ink so it shows on the white PDF page.
+const TECHTITAN_LOGO_PRINT = TECHTITAN_LOGO_SVG.replace(
+  /#F5F4F0/gi,
+  BRAND.ink,
+).replace(/width="1007" height="311"/, 'width="78" height="24"');
 
 function fileBaseName(groupName: string) {
   const date = new Date();
@@ -187,15 +201,39 @@ export async function exportGroupPdf(
           display: flex;
           justify-content: space-between;
           align-items: center;
-          border-bottom: 3px solid ${BRAND.blue};
           padding-bottom: 14px;
-          margin-bottom: 20px;
         }
-        .brand { font-size: 22px; font-weight: 800; color: ${
-          BRAND.blueStrong
-        }; }
+        .brand-lockup { display: flex; align-items: center; gap: 12px; }
+        .brand-icon {
+          width: 44px;
+          height: 44px;
+          border-radius: 11px;
+          display: block;
+        }
+        .brand { font-size: 22px; font-weight: 800; letter-spacing: -0.3px;
+          color: ${BRAND.blueStrong}; line-height: 1.1; }
         .brand span { color: ${BRAND.green}; }
-        .meta { text-align: right; font-size: 11px; color: ${BRAND.inkSoft}; }
+        .brand-tagline { font-size: 10.5px; color: ${BRAND.inkSoft}; margin-top: 2px; }
+        .meta { text-align: right; }
+        .doc-type {
+          display: inline-block;
+          font-size: 9.5px;
+          font-weight: 700;
+          letter-spacing: 0.8px;
+          text-transform: uppercase;
+          color: ${BRAND.blueStrong};
+          background: ${BRAND.surface};
+          border: 1px solid ${BRAND.border};
+          border-radius: 999px;
+          padding: 4px 10px;
+        }
+        .generated { font-size: 10.5px; color: ${BRAND.inkSoft}; margin-top: 6px; }
+        .brand-bar {
+          height: 4px;
+          border-radius: 4px;
+          background: linear-gradient(90deg, ${BRAND.blueStrong}, ${BRAND.blue} 40%, ${BRAND.teal} 70%, ${BRAND.green});
+          margin-bottom: 22px;
+        }
         h1 { font-size: 19px; margin: 0 0 2px; }
         .subtitle { color: ${
           BRAND.inkSoft
@@ -266,20 +304,41 @@ export async function exportGroupPdf(
         }
         .chip strong { color: ${BRAND.ink}; }
         .footer {
-          margin-top: 30px;
-          padding-top: 12px;
+          margin-top: 34px;
+          padding-top: 14px;
           border-top: 1px solid ${BRAND.border};
-          text-align: center;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
           color: ${BRAND.inkSoft};
           font-size: 10.5px;
         }
+        .footer a { color: inherit; text-decoration: none; }
+        .made-by { display: flex; align-items: center; gap: 6px; }
+        .made-by svg { display: block; }
+        .get-app { text-align: right; }
+        .get-app strong { color: ${BRAND.ink}; }
+        .get-app .link { color: ${BRAND.blueStrong}; font-weight: 700; }
       </style>
     </head>
     <body>
       <div class="header">
-        <div class="brand">Ezy<span>Split</span></div>
-        <div class="meta">Generated ${new Date().toLocaleString('en-IN')}</div>
+        <div class="brand-lockup">
+          <img class="brand-icon" src="${EZYSPLIT_ICON_DATA_URI}" alt="" />
+          <div>
+            <div class="brand">Ezy<span>Split</span></div>
+            <div class="brand-tagline">Split smarter. Spend clearer.</div>
+          </div>
+        </div>
+        <div class="meta">
+          <div class="doc-type">Expense report</div>
+          <div class="generated">Generated ${new Date().toLocaleString(
+            'en-IN',
+            {dateStyle: 'medium', timeStyle: 'short'},
+          )}</div>
+        </div>
       </div>
+      <div class="brand-bar"></div>
 
       <h1>${groupName}</h1>
       <div class="subtitle">Expense report · ${members.length} member${
@@ -322,7 +381,16 @@ export async function exportGroupPdf(
         ${settlementRows}
       </table>
 
-      <div class="footer">Created with ❤️ by Arun Kumar · EzySplit</div>
+      <div class="footer">
+        <a class="made-by" href="${TECHTITAN_ABOUT_URL}">
+          <span>Created with ❤️ by</span>
+          ${TECHTITAN_LOGO_PRINT}
+        </a>
+        <a class="get-app" href="${PLAY_STORE_URL}">
+          <strong>Split bills with your group too</strong><br />
+          <span class="link">Get EzySplit on Google Play ›</span>
+        </a>
+      </div>
     </body>
   </html>
   `;
@@ -376,7 +444,9 @@ export async function exportGroupExcel(
   ];
   const summarySheet = XLSX.utils.aoa_to_sheet(summaryRows);
   summarySheet['!cols'] = [{wch: 22}, {wch: 26}];
-  XLSX.utils.book_append_sheet(wb, summarySheet, 'Summary');
+  // Appended LAST (below): phone viewers open the first sheet and most
+  // people never find the tabs - so the first sheet is the useful one,
+  // the full expense table, not this short summary.
 
   // --- Expenses sheet ---
   const expenseHeader = [
@@ -395,7 +465,7 @@ export async function exportGroupExcel(
       itemsBreakdown(e)
         ? `${e.description} (${itemsBreakdown(e)})`
         : e.description,
-      e.category,
+      e.category.charAt(0).toUpperCase() + e.category.slice(1),
       name(e.paidBy),
       e.splitType,
       Number(e.amount.toFixed(2)),
@@ -403,7 +473,38 @@ export async function exportGroupExcel(
         e.shares[uid] != null ? Number(e.shares[uid].toFixed(2)) : '',
       ),
     ]);
-  const expenseSheet = XLSX.utils.aoa_to_sheet([expenseHeader, ...expenseRows]);
+  // Totals row: the whole bill, and what each member's shares add up to -
+  // the "who spent what" answer people open a spreadsheet for.
+  const shareTotals = memberIds.map(uid =>
+    Number(
+      expenses.reduce((sum, e) => sum + (e.shares[uid] || 0), 0).toFixed(2),
+    ),
+  );
+  const totalsRow = [
+    '',
+    'TOTAL',
+    '',
+    '',
+    '',
+    Number(totalSpent.toFixed(2)),
+    ...shareTotals,
+  ];
+  const expenseSheet = XLSX.utils.aoa_to_sheet([
+    [`${groupName} · expenses (${currency})`],
+    expenseHeader,
+    ...expenseRows,
+    [],
+    totalsRow,
+  ]);
+  // Filter/sort buttons on the header row (row 2) in Excel & Sheets.
+  if (expenseRows.length > 0) {
+    expenseSheet['!autofilter'] = {
+      ref: XLSX.utils.encode_range({
+        s: {r: 1, c: 0},
+        e: {r: 1 + expenseRows.length, c: expenseHeader.length - 1},
+      }),
+    };
+  }
   expenseSheet['!cols'] = [
     {wch: 12},
     {wch: 26},
@@ -453,6 +554,7 @@ export async function exportGroupExcel(
     {wch: 24},
   ];
   XLSX.utils.book_append_sheet(wb, settlementSheet, 'Settlements');
+  XLSX.utils.book_append_sheet(wb, summarySheet, 'Summary');
 
   const base64 = XLSX.write(wb, {type: 'base64', bookType: 'xlsx'});
   return writeCacheFile(`${fileName}.xlsx`, base64, 'base64');

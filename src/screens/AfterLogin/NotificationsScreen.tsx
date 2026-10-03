@@ -31,6 +31,7 @@ import {
   declineJoinRequest,
 } from '../../data/ledger';
 import {haptics} from '../../utils/haptics';
+import {openGroupJoinRequests} from '../../services/notificationNavigation';
 import {BodyFont, DisplayFont, moderateScale} from '../../utils/fonts';
 import theme from '../../utils/theme';
 
@@ -71,6 +72,21 @@ const NotificationsScreen: React.FC = () => {
     );
   }, [announcements, adminNotifications]);
 
+  // Another admin may have handled it first, or the person cancelled -
+  // that's not an error from the admin's point of view.
+  const showRequestError = (action: 'approve' | 'decline', error: any) => {
+    const message: string = error?.message || '';
+    if (/already been handled/i.test(message)) {
+      Toast.show({type: 'info', text1: 'Already handled', text2: message});
+      return;
+    }
+    Toast.show({
+      type: 'error',
+      text1: `Could not ${action} request`,
+      text2: message,
+    });
+  };
+
   const handleApprove = async (request: AdminJoinRequest) => {
     const key = `${request.groupId}:${request.uid}`;
     if (respondingKey) {
@@ -86,11 +102,7 @@ const NotificationsScreen: React.FC = () => {
         text2: `${request.displayName} can now see "${request.groupName}".`,
       });
     } catch (error: any) {
-      Toast.show({
-        type: 'error',
-        text1: 'Could not approve request',
-        text2: error?.message,
-      });
+      showRequestError('approve', error);
     } finally {
       setRespondingKey(null);
     }
@@ -104,12 +116,13 @@ const NotificationsScreen: React.FC = () => {
     setRespondingKey(key);
     try {
       await declineJoinRequest(request.groupId, request.uid);
-    } catch (error: any) {
       Toast.show({
-        type: 'error',
-        text1: 'Could not decline request',
-        text2: error?.message,
+        type: 'info',
+        text1: 'Request declined',
+        text2: `${request.displayName} can ask to join again later.`,
       });
+    } catch (error: any) {
+      showRequestError('decline', error);
     } finally {
       setRespondingKey(null);
     }
@@ -151,9 +164,25 @@ const NotificationsScreen: React.FC = () => {
               const isResponding = respondingKey === key;
               return (
                 <GlassCard key={key} style={styles.requestCard}>
-                  <Text style={styles.requestName}>{request.displayName}</Text>
+                  <View style={styles.requestTopRow}>
+                    <Text style={styles.requestName} numberOfLines={1}>
+                      {request.displayName}
+                    </Text>
+                    {!!request.requestedAt && (
+                      <Text style={styles.updateTime}>
+                        {timeAgo(request.requestedAt)}
+                      </Text>
+                    )}
+                  </View>
                   <Text style={styles.requestHint}>
-                    wants to join "{request.groupName}"
+                    wants to join{' '}
+                    <Text
+                      style={styles.groupLink}
+                      onPress={() =>
+                        openGroupJoinRequests(request.groupId, request.uid)
+                      }>
+                      {request.groupName} ›
+                    </Text>
                   </Text>
                   <View style={styles.requestActions}>
                     <TouchableOpacity
@@ -243,11 +272,23 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   requestCard: {marginBottom: 10},
+  requestTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 8,
+  },
+  groupLink: {
+    color: theme.color.teal,
+    fontFamily: BodyFont.semibold,
+    fontWeight: '600',
+  },
   requestName: {
     fontFamily: BodyFont.bold,
     color: theme.color.ink,
     fontSize: moderateScale(15),
     fontWeight: '700',
+    flexShrink: 1,
   },
   requestHint: {
     fontFamily: BodyFont.regular,

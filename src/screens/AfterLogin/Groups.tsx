@@ -47,6 +47,8 @@ import NewGroupPanel from '../../component/NewGroupPanel';
 import theme from '../../utils/theme';
 import {BodyFont, MonoFont, Typography, moderateScale} from '../../utils/fonts';
 import {currentUser} from '../../data/firebase';
+import RequestsBadge from '../../component/RequestsBadge';
+import {useJoinRequestsStore} from '../../store/useJoinRequestsStore';
 
 // Same deterministic accent-color-per-id scheme as GroupCheck's group
 // list - duplicated rather than shared (see AppBottomBar.tsx's own
@@ -111,6 +113,8 @@ const GroupsScreen = ({navigation}: any) => {
 
   const {groups, loading, refresh, removeGroupLocally} = useGroups();
   const overview = useGroupsOverview(groups, user?.uid);
+  // Pending join requests per group you admin (red chip on its card).
+  const pendingByGroup = useJoinRequestsStore(state => state.byGroup);
 
   useEffect(() => {
     if (focused) {
@@ -457,6 +461,10 @@ const GroupsScreen = ({navigation}: any) => {
                             year: 'numeric',
                           })}`}
                       </Text>
+                      <RequestsBadge
+                        variant="pill"
+                        count={pendingByGroup[g.id]?.length ?? 0}
+                      />
                       {overview.perGroupBalance[g.id] != null &&
                         Math.abs(overview.perGroupBalance[g.id]) > 0.01 && (
                           <Text

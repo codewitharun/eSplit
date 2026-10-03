@@ -42,6 +42,7 @@ import {
   sumSharesByCurrency,
 } from '../services/ledger/spendTotals';
 import {Group} from '../services/ledger/types';
+import type {ShareEntry} from '../services/ledger/monthInsight';
 
 export interface CurrencyTotals {
   owedToYou: number;
@@ -73,6 +74,9 @@ export interface GroupsOverview {
   // the exact same getGroupSnapshot() fetch this hook already makes, so
   // it costs no extra read.
   lastActivityByGroup: Record<string, string>;
+  // Your share of every expense (with date + category), across all groups
+  // and personal lists - feeds the dashboard's "This month" insight.
+  myShareEntries: ShareEntry[];
   refresh: () => void;
 }
 
@@ -91,6 +95,7 @@ export function useGroupsOverview(
   const [lastActivityByGroup, setLastActivityByGroup] = useState<
     Record<string, string>
   >({});
+  const [myShareEntries, setMyShareEntries] = useState<ShareEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [tick, setTick] = useState(0);
 
@@ -107,8 +112,10 @@ export function useGroupsOverview(
         Record<string, number>,
         Group['type'],
         string,
+        ShareEntry[],
       ])[],
     ) => {
+      setMyShareEntries(results.flatMap(r => r[5]));
       setPerGroupBalance(
         Object.fromEntries(results.map(([id, balance]) => [id, balance])),
       );
@@ -167,12 +174,22 @@ export function useGroupsOverview(
             activityTimestamps.length > 0
               ? activityTimestamps.reduce((max, t) => (t > max ? t : max))
               : group.createdAt;
+          const shareEntries: ShareEntry[] = expenses
+            .filter(e => (e.shares?.[uid as string] || 0) > 0)
+            .map(e => ({
+              amount: e.shares[uid as string],
+              currency: e.currency || group.currency || DEFAULT_CURRENCY,
+              category: e.category,
+              createdAt: e.createdAt,
+              personal: group.type === 'personal',
+            }));
           return [
             group.id,
             net[uid as string] || 0,
             spend,
             group.type,
             lastActivityAt,
+            shareEntries,
           ] as const;
         }),
       );
@@ -187,6 +204,7 @@ export function useGroupsOverview(
       setMyGroupSpendByCurrency({});
       setMyPersonalGroupSpendByCurrency({});
       setLastActivityByGroup({});
+      setMyShareEntries([]);
       return;
     }
     setLoading(true);
@@ -260,6 +278,7 @@ export function useGroupsOverview(
     myGroupSpendByCurrency,
     myPersonalGroupSpendByCurrency,
     lastActivityByGroup,
+    myShareEntries,
     refresh: () => setTick(t => t + 1),
   };
 }

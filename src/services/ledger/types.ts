@@ -142,6 +142,25 @@ export interface Expense {
   editHistory?: EditHistoryEntry[];
 }
 
+// A record left behind when an expense is deleted, at
+// groups/{groupId}/deletedExpenses/{expenseId} (doc id = the deleted
+// expense's id). ADDITIVE: older app versions never read or write it, and
+// deletes made by them simply leave no record. Snapshot of what mattered
+// for balances, so the group can see what disappeared after a settle-up.
+export interface DeletedExpense {
+  id?: string;
+  description: string;
+  amount: number;
+  currency: string;
+  category: ExpenseCategory;
+  paidBy: string;
+  shares: Record<string, number>;
+  createdBy: string;
+  createdAt: string; // the expense's original createdAt
+  deletedBy: string;
+  deletedAt: string;
+}
+
 export interface Settlement {
   id?: string;
   fromUid: string; // who paid

@@ -65,7 +65,8 @@ function addQueries(manifest) {
   }
 }
 
-const NOTIFICATION_COLOR = '#3ECF8E';
+// Brand blue - the circle behind the (blue disc + green ES) small icon.
+const NOTIFICATION_COLOR = '#0082B0';
 const DPIS = ['mdpi', 'hdpi', 'xhdpi', 'xxhdpi', 'xxxhdpi'];
 
 function withNotificationIcon(config) {
