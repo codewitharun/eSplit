@@ -71,7 +71,8 @@
     "prebuild:ios:prod": "node scripts/native.js ios prod --prebuild-only",
     "web": "APP_VARIANT=development expo start --web",
     "typecheck": "tsc --noEmit",
-    "test": "jest"
+    "test": "jest",
+    "shot": "bash scripts/store-screenshot.sh"
   },
   "private": true
 }

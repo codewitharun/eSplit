@@ -14,9 +14,23 @@
 // Firebase Auth login) lives in src/data/auth.ts's deleteAccount().
 
 import {useNavigation} from '@react-navigation/native';
-import {ChevronLeft} from 'lucide-react-native';
+import {
+  ChevronLeft,
+  ExternalLink,
+  LucideIcon,
+  MessageSquare,
+  ShieldCheck,
+  Trash2,
+} from 'lucide-react-native';
 import React, {useState} from 'react';
-import {Image, ScrollView, StyleSheet, TouchableOpacity, View} from 'react-native';
+import {
+  Image,
+  Linking,
+  ScrollView,
+  StyleSheet,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import {Text} from '../../component/ui/AppText';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import GlassCard from '../../component/glass/GlassCard';
@@ -31,6 +45,29 @@ import Toast from '../../services/toast';
 import {BodyFont, DisplayFont, moderateScale} from '../../utils/fonts';
 import theme from '../../utils/theme';
 import {currentUser} from '../../data/firebase';
+import {
+  DELETE_ACCOUNT_URL,
+  PRIVACY_POLICY_URL,
+  SUPPORT_URL,
+} from '../../config/urls';
+
+// Help & legal links - open the public pages on esplit-backend in the
+// browser (same URLs Play Console lists for privacy and data deletion).
+const LINKS: {label: string; icon: LucideIcon; url: string}[] = [
+  {label: 'Help & support', icon: MessageSquare, url: SUPPORT_URL},
+  {label: 'Privacy policy', icon: ShieldCheck, url: PRIVACY_POLICY_URL},
+  {label: 'Delete account & data', icon: Trash2, url: DELETE_ACCOUNT_URL},
+];
+
+const openLink = (url: string) => {
+  Linking.openURL(url).catch(() =>
+    Toast.show({
+      type: 'error',
+      text1: "Couldn't open the link",
+      text2: url,
+    }),
+  );
+};
 
 const ProfileScreen: React.FC = () => {
   const navigation = useNavigation<any>();
@@ -158,6 +195,21 @@ const ProfileScreen: React.FC = () => {
           </View>
         </GlassCard>
 
+        <Text style={styles.sectionTitle}>Help & legal</Text>
+        <GlassCard style={styles.linksCard}>
+          {LINKS.map(({label, icon: Icon, url}, i) => (
+            <TouchableOpacity
+              key={url}
+              style={[styles.linkRow, i > 0 && styles.linkRowDivider]}
+              onPress={() => openLink(url)}
+              activeOpacity={0.7}>
+              <Icon size={18} color={theme.color.inkSoft} />
+              <Text style={styles.linkText}>{label}</Text>
+              <ExternalLink size={15} color={theme.color.inkFaint} />
+            </TouchableOpacity>
+          ))}
+        </GlassCard>
+
         <Text style={[styles.sectionTitle, styles.dangerTitle]}>
           Danger zone
         </Text>
@@ -242,6 +294,20 @@ const styles = StyleSheet.create({
     marginTop: 28,
   },
   dangerTitle: {color: theme.color.rose},
+  linksCard: {paddingVertical: 2, paddingHorizontal: 14},
+  linkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 14,
+  },
+  linkRowDivider: {borderTopWidth: 1, borderTopColor: theme.color.border},
+  linkText: {
+    flex: 1,
+    fontFamily: BodyFont.semibold,
+    color: theme.color.ink,
+    fontSize: moderateScale(14.5),
+  },
   dangerRow: {
     paddingVertical: 14,
     borderWidth: 1,

@@ -26,3 +26,9 @@ export const DEEP_LINK_PREFIXES = ['ezysplit://', `${WEB_BASE_URL}/app/`];
 export function groupInviteUrl(groupId: string): string {
   return `${WEB_BASE_URL}/app/Group-Check/${groupId}`;
 }
+
+// Public pages on esplit-backend, opened in the browser from Profile.
+// Also the URLs entered in Play Console (privacy policy, data deletion).
+export const PRIVACY_POLICY_URL = `${WEB_BASE_URL}/privacy`;
+export const DELETE_ACCOUNT_URL = `${WEB_BASE_URL}/delete-account`;
+export const SUPPORT_URL = `${WEB_BASE_URL}/support`;

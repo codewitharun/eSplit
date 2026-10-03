@@ -122,10 +122,14 @@ const config: { expo: ExpoConfig } = {
       permissions: [
         "android.permission.INTERNET",
         "android.permission.POST_NOTIFICATIONS",
-        "com.google.android.gms.permission.AD_ID",
         "android.permission.VIBRATE",
       ],
       blockedPermissions: [
+        // No ads in EzySplit. Firebase Analytics' Play Services library adds
+        // AD_ID to the merged manifest on its own, so block it explicitly;
+        // analytics keeps working on its app-instance ID. Play Console:
+        // App content > Advertising ID = "No".
+        "com.google.android.gms.permission.AD_ID",
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.SYSTEM_ALERT_WINDOW",

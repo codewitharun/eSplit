@@ -1,15 +1,13 @@
 # Google Play listing - EzySplit (v2.3.0, Expo release)
 
 Limits: app name 30 chars, short description 80, full description 4000.
-Only features that are live in this release. Don't list OCR or other unreleased features until they ship.
+Only features that are live in this release. The AI assistant is held back for the next release, so it is not mentioned yet. Don't list OCR or other unreleased features until they ship.
 
-## App name (pick one)
-- EzySplit: Split & Track Spend
-- EzySplit - Split Bills & Spend
+## App name (29/30)
+EzySplit: Split & Track Spend
 
-## Tagline (store graphics / website / social)
-- Split smarter. Spend clearer.
-- Shared bills, personal spending, one clean app.
+## Tagline (feature graphic / website / social)
+Split smarter. Spend clearer.
 
 ## Short description (80)
 Split bills with friends, track personal spending and settle up fast with UPI.
@@ -38,9 +36,6 @@ GROUPS THAT STAY PRIVATE
 • Admins approve join requests, so only people you know get in
 • Lock a group anytime to stop new members joining
 
-ASK EZYSPLIT (AI ASSISTANT)
-Ask questions about your spending in plain language, like "How much did I spend on food this month?" The answers come from your own EzySplit data. Rolling out gradually.
-
 EXPORT & STAY IN THE LOOP
 • Export any group as a PDF report or an Excel sheet
 • Notifications when expenses are added or someone joins
@@ -57,5 +52,15 @@ EzySplit is rebuilt and faster than ever.
 • Group insights: your share, trends and month-on-month spend
 • Personal spend lists alongside groups
 • Better invites with join approvals
-• Ask EzySplit, our AI assistant (rolling out gradually)
 • Faster app, smaller download
+
+## Store graphics (distribution/screenshots/store/)
+Feature graphic: feature-graphic-1024x500.png
+Phone screenshots, in this order:
+1. 01-dashboard.png - Your money, all in one place
+2. 02-group-expenses.png - Every expense, neatly by day
+3. 03-add-expense.png - Split any bill in seconds
+4. 04-balances.png - Know who owes whom, instantly
+5. 05-invite.png - Bring friends in with one code
+6. 06-personal-tracking.png - Track your own spending too
+7. 07-settings.png - Your group, your rules
