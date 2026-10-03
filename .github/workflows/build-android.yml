@@ -18,11 +18,9 @@ on:
 
 env:
   # Default Play track for pushes to main.
-  # ⚠️ "internal" while the Expo rebuild is new: a merge lands in Internal
-  # testing first, you check it on your phone, then promote it to Production
-  # in Play Console (or change this to production once you trust the
-  # pipeline). The CLI app used production + completed.
-  PLAY_TRACK: internal
+  # Full (100%) release: builds are tested on dev and as a local prod build
+  # before merging to main.
+  PLAY_TRACK: production
 
 jobs:
   android-build:
@@ -38,6 +36,11 @@ jobs:
         with:
           distribution: "zulu"
           java-version: "17"
+      # Caches ~/.gradle (dependencies, wrapper, Gradle build cache) between
+      # runs. android/ is regenerated every run, but cached task outputs
+      # still apply - the 2nd+ build skips most of the work.
+      - name: Setup Gradle (with cache)
+        uses: gradle/actions/setup-gradle@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -56,11 +59,30 @@ jobs:
       # Generates android/ from app.config.ts + plugins (CNG). Same output
       # as `npm run prebuild` on your Mac. BUILD_NUMBER feeds versionCode
       # (run_number + 11, identical to the CLI app's numbering).
+      # PROD build: app.config.ts treats anything except
+      # APP_VARIANT=development as prod (com.techtitens.ezysplit + prod
+      # Firebase). Set explicitly so a stray env can never ship a dev build.
+      # BUILD_NUMBER feeds versionCode (run_number + 11).
       - name: Expo prebuild (generate android/)
         env:
+          APP_VARIANT: production
           BUILD_NUMBER: ${{ github.run_number }}
           EXPO_NO_TELEMETRY: "1"
         run: npx expo prebuild --platform android --clean --no-install
+
+      # Fail fast before signing/uploading if this isn't the prod app.
+      - name: Verify prod variant
+        run: |
+          set -e
+          grep -q "applicationId ['\"]com.techtitens.ezysplit['\"]" android/app/build.gradle \
+            || { echo "::error::applicationId is not com.techtitens.ezysplit (dev build?)"; exit 1; }
+          if grep -q "com.techtitens.ezysplit.dev" android/app/google-services.json; then
+            echo "::error::dev google-services.json in a prod build"; exit 1
+          fi
+          if grep "AD_ID" android/app/src/main/AndroidManifest.xml | grep -vq 'tools:node="remove"'; then
+            echo "::error::AD_ID permission is not removed"; exit 1
+          fi
+          echo "OK: prod package, prod Firebase, AD_ID removed"
 
       # --- KEYSTORE DECODING (after prebuild: prebuild --clean wipes android/) ---
       - name: Decode Keystore
