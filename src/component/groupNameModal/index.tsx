@@ -9,18 +9,8 @@
 // default, matching the app's INR-first design.
 
 import React, {useMemo, useState} from 'react';
-import {
-  FlatList,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  TouchableWithoutFeedback,
-  View,
-} from 'react-native';
+import {FlatList, KeyboardAvoidingView, Modal, Platform, StyleSheet, TouchableOpacity, TouchableWithoutFeedback, View} from 'react-native';
+import {Text, TextInput} from '../ui/AppText';
 import {GestureHandlerRootView} from 'react-native-gesture-handler';
 import {COUNTRIES, CountryOption} from '../../data/countries';
 import {isUpiCurrency} from '../../services/ledger/currency';

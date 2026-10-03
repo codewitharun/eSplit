@@ -6,36 +6,21 @@
 // target (Group-Check/:groupId), and reachable any time from Activity's
 // header pill or the You tab's "Switch or create a group".
 
-import auth from '@react-native-firebase/auth';
-import firestore from '@react-native-firebase/firestore';
+import KeyboardSafeScrollView from '../../component/KeyboardSafeScrollView';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {useIsFocused, useRoute} from '@react-navigation/native';
 import React, {useEffect, useRef, useState} from 'react';
-import {
-  ActivityIndicator,
-  LayoutChangeEvent,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from 'react-native';
-import {KeyboardAwareScrollView} from 'react-native-keyboard-aware-scroll-view';
+import {ActivityIndicator, LayoutChangeEvent, StyleSheet, TouchableOpacity, View} from 'react-native';
+import {Text} from '../../component/ui/AppText';
 import {
   ArrowDown,
   ArrowUp,
   ChevronDown,
   ChevronRight,
   Clock,
-  Plus,
-  Search,
   Sigma,
-  SlidersHorizontal,
-  X,
 } from 'lucide-react-native';
 import Toast from '../../services/toast';
-import Chip from '../../component/glass/Chip';
 import {GroupType} from '../../services/ledger/types';
 import AppAlert from '../../services/appAlert';
 import PositionRing from '../../component/glass/PositionRing';
@@ -43,15 +28,27 @@ import DashboardSkeleton from '../../component/glass/DashboardSkeleton';
 import GlassCard from '../../component/glass/GlassCard';
 import SwipeableRow from '../../component/glass/SwipeableRow';
 import Header from '../../component/header';
+import AppBottomBar, {
+  useAppBottomBarHeight,
+} from '../../navigator/AppBottomBar';
 import {useGroups} from '../../hooks/useGroups';
 import {useGroupsOverview} from '../../hooks/useGroupsOverview';
-import {leaveGroup} from '../../services/ledger/firestoreLedger';
+import {leaveGroup} from '../../data/ledger';
 import {mergeCurrencyTotals} from '../../services/ledger/spendTotals';
 import GradientView from '../../component/glass/GradientView';
+import AddGroupFab, {
+  ADD_GROUP_FAB_HEIGHT,
+  ADD_GROUP_FAB_RIGHT,
+} from '../../component/AddGroupFab';
+import AssistantOrb, {
+  ASSISTANT_ORB_SIZE,
+} from '../../component/assistant/AssistantOrb';
 import {formatMoney, isUpiCurrency} from '../../services/ledger/currency';
 import UpiPromptModal from '../../component/UpiPromptModal';
 import {useExpenseState} from '../../store/useExpenseStore';
 import {haptics} from '../../utils/haptics';
+import {useCollapseFabsOnScroll} from '../../hooks/useCollapseFabsOnScroll';
+import NewGroupPanel from '../../component/NewGroupPanel';
 import theme from '../../utils/theme';
 import Animated, {
   useAnimatedStyle,
@@ -61,6 +58,8 @@ import Animated, {
 } from 'react-native-reanimated';
 import {BodyFont, MonoFont, Typography, moderateScale} from '../../utils/fonts';
 import {useCountUp} from '../../utils/animation';
+import {currentUser} from '../../data/firebase';
+import {getUserUpiId} from '../../data/users';
 
 // Deterministic accent color per group (from its id) for the lettered
 // avatar chip in the groups list - purely cosmetic variety, not tied to
@@ -86,43 +85,16 @@ const GroupManagement = ({navigation}: any) => {
   const setGroupKey = useExpenseState(state => state.setGroupKey);
   const currentGroupKey = useExpenseState(state => state.groupKey);
   const [loader, setLoader] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchVisible, setSearchVisible] = useState(false);
-  // Opening search used to leave the list scrolled wherever the user
-  // already was, so the search box (and the first matching results)
-  // could land mid-screen or fully offscreen below the fold - reported
-  // as the search UX feeling broken. Snap back to the top the moment
-  // search opens, same as tapping a "search" affordance does in most
-  // other apps.
-  const scrollRef = useRef<any>(null);
-  useEffect(() => {
-    if (searchVisible) {
-      scrollRef.current?.scrollToPosition(0, 0, true);
-    }
-  }, [searchVisible]);
-  // Runs a beat after the search input's own focus - deliberately AFTER
-  // the library's built-in "scroll the focused input above the keyboard"
-  // behaviour has had a chance to fire, so this scroll-to-top runs last
-  // and actually sticks instead of being immediately undone by it.
-  const rescrollToTopOnFocus = () => {
-    setTimeout(() => {
-      scrollRef.current?.scrollToPosition(0, 0, true);
-    }, 80);
-  };
-  const user = auth().currentUser;
+  const user = currentUser();
   const focused = useIsFocused();
+  const barHeight = useAppBottomBarHeight();
+  // Collapses the floating create button to icon-only while scrolling down.
+  const onFabScroll = useCollapseFabsOnScroll();
+  // "New group" opens as a genie panel out of the floating button.
+  const [newGroupOpen, setNewGroupOpen] = useState(false);
 
-  useEffect(() => {
-    // Fires when navigating AWAY from this screen (focused flips to
-    // false) - closing the search bar now, rather than leaving it open,
-    // means coming back to Home never re-mounts the autoFocus search
-    // TextInput and silently pops the keyboard.
-    if (!focused) {
-      setSearchVisible(false);
-      setSearchQuery('');
-    }
-  }, [focused]);
-  const {groups, loading, refresh, joinGroupById} = useGroups();
+  const {groups, loading, ensureLoaded, removeGroupLocally, joinGroupById} =
+    useGroups();
   const overview = useGroupsOverview(groups, user?.uid);
   const [spendMode, setSpendMode] = useState<'all' | 'groups' | 'personal'>(
     'all',
@@ -153,79 +125,20 @@ const GroupManagement = ({navigation}: any) => {
       ? personalSpendByCurrency
       : combinedSpendByCurrency;
 
-  // Separate from spendMode (which only scopes the hero's spend total) -
-  // this is its own pill, shown just above the list, so switching what
-  // the hero totals up never hides groups the user didn't ask to hide.
-  const [listFilter, setListFilter] = useState<'all' | 'group' | 'personal'>(
-    'all',
-  );
-
-  // Sort/filter panel for "Your groups" - separate from listFilter above
-  // (which is its own always-visible All/Groups/Personal pill row): this
-  // one is tucked behind a toggle button since it's reached for less
-  // often. `sortMode` reorders the list; `monthFilter` narrows it to
-  // groups created in one calendar month, or null for every month.
-  const [sortFilterVisible, setSortFilterVisible] = useState(false);
-  const [sortMode, setSortMode] = useState<
-    'default' | 'dateAdded' | 'activity'
-  >('default');
-  const [monthFilter, setMonthFilter] = useState<string | null>(null); // 'YYYY-MM'
-  const sortOrFilterActive = sortMode !== 'default' || monthFilter !== null;
-
-  // Every distinct year-month a group was actually created in, newest
-  // first - only real months show up as chips instead of a fixed rolling
-  // window that could offer empty ones.
-  const availableMonths = React.useMemo(() => {
-    const months = new Set<string>();
-    groups.forEach(g => {
-      if (g.createdAt) {
-        months.add(g.createdAt.slice(0, 7));
-      }
-    });
-    return Array.from(months).sort((a, b) => (a < b ? 1 : -1));
-  }, [groups]);
-
-  const formatMonthLabel = (yearMonth: string) => {
-    const [year, month] = yearMonth.split('-').map(Number);
-    return new Date(year, month - 1, 1).toLocaleDateString('en-IN', {
-      month: 'short',
-      year: 'numeric',
-    });
-  };
-
-  const filteredGroups = (() => {
-    const q = searchQuery.trim().toLowerCase();
-    let list = groups.filter(g => {
-      const isPersonalGroup = g.type === 'personal';
-      if (listFilter === 'group' && isPersonalGroup) {
-        return false;
-      }
-      if (listFilter === 'personal' && !isPersonalGroup) {
-        return false;
-      }
-      if (monthFilter && (g.createdAt || '').slice(0, 7) !== monthFilter) {
-        return false;
-      }
-      if (!q) {
-        return true;
-      }
-      return (
-        g.name.toLowerCase().includes(q) || g.joinCode.toLowerCase().includes(q)
-      );
-    });
-    if (sortMode === 'dateAdded') {
-      list = [...list].sort((a, b) =>
-        (b.createdAt || '').localeCompare(a.createdAt || ''),
-      );
-    } else if (sortMode === 'activity') {
-      list = [...list].sort((a, b) => {
+  // Trimmed dashboard preview - just the 5 most recently active groups,
+  // newest activity first (falling back to creation date for a group with
+  // no activity yet). The full searchable/sortable/filterable list now
+  // lives on its own screen (Groups.tsx, reached via "See All" below or
+  // the outer Groups tab) - this dashboard only teases it.
+  const latestActiveGroups = React.useMemo(() => {
+    return [...groups]
+      .sort((a, b) => {
         const ta = overview.lastActivityByGroup[a.id] || a.createdAt || '';
         const tb = overview.lastActivityByGroup[b.id] || b.createdAt || '';
         return tb.localeCompare(ta);
-      });
-    }
-    return list;
-  })();
+      })
+      .slice(0, 5);
+  }, [groups, overview.lastActivityByGroup]);
 
   const route = useRoute<any>();
   const {groupId} = route.params || {};
@@ -250,7 +163,7 @@ const GroupManagement = ({navigation}: any) => {
 
   useEffect(() => {
     if (focused) {
-      refresh();
+      ensureLoaded();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focused]);
@@ -287,11 +200,7 @@ const GroupManagement = ({navigation}: any) => {
       return;
     }
     try {
-      const doc = await firestore()
-        .collection('users')
-        .doc(currentUser.uid)
-        .get();
-      const hasUpiId = !!(doc.exists && doc.data()?.upiId);
+      const hasUpiId = !!(await getUserUpiId(currentUser.uid));
       if (hasUpiId) {
         return;
       }
@@ -406,6 +315,7 @@ const GroupManagement = ({navigation}: any) => {
           onPress: async () => {
             try {
               await leaveGroup(leaveGroupId, user.uid);
+              removeGroupLocally(leaveGroupId);
               if (leaveGroupId === currentGroupKey) {
                 setGroupKey(null);
               }
@@ -596,11 +506,13 @@ const GroupManagement = ({navigation}: any) => {
   return (
     <View style={styles.flex}>
       <Header />
-      <KeyboardAwareScrollView
-        ref={scrollRef}
-        contentContainerStyle={styles.content}
-        enableOnAndroid
-        extraScrollHeight={20}
+      <KeyboardSafeScrollView
+        onScroll={onFabScroll}
+        scrollEventThrottle={16}
+        contentContainerStyle={[
+          styles.content,
+          {paddingBottom: barHeight + ADD_GROUP_FAB_HEIGHT + 24},
+        ]}
         keyboardShouldPersistTaps="handled">
         {loading ? (
           <DashboardSkeleton />
@@ -610,7 +522,7 @@ const GroupManagement = ({navigation}: any) => {
               <GlassCard style={styles.heroCard}>
                 <GradientView
                   colors={theme.gradient.heroDark}
-                  style={StyleSheet.absoluteFillObject}
+                  style={StyleSheet.absoluteFill}
                 />
                 <View style={styles.heroTopRow}>
                   <Text style={styles.heroKicker}>YOUR POSITION</Text>
@@ -690,7 +602,7 @@ const GroupManagement = ({navigation}: any) => {
                       ]}>
                       <GradientView
                         colors={theme.gradient.fab}
-                        style={StyleSheet.absoluteFillObject}
+                        style={StyleSheet.absoluteFill}
                       />
                     </Animated.View>
                   )}
@@ -764,136 +676,13 @@ const GroupManagement = ({navigation}: any) => {
               <View style={styles.groupsHeaderActions}>
                 {groups.length > 0 && (
                   <TouchableOpacity
-                    style={[
-                      styles.addGroupBtn,
-                      sortOrFilterActive && styles.addGroupBtnActive,
-                    ]}
                     hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}
-                    onPress={() => setSortFilterVisible(v => !v)}>
-                    <SlidersHorizontal
-                      size={16}
-                      color={
-                        sortOrFilterActive
-                          ? theme.color.blueBright
-                          : theme.color.ink
-                      }
-                    />
+                    onPress={() => navigation.navigate('Groups')}>
+                    <Text style={styles.seeAllText}>See All</Text>
                   </TouchableOpacity>
                 )}
-                {groups.length > 0 && (
-                  <TouchableOpacity
-                    style={styles.addGroupBtn}
-                    hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}
-                    onPress={() => {
-                      setSearchVisible(v => !v);
-                      if (searchVisible) {
-                        setSearchQuery('');
-                      }
-                    }}>
-                    {searchVisible ? (
-                      <X size={17} color={theme.color.ink} />
-                    ) : (
-                      <Search size={17} color={theme.color.ink} />
-                    )}
-                  </TouchableOpacity>
-                )}
-                <TouchableOpacity
-                  style={styles.addGroupBtn}
-                  hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}
-                  onPress={() => navigation.navigate('CreateJoinGroup')}>
-                  <Plus size={18} color={theme.color.ink} />
-                </TouchableOpacity>
               </View>
             </View>
-
-            {groups.length > 0 && searchVisible && (
-              <View style={styles.searchWrap}>
-                <Search size={16} color={theme.color.inkFaint} />
-                <TextInput
-                  style={styles.searchInput}
-                  placeholder="Search your groups"
-                  value={searchQuery}
-                  onChangeText={setSearchQuery}
-                  placeholderTextColor={theme.color.inkFaint}
-                  autoFocus
-                  onFocus={rescrollToTopOnFocus}
-                />
-              </View>
-            )}
-
-            {groups.length > 0 && (
-              <View style={styles.listFilterRow}>
-                {(['all', 'group', 'personal'] as const).map(f => (
-                  <TouchableOpacity
-                    key={f}
-                    style={[
-                      styles.listFilterPill,
-                      listFilter === f && styles.listFilterPillActive,
-                    ]}
-                    onPress={() => setListFilter(f)}>
-                    <Text
-                      style={[
-                        styles.listFilterText,
-                        listFilter === f && styles.listFilterTextActive,
-                      ]}>
-                      {f === 'all'
-                        ? 'All'
-                        : f === 'group'
-                        ? 'Groups'
-                        : 'Personal'}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
-
-            {groups.length > 0 && sortFilterVisible && (
-              <View style={styles.sortFilterBlock}>
-                <Text style={styles.sortFilterLabel}>Sort by</Text>
-                <View style={styles.sortFilterRow}>
-                  <Chip
-                    label="Default"
-                    active={sortMode === 'default'}
-                    onPress={() => setSortMode('default')}
-                  />
-                  <Chip
-                    label="Date added"
-                    active={sortMode === 'dateAdded'}
-                    onPress={() => setSortMode('dateAdded')}
-                  />
-                  <Chip
-                    label="Activity"
-                    active={sortMode === 'activity'}
-                    onPress={() => setSortMode('activity')}
-                  />
-                </View>
-                {availableMonths.length > 0 && (
-                  <>
-                    <Text style={styles.sortFilterLabel}>Month</Text>
-                    <ScrollView
-                      horizontal
-                      showsHorizontalScrollIndicator={false}
-                      contentContainerStyle={styles.sortFilterRow}>
-                      <Chip
-                        label="All"
-                        active={monthFilter === null}
-                        onPress={() => setMonthFilter(null)}
-                      />
-                      {availableMonths.map(ym => (
-                        <Chip
-                          key={ym}
-                          label={formatMonthLabel(ym)}
-                          active={monthFilter === ym}
-                          onPress={() =>
-                            setMonthFilter(monthFilter === ym ? null : ym)
-                          }
-                        />
-                      ))}
-                    </ScrollView>
-                  </>
-                )}
-              </View>
-            )}
 
             {groups.length > 0 && (
               <Text style={styles.hintText}>
@@ -909,13 +698,7 @@ const GroupManagement = ({navigation}: any) => {
               </GlassCard>
             )}
 
-            {!loading && groups.length > 0 && filteredGroups.length === 0 && (
-              <Text style={styles.emptyText}>
-                No groups match "{searchQuery}".
-              </Text>
-            )}
-
-            {filteredGroups.map(g => (
+            {latestActiveGroups.map(g => (
               <SwipeableRow
                 key={g.id}
                 actionLabel="Leave"
@@ -991,7 +774,35 @@ const GroupManagement = ({navigation}: any) => {
             ))}
           </>
         )}
-      </KeyboardAwareScrollView>
+        <View
+          style={{
+            height: barHeight + ADD_GROUP_FAB_HEIGHT + ASSISTANT_ORB_SIZE + 38,
+          }}
+        />
+      </KeyboardSafeScrollView>
+
+      <AppBottomBar active="home" />
+
+      <AddGroupFab
+        bottom={barHeight + 24}
+        onPress={() => setNewGroupOpen(true)}
+      />
+      <NewGroupPanel
+        open={newGroupOpen}
+        onClose={() => setNewGroupOpen(false)}
+        origin={{
+          bottom: barHeight + 24,
+          right: ADD_GROUP_FAB_RIGHT,
+          size: ADD_GROUP_FAB_HEIGHT,
+        }}
+        enterGroup={enterGroup}
+      />
+      {groups.length > 0 && (
+        <AssistantOrb
+          bottom={barHeight + 24 + ADD_GROUP_FAB_HEIGHT + 14}
+          right={ADD_GROUP_FAB_RIGHT}
+        />
+      )}
 
       <UpiPromptModal
         visible={upiPromptVisible}
@@ -1010,7 +821,7 @@ const GroupManagement = ({navigation}: any) => {
 
 const styles = StyleSheet.create({
   flex: {flex: 1, backgroundColor: theme.color.ground},
-  content: {paddingHorizontal: 18, paddingTop: 8, paddingBottom: 60},
+  content: {paddingHorizontal: 18, paddingTop: 8},
   title: {
     color: theme.color.ink,
     ...Typography.title,
@@ -1068,30 +879,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
     textTransform: 'uppercase',
   },
-  listFilterRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 6,
-  },
-  listFilterPill: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: theme.radius.pill,
-    borderWidth: 1,
-    borderColor: theme.color.border,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-  },
-  listFilterPillActive: {
-    backgroundColor: theme.color.blue,
-    borderColor: theme.color.blue,
-  },
-  listFilterText: {
-    fontFamily: BodyFont.bold,
-    fontSize: moderateScale(12.5),
-    fontWeight: '700',
-    color: theme.color.inkFaint,
-  },
-  listFilterTextActive: {color: theme.color.ink},
   hintText: {
     color: theme.color.inkFaint,
     fontFamily: BodyFont.regular,
@@ -1286,50 +1073,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
-  addGroupBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    borderWidth: 1,
-    borderColor: theme.color.border,
-    backgroundColor: theme.color.groundAlt,
-    justifyContent: 'center',
-    alignItems: 'center',
+  seeAllText: {
+    color: theme.color.blueBright,
+    fontFamily: BodyFont.bold,
+    fontSize: moderateScale(12.5),
+    fontWeight: '700',
   },
   addGroupBtnActive: {borderColor: theme.color.blueBright},
-  sortFilterBlock: {marginTop: 10, marginBottom: 2},
-  sortFilterLabel: {
-    color: theme.color.inkFaint,
-    fontFamily: BodyFont.bold,
-    fontSize: moderateScale(10.5),
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
-    marginBottom: 6,
-    marginTop: 8,
-  },
-  sortFilterRow: {flexDirection: 'row', flexWrap: 'wrap', gap: 8},
-  searchWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: theme.color.surface,
-    borderWidth: 1,
-    borderColor: theme.color.border,
-    borderRadius: theme.radius.md,
-    paddingHorizontal: 14,
-    marginTop: 22,
-    marginBottom: 14,
-  },
-  searchInput: {
-    flex: 1,
-    color: theme.color.ink,
-    fontFamily: BodyFont.regular,
-    fontSize: moderateScale(14.5),
-    paddingVertical: 12,
-  },
   loaderOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(6,5,12,0.5)',
     justifyContent: 'center',
     alignItems: 'center',

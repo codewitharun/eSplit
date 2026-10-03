@@ -6,7 +6,8 @@
 // offset, no charting library needed.
 
 import React from 'react';
-import {StyleSheet, Text, View} from 'react-native';
+import {StyleSheet, View} from 'react-native';
+import {Text} from '../ui/AppText';
 import Svg, {Circle, G} from 'react-native-svg';
 import theme from '../../utils/theme';
 import {BodyFont, DisplayFont, moderateScale} from '../../utils/fonts';

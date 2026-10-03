@@ -30,21 +30,20 @@
 
 import {Check, ChevronRight, TriangleAlert} from 'lucide-react-native';
 import React, {useCallback, useEffect, useState} from 'react';
-import {
-  ActivityIndicator,
-  LayoutChangeEvent,
-  StyleSheet,
-  Text,
-  View,
-  ViewStyle,
-} from 'react-native';
+import {ActivityIndicator, LayoutChangeEvent, StyleSheet, View, ViewStyle} from 'react-native';
+import {Text} from '../ui/AppText';
 import {Gesture, GestureDetector} from 'react-native-gesture-handler';
 import Animated, {
+  Easing,
   Extrapolation,
   interpolate,
   runOnJS,
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
+  withDelay,
+  withRepeat,
+  withSequence,
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
@@ -78,6 +77,40 @@ interface Props {
   colors?: string[];
   style?: ViewStyle;
 }
+
+// One of the three arrows before the label. Together they run a gentle
+// left-to-right wave (each brightens and nudges right in turn) that hints
+// "slide this way". Static for reduced-motion users.
+const WaveChevron: React.FC<{index: number}> = ({index}) => {
+  const reduceMotion = useReducedMotion();
+  const wave = useSharedValue(0);
+  useEffect(() => {
+    if (reduceMotion) {
+      return;
+    }
+    wave.value = withDelay(
+      index * 160,
+      withRepeat(
+        withSequence(
+          withTiming(1, {duration: 380, easing: Easing.out(Easing.quad)}),
+          withTiming(0, {duration: 380, easing: Easing.in(Easing.quad)}),
+          withTiming(0, {duration: 480}),
+        ),
+        -1,
+        false,
+      ),
+    );
+  }, [index, reduceMotion, wave]);
+  const style = useAnimatedStyle(() => ({
+    opacity: reduceMotion ? 0.4 + index * 0.25 : 0.25 + wave.value * 0.75,
+    transform: [{translateX: wave.value * 3}],
+  }));
+  return (
+    <Animated.View style={[styles.chevron, style]}>
+      <ChevronRight size={13} color={theme.color.blueBright} strokeWidth={3} />
+    </Animated.View>
+  );
+};
 
 const SwipeToConfirm: React.FC<Props> = ({
   label,
@@ -208,25 +241,16 @@ const SwipeToConfirm: React.FC<Props> = ({
       <Animated.View style={[StyleSheet.absoluteFill, fillStyle]}>
         <GradientView
           colors={trackColors}
-          style={StyleSheet.absoluteFillObject}
+          style={StyleSheet.absoluteFill}
         />
       </Animated.View>
       <Animated.View style={[styles.labelRow, labelStyle]}>
         {showChevrons && (
-          <ChevronRight
-            size={13}
-            color={theme.color.blueBright}
-            strokeWidth={3}
-            style={styles.chevron1}
-          />
-        )}
-        {showChevrons && (
-          <ChevronRight
-            size={13}
-            color={theme.color.blueBright}
-            strokeWidth={3}
-            style={styles.chevron2}
-          />
+          <View style={styles.chevronRow}>
+            {[0, 1, 2].map(i => (
+              <WaveChevron key={i} index={i} />
+            ))}
+          </View>
         )}
 
         <Text style={styles.label} numberOfLines={1}>
@@ -269,8 +293,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  chevron1: {marginRight: -6, opacity: 0.55},
-  chevron2: {marginRight: 6, opacity: 0.85},
+  chevronRow: {flexDirection: 'row', alignItems: 'center', marginRight: 6},
+  chevron: {marginRight: -6},
   label: {
     color: theme.color.inkSoft,
     fontFamily: BodyFont.bold,

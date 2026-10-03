@@ -6,16 +6,28 @@
 // summary, per-person balances, the full expense history, and a
 // settlements history table.
 //
+// Expo build: files are written to the app's private cache (Paths.cache) -
+// no storage permission on any Android version - and returned as file://
+// URIs that Balances.tsx hands to expo-sharing (open/save/send sheet).
+//
 // Excel: a genuine multi-sheet .xlsx workbook (via SheetJS `xlsx` — pure
 // JS, no native module) with separate "Summary", "Expenses", "Balances"
 // and "Settlements" sheets, so the file opens cleanly in Excel/Sheets
 // with real columns instead of a flat CSV dump.
 
-import RNFS from 'react-native-fs';
-import RNHTMLtoPDF from 'react-native-html-to-pdf';
+import * as Print from 'expo-print';
+import {File, Paths} from 'expo-file-system';
 import * as XLSX from 'xlsx';
 import {Expense, GroupMember, Settlement} from './types';
 import {formatMoney} from './currency';
+import {visibleItems} from './expenseItems';
+
+// "Bread 12; Milk 30; Eggs 44" for a multi-item expense, '' otherwise
+// (every single-line / pre-existing expense exports exactly as before).
+function itemsBreakdown(e: Expense): string {
+  const items = visibleItems(e);
+  return items ? items.map(i => `${i.name} ${i.price}`).join('; ') : '';
+}
 
 const BRAND = {
   blue: '#0082B0',
@@ -35,6 +47,19 @@ function fileBaseName(groupName: string) {
   })}-${date.getFullYear()}`;
   const slug = groupName.trim().toLowerCase().replace(/\s+/g, '-');
   return `ezysplit-${slug}-${monthYear}`;
+}
+
+// Writes text/base64 into the app's private cache under a readable name
+// (overwriting an older export of the same group/month) and returns its URI.
+function writeCacheFile(
+  name: string,
+  content: string,
+  encoding: 'utf8' | 'base64',
+): string {
+  const file = new File(Paths.cache, name);
+  file.create({overwrite: true});
+  file.write(content, {encoding});
+  return file.uri;
 }
 
 function globalFmtMoney(n: number, currency?: string | null) {
@@ -109,7 +134,11 @@ export async function exportGroupPdf(
       .map(
         e => `<tr>
         <td>${fmtDate(e.createdAt)}</td>
-        <td>${e.description}<div class="tag">${e.category}</div></td>
+        <td>${e.description}${
+          itemsBreakdown(e)
+            ? `<div class="muted">${itemsBreakdown(e)}</div>`
+            : ''
+        }<div class="tag">${e.category}</div></td>
         <td>${name(e.paidBy)}</td>
         <td class="amount">${fmtMoney(e.amount)}</td>
       </tr>`,
@@ -146,12 +175,13 @@ export async function exportGroupPdf(
     <head>
       <meta charset="utf-8" />
       <style>
+        @page { margin: 22px 0; }
         * { box-sizing: border-box; }
         body {
           font-family: -apple-system, Helvetica, Arial, sans-serif;
           color: ${BRAND.ink};
           margin: 0;
-          padding: 28px 32px 40px;
+          padding: 6px 32px 18px;
         }
         .header {
           display: flex;
@@ -297,15 +327,13 @@ export async function exportGroupPdf(
   </html>
   `;
 
-  const file = await RNHTMLtoPDF.convert({
-    html,
-    fileName,
-    directory: 'Download',
-  });
-  const publicPath = `${RNFS.DownloadDirectoryPath}/${fileName}.pdf`;
-  await RNFS.copyFile(file.filePath, publicPath);
-  await RNFS.unlink(file.filePath);
-  return publicPath;
+  // expo-print renders the HTML into a randomly named PDF in the cache;
+  // move it to a readable name so the share sheet / saved file shows
+  // "ezysplit-<group>-<Month-Year>.pdf". A4 at 72dpi = 595x842pt.
+  const {uri} = await Print.printToFileAsync({html, width: 595, height: 842});
+  const dest = new File(Paths.cache, `${fileName}.pdf`);
+  new File(uri).move(dest, {overwrite: true});
+  return dest.uri;
 }
 
 /* ------------------------------------------------------------------ */
@@ -364,7 +392,9 @@ export async function exportGroupExcel(
     .sort((a, b) => +new Date(a.createdAt) - +new Date(b.createdAt))
     .map(e => [
       new Date(e.createdAt).toISOString().slice(0, 10),
-      e.description,
+      itemsBreakdown(e)
+        ? `${e.description} (${itemsBreakdown(e)})`
+        : e.description,
       e.category,
       name(e.paidBy),
       e.splitType,
@@ -425,9 +455,7 @@ export async function exportGroupExcel(
   XLSX.utils.book_append_sheet(wb, settlementSheet, 'Settlements');
 
   const base64 = XLSX.write(wb, {type: 'base64', bookType: 'xlsx'});
-  const publicPath = `${RNFS.DownloadDirectoryPath}/${fileName}.xlsx`;
-  await RNFS.writeFile(publicPath, base64, 'base64');
-  return publicPath;
+  return writeCacheFile(`${fileName}.xlsx`, base64, 'base64');
 }
 
 /* ------------------------------------------------------------------ */
@@ -454,7 +482,10 @@ export async function exportGroupCsv(
   ];
   const rows = expenses.map(e => [
     new Date(e.createdAt).toISOString().slice(0, 10),
-    e.description.replace(/,/g, ' '),
+    (itemsBreakdown(e)
+      ? `${e.description} (${itemsBreakdown(e)})`
+      : e.description
+    ).replace(/,/g, ' '),
     e.category,
     name(e.paidBy),
     e.amount.toFixed(2),
@@ -464,7 +495,5 @@ export async function exportGroupCsv(
   ]);
 
   const csv = [header, ...rows].map(r => r.join(',')).join('\n');
-  const publicPath = `${RNFS.DownloadDirectoryPath}/${fileName}.csv`;
-  await RNFS.writeFile(publicPath, csv, 'utf8');
-  return publicPath;
+  return writeCacheFile(`${fileName}.csv`, csv, 'utf8');
 }

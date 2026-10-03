@@ -16,21 +16,15 @@
 // what they were before.
 
 import React, {useEffect, useState} from 'react';
-import {
-  Animated,
-  Image,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import {Animated, Image, StyleSheet, TouchableOpacity, View} from 'react-native';
+import {Text} from '../../component/ui/AppText';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import GlassCard from '../../component/glass/GlassCard';
 import GradientMesh from '../../component/glass/GradientMesh';
 import GradientView from '../../component/glass/GradientView';
 import TechTitanFooter from '../../component/glass/TechTitanFooter';
 import Loader from '../../component/loader';
-import {onGoogleButtonPress} from '../../services/auth';
+import {onGoogleButtonPress} from '../../data/auth';
 import {BodyFont, DisplayFont, moderateScale} from '../../utils/fonts';
 import {haptics} from '../../utils/haptics';
 import theme from '../../utils/theme';

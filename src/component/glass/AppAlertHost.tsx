@@ -6,14 +6,8 @@
 // of the OS's native Alert chrome.
 
 import React from 'react';
-import {
-  Modal,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  TouchableWithoutFeedback,
-  View,
-} from 'react-native';
+import {Modal, StyleSheet, TouchableOpacity, TouchableWithoutFeedback, View} from 'react-native';
+import {Text} from '../ui/AppText';
 import GlassCard from './GlassCard';
 import {AppAlertButton, useAppAlertStore} from '../../services/appAlert';
 import {BodyFont, DisplayFont, moderateScale} from '../../utils/fonts';

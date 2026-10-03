@@ -12,43 +12,60 @@
 // month/All time/Custom range, same client-side logic as
 // PersonalExpenses.tsx) added alongside the existing category filter.
 
-import auth from '@react-native-firebase/auth';
-import {useFocusEffect, useNavigation} from '@react-navigation/native';
 import {useBottomTabBarHeight} from '@react-navigation/bottom-tabs';
-import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import {useFocusEffect, useNavigation} from '@react-navigation/native';
+import {Search, SlidersHorizontal, X} from 'lucide-react-native';
 import React, {useCallback, useMemo, useRef, useState} from 'react';
 import {
   BackHandler,
   FlatList,
   Modal,
-  Share,
+  ScrollView,
   StyleSheet,
-  Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
+import {Text, TextInput} from '../../component/ui/AppText';
 import {Calendar} from 'react-native-calendars';
-import {Search, SlidersHorizontal, X} from 'lucide-react-native';
-import Toast from '../../services/toast';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import AddExpenseModal from '../../component/AddExpenseModal';
+import ExpenseItemsSheet from '../../component/ExpenseItemsSheet';
+import GroupInsightsCard from '../../component/GroupInsightsCard';
+import ExpenseImpactText from '../../component/ExpenseImpactText';
 import GroupSwitcherPill from '../../component/GroupSwitcherPill';
+import HomeIconChip from '../../component/HomeIconChip';
 import Chip from '../../component/glass/Chip';
 import GlassCard from '../../component/glass/GlassCard';
 import SwipeableRow from '../../component/glass/SwipeableRow';
 import {useGroupLedger} from '../../hooks/useGroupLedger';
 import {useModalOpenGuard} from '../../hooks/useModalOpenGuard';
-import {addExpense, deleteExpense} from '../../services/ledger/firestoreLedger';
+import {formatMoney} from '../../services/ledger/currency';
+import {visibleItems} from '../../services/ledger/expenseItems';
+import {computeGroupInsights} from '../../services/ledger/groupInsights';
+import {
+  dayKey,
+  dayLabel,
+  timeLabel,
+} from '../../services/ledger/activityFormat';
+import {addExpense, deleteExpense} from '../../data/ledger';
 import {
   EXPENSE_CATEGORIES,
   Expense,
   ExpenseCategory,
 } from '../../services/ledger/types';
+import Toast from '../../services/toast';
+import InviteSheet from '../../component/InviteSheet';
 import {useExpenseState} from '../../store/useExpenseStore';
-import {formatMoney} from '../../services/ledger/currency';
-import {haptics} from '../../utils/haptics';
-import theme from '../../utils/theme';
 import {BodyFont, DisplayFont, moderateScale} from '../../utils/fonts';
+import {haptics} from '../../utils/haptics';
+import {
+  ADD_EXPENSE_FAB,
+  FLOATING_ACTIONS_CLEARANCE,
+} from '../../navigator/constants';
+import {useCollapseFabsOnScroll} from '../../hooks/useCollapseFabsOnScroll';
+import {GenieOrigin} from '../../component/GeniePanel';
+import theme from '../../utils/theme';
+import {currentUser} from '../../data/firebase';
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -79,11 +96,29 @@ function inRange(iso: string, from: Date | null, to: Date | null): boolean {
 }
 
 const ActivityScreen: React.FC = () => {
-  const user = auth().currentUser;
+  const user = currentUser();
   const groupKey = useExpenseState(state => state.groupKey);
   const ledger = useGroupLedger(groupKey);
   const [modalVisible, setModalVisible] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+  // Where the add/edit panel grows from: the FAB, or the tapped row.
+  const [expenseOrigin, setExpenseOrigin] = useState<GenieOrigin | undefined>(
+    undefined,
+  );
+  // Multi-item expense opened by someone who didn't add it - shown as a
+  // read-only breakdown (ExpenseItemsSheet) instead of the edit modal.
+  const [viewingItemsOf, setViewingItemsOf] = useState<Expense | null>(null);
+  // Header analytics card - all-time numbers for the whole group (not the
+  // list's search/date filters), from data this screen already loaded.
+  const insights = useMemo(
+    () =>
+      computeGroupInsights(
+        ledger.expenses,
+        user?.uid || '',
+        ledger.netBalances[user?.uid || ''] || 0,
+      ),
+    [ledger.expenses, ledger.netBalances, user?.uid],
+  );
   const [showPastMembers, setShowPastMembers] = useState(false);
   const addExpenseSignal = useExpenseState(state => state.addExpenseSignal);
   const [search, setSearch] = useState('');
@@ -117,9 +152,16 @@ const ActivityScreen: React.FC = () => {
       lastAddSignalRef.current = addExpenseSignal;
       if (groupKey) {
         setEditingExpense(null);
+        // Grow the panel out of the Add expense button itself.
+        setExpenseOrigin({
+          bottom: tabBarHeight + ADD_EXPENSE_FAB.bottomOffset,
+          right: ADD_EXPENSE_FAB.right,
+          size: ADD_EXPENSE_FAB.size,
+        });
         setModalVisible(true);
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [addExpenseSignal, groupKey]);
 
   const navigation = useNavigation<any>();
@@ -129,6 +171,8 @@ const ActivityScreen: React.FC = () => {
   // so scrollable content here can pad exactly enough to clear it at
   // rest while still scrolling underneath it past that point.
   const tabBarHeight = useBottomTabBarHeight();
+  // Collapses the floating create button to icon-only while scrolling down.
+  const onFabScroll = useCollapseFabsOnScroll();
 
   // Activity is the first/home tab, so it's the natural floor for the
   // Android hardware back button - without this, pressing back here fell
@@ -156,13 +200,21 @@ const ActivityScreen: React.FC = () => {
     }, [navigation]),
   );
 
-  const openEditExpense = (expense: Expense) => {
+  const openEditExpense = (
+    expense: Expense,
+    tapPoint?: {x: number; y: number},
+  ) => {
     // Firestore rules only allow the member who created an expense to
     // update or delete it (previously any group member could edit/delete
     // any expense - tightened alongside this). Mirror that here so tapping
     // someone else's expense gives a clear reason instead of a silent
     // permission-denied write once they hit Save.
     if (expense.createdBy !== user?.uid) {
+      if (visibleItems(expense)) {
+        haptics.tap();
+        setViewingItemsOf(expense);
+        return;
+      }
       Toast.show({
         type: 'info',
         text1: 'Only the person who added this can edit it',
@@ -174,12 +226,16 @@ const ActivityScreen: React.FC = () => {
     }
     haptics.tap();
     setEditingExpense(expense);
+    // Grow the edit panel out of the spot the row was tapped.
+    setExpenseOrigin(tapPoint ? {...tapPoint, size: 44} : undefined);
     setModalVisible(true);
   };
 
+  // editingExpense is deliberately left set while the panel animates
+  // closed (so its title doesn't flip to "New expense" mid-animation);
+  // opening Add resets it to null.
   const closeExpenseModal = () => {
     setModalVisible(false);
-    setEditingExpense(null);
   };
 
   const {from, to} = useMemo(() => {
@@ -256,14 +312,31 @@ const ActivityScreen: React.FC = () => {
     }
     if (
       search.trim() &&
-      !e.description.toLowerCase().includes(search.trim().toLowerCase())
+      !e.description.toLowerCase().includes(search.trim().toLowerCase()) &&
+      !(visibleItems(e) || []).some(i =>
+        i.name.toLowerCase().includes(search.trim().toLowerCase()),
+      )
     ) {
       return false;
     }
     return true;
   });
 
+  // Per-day totals for the list's day headers (of the filtered rows).
+  const dayTotals: Record<string, number> = {};
+  filteredExpenses.forEach(e => {
+    const k = dayKey(e.createdAt);
+    dayTotals[k] = (dayTotals[k] || 0) + e.amount;
+  });
+  const isPersonalList = ledger.group?.type === 'personal';
+
   const filtersActive = !!categoryFilter || dateFilter !== 'all';
+  const clearFilters = () => {
+    haptics.tap();
+    setCategoryFilter(null);
+    setDateFilter('all');
+    setSearch('');
+  };
 
   const overdueRecurring = ledger.expenses.filter(
     e =>
@@ -290,6 +363,7 @@ const ActivityScreen: React.FC = () => {
         splitType: source.splitType,
         participantUids: Object.keys(source.shares),
         splitParams: source.splitParams,
+        items: visibleItems(source) || undefined,
         isRecurring: true,
         recurrenceIntervalDays: source.recurrenceIntervalDays,
       });
@@ -304,42 +378,13 @@ const ActivityScreen: React.FC = () => {
     }
   };
 
-  const onShareInvite = async () => {
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const onShareInvite = () => {
     if (!groupKey) {
       return;
     }
-    try {
-      const groupName = ledger.group?.name || 'my group';
-      const joinCode = ledger.group?.joinCode;
-      // The link alone used to be the whole message. Bring back the
-      // typeable join code alongside it (like the old share format did,
-      // just with the new 6-character code instead of exposing the raw
-      // Firestore doc ID) so someone can still get in by hand from
-      // "Join with a code" on Group-Check if the link itself doesn't
-      // redirect cleanly for them.
-      const message = joinCode
-        ? `🎉 Join me on EzySplit!
-
-Manage & split expenses easily on "${groupName}".
-
-🔗 Tap to join: https://ezysplit.arun.codes/app/Group-Check/${groupKey}
-
-Or open EzySplit and use this join code: ${joinCode}
-
-Let's make splitting simple! 💰`
-        : `🎉 Join me on EzySplit!
-
-Manage & split expenses easily.
-
-🔗 https://ezysplit.arun.codes/app/Group-Check/${groupKey}`;
-      await Share.share({message});
-    } catch (error: any) {
-      Toast.show({
-        type: 'error',
-        text1: 'Sharing failed',
-        text2: error?.message,
-      });
-    }
+    haptics.tap();
+    setInviteOpen(true);
   };
 
   const onDelete = (expenseId: string) => {
@@ -380,11 +425,7 @@ Manage & split expenses easily.
     <View style={styles.flex}>
       <View style={[styles.header, {paddingTop: insets.top + 24}]}>
         <View style={styles.headerLeft}>
-          <Text style={styles.eyebrow}>ACTIVITY</Text>
           <Text style={styles.title}>{ledger.group?.name || 'Loading…'}</Text>
-          <View style={styles.switchRow}>
-            <GroupSwitcherPill style={styles.switchPillInline} />
-          </View>
           <Text style={[styles.subtitle, styles.subtitleSecondLine]}>
             {ledger.members.length} people
             {ledger.pastMembers.length > 0 && (
@@ -403,142 +444,174 @@ Manage & split expenses easily.
               : ledger.memberName(ledger.group?.createdBy || '')}
           </Text>
         </View>
-      </View>
-
-      <GlassCard style={styles.heroCard}>
-        <Text style={styles.heroLabel}>Total spent</Text>
-        <Text style={styles.heroAmount}>
-          {formatMoney(ledger.totalSpent, ledger.group?.currency)}
-        </Text>
-        {/* This used to be gated on "no expenses yet", back when a group
-            auto-locked itself on the first expense - at that point "no
-            expenses" and "still open to new members" were the same thing.
-            Locking is now a separate, explicit admin toggle (see
-            GroupSettings.tsx), so the Invite row needs to follow that flag
-            directly instead - otherwise it silently disappears the moment
-            someone logs an expense, and toggling the lock does nothing to
-            it either way, which is the bug being fixed here. */}
-        {!ledger.group?.isLocked && (
-          <View style={styles.heroInviteRow}>
-            {!!ledger.group?.joinCode && (
-              // Plain, selectable text rather than a copy icon + clipboard
-              // library - `selectable` still gives a native long-press
-              // "Copy" on both platforms with no new native dependency,
-              // and the code is readable at a glance for anyone typing it
-              // in manually.
-              <Text style={styles.joinCodeText} selectable>
-                Code: {ledger.group.joinCode}
-              </Text>
-            )}
-            <TouchableOpacity onPress={onShareInvite} style={styles.inviteBtn}>
-              <Text style={styles.inviteText}>Invite</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-      </GlassCard>
-
-      {overdueRecurring.map(e => (
-        <GlassCard key={e.id} style={styles.recurringBanner}>
-          <Text style={styles.recurringText}>
-            🔁 “{e.description}” looks due again
-          </Text>
-          <TouchableOpacity onPress={() => reAddRecurring(e.id!)}>
-            <Text style={styles.recurringAction}>Add again</Text>
-          </TouchableOpacity>
-        </GlassCard>
-      ))}
-
-      <View style={styles.expensesHeaderRow}>
-        <Text style={styles.expensesTitle}>Expenses</Text>
-        <View style={styles.expensesHeaderActions}>
-          <TouchableOpacity
-            style={styles.iconBtn}
-            hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}
-            onPress={() => {
-              setSearchVisible(v => !v);
-              if (searchVisible) {
-                setSearch('');
-              }
-            }}>
-            {searchVisible ? (
-              <X size={17} color={theme.color.ink} />
-            ) : (
-              <Search size={17} color={theme.color.ink} />
-            )}
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.iconBtn, filtersActive && styles.iconBtnActive]}
-            hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}
-            onPress={() => setFiltersVisible(v => !v)}>
-            <SlidersHorizontal
-              size={17}
-              color={filtersActive ? theme.color.blueBright : theme.color.ink}
-            />
-          </TouchableOpacity>
+        <View style={styles.headerRightGroup}>
+          <HomeIconChip />
+          <GroupSwitcherPill iconOnly />
         </View>
       </View>
 
-      {searchVisible && (
-        <TextInput
-          style={styles.search}
-          placeholder="Search expenses"
-          placeholderTextColor={theme.color.inkFaint}
-          value={search}
-          onChangeText={setSearch}
-          autoFocus
-        />
-      )}
-
-      {filtersVisible && (
-        <>
-          <View style={styles.filterRow}>
-            <Chip
-              label="All"
-              active={!categoryFilter}
-              onPress={() => setCategoryFilter(null)}
-            />
-            {EXPENSE_CATEGORIES.map(c => (
-              <Chip
-                key={c.key}
-                label={`${c.icon} ${c.label}`}
-                active={categoryFilter === c.key}
-                onPress={() =>
-                  setCategoryFilter(categoryFilter === c.key ? null : c.key)
-                }
-              />
-            ))}
-          </View>
-          <View style={styles.filterRow}>
-            <Chip
-              label="This week"
-              active={dateFilter === 'week'}
-              onPress={() => selectDateFilter('week')}
-            />
-            <Chip
-              label="This month"
-              active={dateFilter === 'month'}
-              onPress={() => selectDateFilter('month')}
-            />
-            <Chip
-              label="All time"
-              active={dateFilter === 'all'}
-              onPress={() => selectDateFilter('all')}
-            />
-            <Chip
-              label={
-                dateFilter === 'custom' && customRangeLabel
-                  ? `📅 ${customRangeLabel}`
-                  : '📅 Custom range'
-              }
-              active={dateFilter === 'custom'}
-              onPress={() => selectDateFilter('custom')}
-            />
-          </View>
-        </>
-      )}
-
-      <Text style={styles.hint}>Tap an expense to edit, swipe to delete.</Text>
+      {/* Everything below the group title scrolls with the list now.
+          Before, the summary card, search and filter chips were pinned
+          above the FlatList, so opening search + filters left only a
+          sliver of the screen for the expenses themselves. */}
       <FlatList
+        onScroll={onFabScroll}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        // Passed as an element (not a component) so the search field
+        // keeps focus while typing re-renders the list.
+        ListHeaderComponent={
+          <View style={styles.listHeader}>
+          <GroupInsightsCard
+            insights={insights}
+            currency={ledger.group?.currency}
+            isPersonal={ledger.group?.type === 'personal'}>
+            {/* This used to be gated on "no expenses yet", back when a group
+                auto-locked itself on the first expense - at that point "no
+                expenses" and "still open to new members" were the same thing.
+                Locking is now a separate, explicit admin toggle (see
+                GroupSettings.tsx), so the Invite row needs to follow that flag
+                directly instead - otherwise it silently disappears the moment
+                someone logs an expense, and toggling the lock does nothing to
+                it either way, which is the bug being fixed here. */}
+            {/* No invite on a personal list - it's just you by design. */}
+            {!ledger.group?.isLocked && ledger.group?.type !== 'personal' && (
+              <View style={styles.heroInviteRow}>
+                {!!ledger.group?.joinCode && (
+                  // Plain, selectable text rather than a copy icon + clipboard
+                  // library - `selectable` still gives a native long-press
+                  // "Copy" on both platforms with no new native dependency,
+                  // and the code is readable at a glance for anyone typing it
+                  // in manually.
+                  <Text style={styles.joinCodeText} selectable>
+                    Code: {ledger.group.joinCode}
+                  </Text>
+                )}
+                <TouchableOpacity onPress={onShareInvite} style={styles.inviteBtn}>
+                  <Text style={styles.inviteText}>Invite</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </GroupInsightsCard>
+
+          {overdueRecurring.map(e => (
+            <GlassCard key={e.id} style={styles.recurringBanner}>
+              <Text style={styles.recurringText}>
+                🔁 “{e.description}” looks due again
+              </Text>
+              <TouchableOpacity onPress={() => reAddRecurring(e.id!)}>
+                <Text style={styles.recurringAction}>Add again</Text>
+              </TouchableOpacity>
+            </GlassCard>
+          ))}
+
+          <View style={styles.expensesHeaderRow}>
+            {searchVisible ? (
+              // Search takes the title's place instead of adding a new row,
+              // so opening it costs no vertical space.
+              <TextInput
+                style={styles.search}
+                placeholder="Search expenses"
+                placeholderTextColor={theme.color.inkFaint}
+                value={search}
+                onChangeText={setSearch}
+                returnKeyType="search"
+                autoFocus
+              />
+            ) : (
+              <Text style={styles.expensesTitle}>Expenses</Text>
+            )}
+            <View style={styles.expensesHeaderActions}>
+              <TouchableOpacity
+                style={styles.iconBtn}
+                hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}
+                onPress={() => {
+                  setSearchVisible(v => !v);
+                  if (searchVisible) {
+                    setSearch('');
+                  }
+                }}>
+                {searchVisible ? (
+                  <X size={17} color={theme.color.ink} />
+                ) : (
+                  <Search size={17} color={theme.color.ink} />
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.iconBtn, filtersActive && styles.iconBtnActive]}
+                hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}
+                onPress={() => setFiltersVisible(v => !v)}>
+                <SlidersHorizontal
+                  size={17}
+                  color={filtersActive ? theme.color.blueBright : theme.color.ink}
+                />
+                {filtersActive && <View style={styles.filterDot} />}
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {filtersVisible && (
+            <>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={styles.filterRow}>
+                <Chip
+                  label="All"
+                  active={!categoryFilter}
+                  onPress={() => setCategoryFilter(null)}
+                />
+                {EXPENSE_CATEGORIES.map(c => (
+                  <Chip
+                    key={c.key}
+                    label={`${c.icon} ${c.label}`}
+                    active={categoryFilter === c.key}
+                    onPress={() =>
+                      setCategoryFilter(categoryFilter === c.key ? null : c.key)
+                    }
+                  />
+                ))}
+              </ScrollView>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={styles.filterRow}>
+                <Chip
+                  label="This week"
+                  active={dateFilter === 'week'}
+                  onPress={() => selectDateFilter('week')}
+                />
+                <Chip
+                  label="This month"
+                  active={dateFilter === 'month'}
+                  onPress={() => selectDateFilter('month')}
+                />
+                <Chip
+                  label="All time"
+                  active={dateFilter === 'all'}
+                  onPress={() => selectDateFilter('all')}
+                />
+                <Chip
+                  label={
+                    dateFilter === 'custom' && customRangeLabel
+                      ? `📅 ${customRangeLabel}`
+                      : '📅 Custom range'
+                  }
+                  active={dateFilter === 'custom'}
+                  onPress={() => selectDateFilter('custom')}
+                />
+              </ScrollView>
+            </>
+          )}
+
+          {filteredExpenses.length > 0 && (
+            <Text style={styles.hint}>Tap an expense to edit, swipe to delete.</Text>
+          )}
+          </View>
+        }
+        scrollEventThrottle={16}
         data={filteredExpenses}
         keyExtractor={item => item.id!}
         contentContainerStyle={[
@@ -547,50 +620,85 @@ Manage & split expenses easily.
           // BottomTabNavigator.tsx) instead of reserving its own row, so
           // the list needs real bottom padding for its own height or the
           // last rows would render hidden underneath it at rest.
-          {paddingBottom: tabBarHeight + 24},
+          {paddingBottom: tabBarHeight + FLOATING_ACTIONS_CLEARANCE},
         ]}
-        renderItem={({item}) => (
-          <SwipeableRow
-            actionLabel="Delete"
-            actionColor={theme.color.rose}
-            onAction={() => onDelete(item.id!)}>
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={() => openEditExpense(item)}>
-              <GlassCard style={styles.expenseRow}>
-                <View style={styles.expenseIcon}>
-                  <Text style={{fontSize: moderateScale(18)}}>
-                    {EXPENSE_CATEGORIES.find(c => c.key === item.category)
-                      ?.icon || '🧾'}
-                  </Text>
-                </View>
-                <View style={styles.expenseMid}>
-                  <Text style={styles.expenseTitle}>{item.description}</Text>
-                  <Text style={styles.expenseSub}>
-                    Paid by{' '}
-                    {item.paidBy === user?.uid
-                      ? 'You'
-                      : ledger.memberName(item.paidBy)}{' '}
-                    ·{' '}
-                    {new Date(item.createdAt).toLocaleDateString('en-IN', {
-                      day: '2-digit',
-                      month: 'short',
-                    })}
-                  </Text>
-                </View>
-                <Text style={styles.expenseAmount}>
-                  {formatMoney(item.amount, ledger.group?.currency)}
+        renderItem={({item, index}) => (
+          <>
+            {(index === 0 ||
+              dayKey(filteredExpenses[index - 1].createdAt) !==
+                dayKey(item.createdAt)) && (
+              <View style={styles.dayHeader}>
+                <Text style={styles.dayHeaderText}>
+                  {dayLabel(item.createdAt)}
                 </Text>
-              </GlassCard>
-            </TouchableOpacity>
-          </SwipeableRow>
+                <Text style={styles.dayHeaderTotal}>
+                  {formatMoney(
+                    dayTotals[dayKey(item.createdAt)] || 0,
+                    ledger.group?.currency,
+                  )}
+                </Text>
+              </View>
+            )}
+            <SwipeableRow
+              actionLabel="Delete"
+              actionColor={theme.color.rose}
+              onAction={() => onDelete(item.id!)}>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={e =>
+                  openEditExpense(item, {
+                    x: e.nativeEvent.pageX,
+                    y: e.nativeEvent.pageY,
+                  })
+                }>
+                <GlassCard style={styles.expenseRow}>
+                  <View style={styles.expenseIcon}>
+                    <Text style={{fontSize: moderateScale(18)}}>
+                      {EXPENSE_CATEGORIES.find(c => c.key === item.category)
+                        ?.icon || '🧾'}
+                    </Text>
+                  </View>
+                  <View style={styles.expenseMid}>
+                    <Text style={styles.expenseTitle}>{item.description}</Text>
+                    <Text style={styles.expenseSub} numberOfLines={1}>
+                      {item.paidBy === user?.uid
+                        ? 'You'
+                        : ledger.memberName(item.paidBy)}{' '}
+                      paid · {timeLabel(item.createdAt)}
+                    </Text>
+                  </View>
+                  <View style={styles.expenseRight}>
+                    <Text style={styles.expenseAmount}>
+                      {formatMoney(item.amount, ledger.group?.currency)}
+                    </Text>
+                    {!isPersonalList && (
+                      <ExpenseImpactText
+                        expense={item}
+                        uid={user?.uid || ''}
+                        currency={ledger.group?.currency}
+                      />
+                    )}
+                  </View>
+                </GlassCard>
+              </TouchableOpacity>
+            </SwipeableRow>
+          </>
         )}
         ListEmptyComponent={
-          <Text style={styles.emptyText}>
-            {ledger.expenses.length === 0
-              ? 'No expenses yet — tap + to add the first one.'
-              : 'No expenses match this filter.'}
-          </Text>
+          ledger.expenses.length === 0 ? (
+            <Text style={styles.emptyText}>
+              No expenses yet — tap “Add expense” to log the first one.
+            </Text>
+          ) : (
+            <View style={styles.noMatch}>
+              <Text style={styles.emptyText}>
+                Nothing matches these filters.
+              </Text>
+              <TouchableOpacity onPress={clearFilters} style={styles.clearBtn}>
+                <Text style={styles.clearBtnText}>Clear filters</Text>
+              </TouchableOpacity>
+            </View>
+          )
         }
       />
       {/*
@@ -612,8 +720,31 @@ Manage & split expenses easily.
           currentUid={user!.uid}
           groupCurrency={ledger.group?.currency}
           editingExpense={editingExpense}
+          origin={expenseOrigin}
         />
       )}
+
+      {!!groupKey && (
+        <InviteSheet
+          visible={inviteOpen}
+          onClose={() => setInviteOpen(false)}
+          groupId={groupKey}
+          groupName={ledger.group?.name}
+          joinCode={ledger.group?.joinCode}
+        />
+      )}
+
+      <ExpenseItemsSheet
+        expense={viewingItemsOf}
+        onClose={() => setViewingItemsOf(null)}
+        currency={ledger.group?.currency}
+        paidByLabel={
+          viewingItemsOf?.paidBy === user?.uid
+            ? 'You'
+            : ledger.memberName(viewingItemsOf?.paidBy || '')
+        }
+        createdByLabel={ledger.memberName(viewingItemsOf?.createdBy || '')}
+      />
 
       <Modal
         visible={showPastMembers}
@@ -699,6 +830,12 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
   },
   headerLeft: {flex: 1, paddingRight: 12},
+  headerRightGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'center',
+    gap: 8,
+  },
   eyebrow: {
     color: theme.color.inkFaint,
     fontFamily: BodyFont.bold,
@@ -720,12 +857,6 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   subtitleSecondLine: {marginTop: 2},
-  switchRow: {flexDirection: 'row', alignItems: 'center', gap: 10},
-  // GroupSwitcherPill normally sits alone below a title, where its default
-  // marginTop gives it breathing room - inline next to text in a row, that
-  // same margin just pushed it down and off-center. Zeroed here; the
-  // row's own `alignItems: 'center'` does the vertical centering instead.
-  switchPillInline: {marginTop: 0},
   pastMembersLink: {
     color: theme.color.rose,
     fontFamily: BodyFont.bold,
@@ -752,19 +883,6 @@ const styles = StyleSheet.create({
     fontFamily: BodyFont.regular,
     fontSize: moderateScale(14),
     marginTop: 6,
-  },
-  heroCard: {marginHorizontal: 20, marginBottom: 14},
-  heroLabel: {
-    color: theme.color.inkFaint,
-    fontFamily: BodyFont.regular,
-    fontSize: moderateScale(12),
-    marginBottom: 4,
-  },
-  heroAmount: {
-    color: theme.color.ink,
-    fontFamily: DisplayFont.extrabold,
-    fontSize: moderateScale(28),
-    fontWeight: '800',
   },
   heroInviteRow: {
     flexDirection: 'row',
@@ -820,6 +938,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    minHeight: 38,
     paddingHorizontal: 20,
     marginBottom: 10,
   },
@@ -842,21 +961,47 @@ const styles = StyleSheet.create({
   },
   iconBtnActive: {borderColor: theme.color.blueBright},
   search: {
-    marginHorizontal: 20,
+    flex: 1,
+    height: 38,
+    marginRight: 10,
     backgroundColor: theme.color.surface,
     borderWidth: 1,
     borderColor: theme.color.border,
-    borderRadius: theme.radius.md,
+    borderRadius: theme.radius.pill,
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 0,
     color: theme.color.ink,
-    marginBottom: 10,
   },
+  filterDot: {
+    position: 'absolute',
+    top: 5,
+    right: 5,
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: theme.color.blueBright,
+  },
+  // listContent pads 20px each side; the header spans edge to edge so
+  // its own 20px margins line up as before and chip rows swipe to the edge.
+  listHeader: {marginHorizontal: -20},
   filterRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     paddingHorizontal: 20,
-    marginBottom: 4,
+    marginBottom: 2,
+  },
+  noMatch: {alignItems: 'center'},
+  clearBtn: {
+    marginTop: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: theme.radius.pill,
+    borderWidth: 1,
+    borderColor: theme.color.border,
+  },
+  clearBtnText: {
+    color: theme.color.blueBright,
+    fontFamily: BodyFont.semibold,
+    fontSize: moderateScale(13),
   },
   hint: {
     color: theme.color.inkFaint,
@@ -899,6 +1044,28 @@ const styles = StyleSheet.create({
     color: theme.color.ink,
     fontFamily: BodyFont.bold,
     fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+  },
+  expenseRight: {alignItems: 'flex-end', marginLeft: 8},
+  dayHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    paddingHorizontal: 4,
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  dayHeaderText: {
+    color: theme.color.inkSoft,
+    fontFamily: BodyFont.bold,
+    fontSize: moderateScale(12),
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  dayHeaderTotal: {
+    color: theme.color.inkFaint,
+    fontFamily: BodyFont.regular,
+    fontSize: moderateScale(12),
     fontVariant: ['tabular-nums'],
   },
   emptyState: {

@@ -1,16 +1,16 @@
 // src/component/glass/DashboardSkeleton.tsx
 // Loading placeholder for the dashboard (GroupCheck screen), shown only
-// during the initial groups fetch. Shaped to match the real hero card /
-// collapsed quick-stats row / groups header (filter+search+add) / list
-// filter pills / groups-list layout so nothing visually "pops" once real
-// data arrives - replaces the old bare spinner, which left the header the
-// only visible thing on screen while groups loaded (the "looking half
-// good" gap between header and content appearing). Kept in sync with
-// GroupCheck.tsx's actual layout: the quick-stats tiles are a collapsible
-// shutter (closed by default) so this shows the closed header row, not
-// the four tiles; the groups header shows all three action buttons
-// (sort/filter, search, add group); and the All/Groups/Personal filter
-// pill row - previously unrepresented here - now has its own bones.
+// during the initial groups fetch. Shaped to match the real hero card
+// (kicker + mode pill, position ring + amount, the All/Groups/Personal
+// toggle INSIDE the card) / collapsed quick-stats row / "Your groups"
+// header (just a title + a "See All" link) / groups-list layout, so
+// nothing visually "pops" once real data arrives. This used to also
+// carry bones for a 3-icon header (sort/filter, search, add) and a
+// separate filter-pill row - that was actually Groups.tsx's layout, not
+// this screen's (GroupCheck.tsx's own header is just "See All", and its
+// own All/Groups/Personal toggle is the hero card's own toggleBone, not
+// a separate row) - Groups.tsx now has its own dedicated
+// GroupsListSkeleton.tsx that matches its layout properly instead.
 
 import React, {useEffect, useRef} from 'react';
 import {Animated, StyleSheet, View, ViewStyle} from 'react-native';
@@ -79,17 +79,7 @@ const DashboardSkeleton: React.FC = () => {
 
       <View style={styles.groupsHeaderRow}>
         <Bone opacity={opacity} style={styles.sectionTitleBone} />
-        <View style={styles.groupsHeaderActionsBone}>
-          <Bone opacity={opacity} style={styles.addBtnBone} />
-          <Bone opacity={opacity} style={styles.addBtnBone} />
-          <Bone opacity={opacity} style={styles.addBtnBone} />
-        </View>
-      </View>
-
-      <View style={styles.listFilterRow}>
-        {[0, 1, 2].map(i => (
-          <Bone key={i} opacity={opacity} style={styles.listFilterPillBone} />
-        ))}
+        <Bone opacity={opacity} style={styles.seeAllBone} />
       </View>
 
       {[0, 1, 2].map(i => (
@@ -151,10 +141,7 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   sectionTitleBone: {width: 120, height: 20},
-  groupsHeaderActionsBone: {flexDirection: 'row', alignItems: 'center', gap: 8},
-  addBtnBone: {width: 34, height: 34, borderRadius: 17},
-  listFilterRow: {flexDirection: 'row', gap: 8, marginTop: 6, marginBottom: 18},
-  listFilterPillBone: {width: 64, height: 28, borderRadius: theme.radius.pill},
+  seeAllBone: {width: 46, height: 13},
   groupRow: {
     flexDirection: 'row',
     alignItems: 'center',

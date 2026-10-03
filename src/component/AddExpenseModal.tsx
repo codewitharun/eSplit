@@ -5,24 +5,22 @@
 // exact amount / percentage / share weight, validated live against the
 // same rules the Firestore layer enforces.
 
-import {X} from 'lucide-react-native';
-import React, {useEffect, useMemo, useState} from 'react';
-import {
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  TouchableWithoutFeedback,
-  View,
-} from 'react-native';
-import {GestureHandlerRootView} from 'react-native-gesture-handler';
-import {KeyboardAwareScrollView} from 'react-native-keyboard-aware-scroll-view';
+import {Plus, ReceiptText, X} from 'lucide-react-native';
+import React, {useEffect, useMemo, useRef, useState} from 'react';
+import {StyleSheet, TouchableOpacity, View} from 'react-native';
+import {Text, TextInput} from './ui/AppText';
 import {useModalOpenGuard} from '../hooks/useModalOpenGuard';
 import {currencySymbol, formatMoney} from '../services/ledger/currency';
-import {addExpense, editExpense} from '../services/ledger/firestoreLedger';
+import {
+  ItemRow,
+  itemsChanged,
+  newItemRow,
+  rowsFromExpense,
+  rowsToExpenseFields,
+  rowsTotal,
+  visibleItems,
+} from '../services/ledger/expenseItems';
+import {addExpense, editExpense} from '../data/ledger';
 import {
   computeSplits,
   round2,
@@ -32,14 +30,17 @@ import {
   EXPENSE_CATEGORIES,
   Expense,
   ExpenseCategory,
+  ExpenseItem,
   GroupMember,
   SplitType,
 } from '../services/ledger/types';
 import Toast from '../services/toast';
 import {BodyFont, DisplayFont, moderateScale} from '../utils/fonts';
 import theme from '../utils/theme';
+import GeniePanel, {GenieOrigin} from './GeniePanel';
+import KeyboardSafeScrollView from './KeyboardSafeScrollView';
+import PanelHeader from './PanelHeader';
 import Chip from './glass/Chip';
-import GlassCard from './glass/GlassCard';
 import SwipeToConfirm from './glass/SwipeToConfirm';
 
 interface Props {
@@ -55,7 +56,13 @@ interface Props {
   // When set, the modal opens pre-filled with this expense's data and
   // saves via editExpense() instead of creating a new one via addExpense().
   editingExpense?: Expense | null;
+  // Where the panel grows from: the Add expense button, or the spot the
+  // user tapped on an expense row (edit).
+  origin?: GenieOrigin;
 }
+
+// Fallback origin (bottom-centre) for any caller that doesn't pass one.
+const DEFAULT_ORIGIN: GenieOrigin = {bottom: 120, right: 160, size: 48};
 
 const SPLIT_TYPES: {key: SplitType; label: string}[] = [
   {key: 'equal', label: 'Equal'},
@@ -98,9 +105,17 @@ function buildChangeSummary(
     paidBy: string;
     splitType: SplitType;
     participantUids: string[];
+    items: ExpenseItem[];
   },
 ): string {
   const parts: string[] = [];
+  if (itemsChanged(visibleItems(before), after.items)) {
+    parts.push(
+      `items: ${visibleItems(before)?.length || 1} -> ${
+        after.items.length || 1
+      }`,
+    );
+  }
   if (before.description !== after.description) {
     parts.push(
       `description: "${before.description}" -> "${after.description}"`,
@@ -172,11 +187,17 @@ const AddExpenseModal: React.FC<Props> = ({
   currentUid,
   groupCurrency,
   editingExpense,
+  origin,
 }) => {
   const isEditMode = !!editingExpense;
   const moneySymbol = currencySymbol(groupCurrency);
-  const [description, setDescription] = useState('');
-  const [amount, setAmount] = useState('');
+  // Item rows - one row is a normal expense (name + amount, saved exactly
+  // as before this feature); tapping + adds more rows like a to-do list,
+  // and the expense total becomes the sum of the rows. See expenseItems.ts.
+  const [rows, setRows] = useState<ItemRow[]>(() => [newItemRow()]);
+  // The row whose name field should grab focus - set when + adds a row.
+  const [focusKey, setFocusKey] = useState<string | null>(null);
+  const isMultiItem = rows.length > 1;
   const [category, setCategory] = useState<ExpenseCategory>('other');
   const [splitType, setSplitType] = useState<SplitType>('equal');
   const [paidBy, setPaidBy] = useState(currentUid);
@@ -191,8 +212,31 @@ const AddExpenseModal: React.FC<Props> = ({
   // can replay onto this modal's backdrop/close button the instant
   // it opens.
   const canClose = useModalOpenGuard(visible);
+  // New expense: focus the first field once the panel has finished
+  // growing open (focusing mid-animation makes the keyboard jump in while
+  // the card is still morphing). Editing doesn't auto-open the keyboard.
+  const firstFieldRef = useRef<TextInput>(null);
+  useEffect(() => {
+    if (!visible || isEditMode) {
+      return;
+    }
+    const t = setTimeout(() => firstFieldRef.current?.focus(), 560);
+    return () => clearTimeout(t);
+  }, [visible, isEditMode]);
 
-  const amountValue = parseFloat(amount) || 0;
+  const amountValue = rowsTotal(rows);
+
+  const updateRow = (key: string, patch: Partial<ItemRow>) => {
+    setRows(prev => prev.map(r => (r.key === key ? {...r, ...patch} : r)));
+  };
+  const addRow = () => {
+    const row = newItemRow();
+    setRows(prev => [...prev, row]);
+    setFocusKey(row.key);
+  };
+  const removeRow = (key: string) => {
+    setRows(prev => (prev.length > 1 ? prev.filter(r => r.key !== key) : prev));
+  };
 
   const toggleParticipant = (uid: string) => {
     setParticipantUids(prev =>
@@ -360,8 +404,8 @@ const AddExpenseModal: React.FC<Props> = ({
   ]);
 
   const reset = () => {
-    setDescription('');
-    setAmount('');
+    setRows([newItemRow()]);
+    setFocusKey(null);
     setCategory('other');
     setSplitType('equal');
     setPaidBy(currentUid);
@@ -378,8 +422,8 @@ const AddExpenseModal: React.FC<Props> = ({
       return;
     }
     if (editingExpense) {
-      setDescription(editingExpense.description);
-      setAmount(String(editingExpense.amount));
+      setRows(rowsFromExpense(editingExpense));
+      setFocusKey(null);
       setCategory(editingExpense.category);
       setSplitType(editingExpense.splitType);
       setPaidBy(editingExpense.paidBy);
@@ -392,11 +436,12 @@ const AddExpenseModal: React.FC<Props> = ({
   }, [visible, editingExpense]);
 
   const handleSubmit = async () => {
-    if (!description.trim()) {
+    const fields = rowsToExpenseFields(rows);
+    if (!fields.ok) {
       Toast.show({
         type: 'info',
-        text1: 'Add a description',
-        text2: 'What was this expense for?',
+        text1: isMultiItem ? 'Check your items' : 'Add a description',
+        text2: fields.error,
       });
       throw new Error('missing-description');
     }
@@ -412,8 +457,9 @@ const AddExpenseModal: React.FC<Props> = ({
     try {
       if (isEditMode && editingExpense?.id) {
         const nextValues = {
-          description: description.trim(),
-          amount: amountValue,
+          description: fields.description,
+          amount: fields.amount,
+          items: fields.items,
           category,
           paidBy,
           splitType,
@@ -430,8 +476,9 @@ const AddExpenseModal: React.FC<Props> = ({
       } else {
         await addExpense({
           groupId,
-          description: description.trim(),
-          amount: amountValue,
+          description: fields.description,
+          amount: fields.amount,
+          items: fields.items,
           currency: groupCurrency || 'INR',
           category,
           paidBy,
@@ -458,78 +505,114 @@ const AddExpenseModal: React.FC<Props> = ({
     }
   };
 
-  return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      transparent
-      onRequestClose={onClose}>
-      <GestureHandlerRootView style={styles.gestureRoot}>
-        <KeyboardAvoidingView
-          style={styles.backdrop}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <TouchableWithoutFeedback
-            onPress={() => {
-              // Swallows the phantom release Android can replay onto this
-              // backdrop the instant the modal opens - see
-              // useModalOpenGuard.ts. A real tap closes it exactly as
-              // before.
-              if (canClose()) {
-                onClose();
-              }
-            }}>
-            <View style={StyleSheet.absoluteFill} />
-          </TouchableWithoutFeedback>
-          <TouchableOpacity
-            style={styles.closeBtn}
-            disabled={submitting}
-            onPress={() => {
-              if (canClose()) {
-                onClose();
-              }
-            }}
-            hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
-            <X size={20} color={theme.color.ink} />
-          </TouchableOpacity>
-          <GlassCard opaque style={styles.sheet}>
-            <KeyboardAwareScrollView
-              showsVerticalScrollIndicator={false}
-              enableOnAndroid
-              extraScrollHeight={24}
-              keyboardShouldPersistTaps="handled">
-              <Text style={styles.title}>
-                {isEditMode ? 'Edit expense' : 'New expense'}
-              </Text>
+  const requestClose = () => {
+    if (!submitting && canClose()) {
+      onClose();
+    }
+  };
 
+  const participantsLabel =
+    members.length > 1
+      ? ` · ${participantUids.length} ${
+          participantUids.length === 1 ? 'person' : 'people'
+        }`
+      : '';
+
+  return (
+    <GeniePanel
+      open={visible}
+      origin={origin || DEFAULT_ORIGIN}
+      onRequestClose={requestClose}>
+      <PanelHeader
+        icon={<ReceiptText size={16} color={theme.color.teal} />}
+        title={isEditMode ? 'Edit expense' : 'New expense'}
+        subtitle={
+          amountValue > 0
+            ? `Total ${formatMoney(
+                amountValue,
+                groupCurrency,
+              )}${participantsLabel}`
+            : 'Add what it was for and how much'
+        }
+        onClose={requestClose}
+      />
+      <KeyboardSafeScrollView
+        style={styles.flex}
+        contentContainerStyle={styles.body}
+        showsVerticalScrollIndicator={false}>
+        {isMultiItem && <Text style={styles.sectionLabel}>Items</Text>}
+        {rows.map((row, index) => {
+          const isLast = index === rows.length - 1;
+          return (
+            <View key={row.key} style={styles.itemRow}>
               <TextInput
-                style={styles.input}
-                placeholder="What was it for?"
+                style={[styles.input, styles.itemName]}
+                placeholder={
+                  isMultiItem ? `Item ${index + 1}` : 'What was it for?'
+                }
                 placeholderTextColor={theme.color.inkFaint}
-                value={description}
-                onChangeText={setDescription}
+                value={row.name}
+                ref={index === 0 ? firstFieldRef : undefined}
+                autoFocus={row.key === focusKey}
+                onChangeText={t => updateRow(row.key, {name: t})}
               />
               <TextInput
-                style={styles.input}
-                placeholder={`Amount (${moneySymbol})`}
+                style={[styles.input, styles.itemPrice]}
+                placeholder={
+                  isMultiItem ? moneySymbol : `Amount (${moneySymbol})`
+                }
                 placeholderTextColor={theme.color.inkFaint}
                 keyboardType="decimal-pad"
-                value={amount}
-                onChangeText={t => setAmount(t.replace(/[^0-9.]/g, ''))}
+                value={row.price}
+                onChangeText={t =>
+                  updateRow(row.key, {price: t.replace(/[^0-9.]/g, '')})
+                }
               />
+              {isMultiItem && (
+                <TouchableOpacity
+                  style={styles.itemIconBtn}
+                  onPress={() => removeRow(row.key)}
+                  accessibilityLabel={`Remove item ${index + 1}`}
+                  hitSlop={{top: 8, bottom: 8, left: 6, right: 6}}>
+                  <X size={16} color={theme.color.inkSoft} />
+                </TouchableOpacity>
+              )}
+              {isLast && (
+                <TouchableOpacity
+                  style={[styles.itemIconBtn, styles.itemAddBtn]}
+                  onPress={addRow}
+                  accessibilityLabel="Add another item"
+                  hitSlop={{top: 8, bottom: 8, left: 6, right: 6}}>
+                  <Plus size={18} color={theme.color.onAccent} />
+                </TouchableOpacity>
+              )}
+            </View>
+          );
+        })}
+        {isMultiItem && (
+          <View style={styles.itemsTotalRow}>
+            <Text style={styles.itemsTotalLabel}>
+              Total · {rows.length} items
+            </Text>
+            <Text style={styles.itemsTotalValue}>
+              {formatMoney(amountValue, groupCurrency)}
+            </Text>
+          </View>
+        )}
 
-              <Text style={styles.sectionLabel}>Category</Text>
-              <View style={styles.rowWrap}>
-                {EXPENSE_CATEGORIES.map(c => (
-                  <Chip
-                    key={c.key}
-                    label={`${c.icon} ${c.label}`}
-                    active={category === c.key}
-                    onPress={() => setCategory(c.key)}
-                  />
-                ))}
-              </View>
+        <Text style={styles.sectionLabel}>Category</Text>
+        <View style={styles.rowWrap}>
+          {EXPENSE_CATEGORIES.map(c => (
+            <Chip
+              key={c.key}
+              label={`${c.icon} ${c.label}`}
+              active={category === c.key}
+              onPress={() => setCategory(c.key)}
+            />
+          ))}
+        </View>
 
-              {/* With only one member (a personal list, or a real group
+        {/* With only one member (a personal list, or a real group
               everyone else has left), paidBy/participantUids already
               default to that single uid and every split type produces
               the same result - full amount, one person - so these
@@ -538,208 +621,204 @@ const AddExpenseModal: React.FC<Props> = ({
               you can't meaningfully change reads as broken UI, and users
               specifically asked for personal lists to not look like a
               group-splitting form at all. */}
-              {members.length > 1 && (
-                <>
-                  <Text style={styles.sectionLabel}>Paid by</Text>
-                  <View style={styles.rowWrap}>
-                    {members.map(m => (
-                      <Chip
-                        key={m.uid}
-                        label={m.uid === currentUid ? 'You' : m.displayName}
-                        active={paidBy === m.uid}
-                        onPress={() => setPaidBy(m.uid)}
-                      />
-                    ))}
-                  </View>
-
-                  <Text style={styles.sectionLabel}>Split</Text>
-                  <View style={styles.rowWrap}>
-                    {SPLIT_TYPES.map(s => (
-                      <Chip
-                        key={s.key}
-                        label={s.label}
-                        active={splitType === s.key}
-                        onPress={() => setSplitType(s.key)}
-                      />
-                    ))}
-                  </View>
-
-                  <Text style={styles.sectionLabel}>Between</Text>
-
-                  <View style={styles.rowWrap}>
-                    {members.map(m => (
-                      <Chip
-                        key={m.uid}
-                        label={m.uid === currentUid ? 'You' : m.displayName}
-                        active={participantUids.includes(m.uid)}
-                        onPress={() => toggleParticipant(m.uid)}
-                      />
-                    ))}
-                  </View>
-                </>
-              )}
-
-              {splitType !== 'equal' && (
-                <View style={styles.perMemberBlock}>
-                  <Text style={styles.hintText}>
-                    {splitType === 'exact' &&
-                      (usesOwedToPayerFraming
-                        ? `Enter how much of this expense was for each person. ${
-                            paidBy === currentUid ? 'Your' : `${payerName}'s`
-                          } own part fills in automatically below.`
-                        : 'Enter how much of this expense was for each person.')}
-                    {splitType === 'percentage' &&
-                      (usesOwedToPayerFraming
-                        ? `Enter what % of this expense was for each person. ${
-                            paidBy === currentUid ? 'Your' : `${payerName}'s`
-                          } own part fills in automatically below.`
-                        : 'Enter what % of this expense was for each person.')}
-                    {splitType === 'shares' &&
-                      `Give each person a weight — bigger number, bigger share of the cost. The ${moneySymbol} amount that comes out of it is shown below.`}
-                  </Text>
-                  {nonPayerUids.map(uid => {
-                    const member = members.find(m => m.uid === uid);
-                    const converted =
-                      splitType !== 'exact' && splitPreview
-                        ? splitPreview[uid]
-                        : undefined;
-                    return (
-                      <View key={uid} style={styles.perMemberRow}>
-                        <Text style={styles.perMemberName}>
-                          {uid === currentUid ? 'You' : member?.displayName}
-                        </Text>
-                        <View style={styles.perMemberRight}>
-                          <TextInput
-                            style={styles.perMemberInput}
-                            keyboardType="decimal-pad"
-                            placeholder={
-                              splitType === 'percentage'
-                                ? '%'
-                                : splitType === 'shares'
-                                ? 'shares'
-                                : moneySymbol
-                            }
-                            placeholderTextColor={theme.color.inkFaint}
-                            value={perMemberInput[uid] || ''}
-                            onChangeText={t =>
-                              setPerMemberInput(prev => ({
-                                ...prev,
-                                [uid]: clampPerMemberValue(
-                                  uid,
-                                  t,
-                                  splitType,
-                                  splitCap,
-                                  nonPayerUids,
-                                  perMemberInput,
-                                ),
-                              }))
-                            }
-                          />
-                          {converted != null && (
-                            <Text style={styles.convertedText}>
-                              = {formatMoney(converted, groupCurrency)}
-                            </Text>
-                          )}
-                        </View>
-                      </View>
-                    );
-                  })}
-                  {usesOwedToPayerFraming && (
-                    <View style={styles.perMemberRow}>
-                      <Text style={styles.perMemberName}>
-                        {paidBy === currentUid ? 'You' : payerName} (paid) — own
-                        part
-                      </Text>
-                      <View style={styles.perMemberRight}>
-                        <Text
-                          style={[
-                            styles.convertedText,
-                            derivedPayerValue < -0.004 && {
-                              color: theme.color.rose,
-                            },
-                          ]}>
-                          {splitType === 'percentage'
-                            ? `${derivedPayerValue}%`
-                            : formatMoney(derivedPayerValue, groupCurrency)}
-                        </Text>
-                      </View>
-                    </View>
-                  )}
-                  {amountValue > 0 && splitType !== 'shares' && (
-                    <Text
-                      style={[
-                        styles.statusText,
-                        liveCheck.valid
-                          ? styles.statusOk
-                          : styles.statusPending,
-                      ]}>
-                      {liveCheck.valid
-                        ? '✓ Fully assigned'
-                        : (liveCheck as any).error}
-                    </Text>
-                  )}
-                </View>
-              )}
-
-              {owesLines.length > 0 && (
-                <View style={styles.owesBlock}>
-                  {owesLines.map((line, i) => (
-                    <Text key={i} style={styles.owesText}>
-                      → {line}
-                    </Text>
-                  ))}
-                </View>
-              )}
-              {splitPreview && owesLines.length === 0 && (
-                <View style={styles.owesBlock}>
-                  <Text style={styles.owesTextNeutral}>
-                    → No one owes anyone for this — it'll be recorded as{' '}
-                    {paidBy === currentUid ? 'your own' : 'their own'} personal
-                    spending.
-                  </Text>
-                </View>
-              )}
-
-              <View style={styles.actions}>
-                <SwipeToConfirm
-                  style={styles.swipeConfirm}
-                  label={
-                    isEditMode
-                      ? 'Slide to save changes'
-                      : 'Slide to add expense'
-                  }
-                  pendingLabel={isEditMode ? 'Saving…' : 'Adding…'}
-                  successLabel={isEditMode ? 'Saved!' : 'Added!'}
-                  disabled={submitting}
-                  onConfirm={handleSubmit}
+        {members.length > 1 && (
+          <>
+            <Text style={styles.sectionLabel}>Paid by</Text>
+            <View style={styles.rowWrap}>
+              {members.map(m => (
+                <Chip
+                  key={m.uid}
+                  label={m.uid === currentUid ? 'You' : m.displayName}
+                  active={paidBy === m.uid}
+                  onPress={() => setPaidBy(m.uid)}
                 />
+              ))}
+            </View>
+
+            <Text style={styles.sectionLabel}>Split</Text>
+            <View style={styles.rowWrap}>
+              {SPLIT_TYPES.map(s => (
+                <Chip
+                  key={s.key}
+                  label={s.label}
+                  active={splitType === s.key}
+                  onPress={() => setSplitType(s.key)}
+                />
+              ))}
+            </View>
+
+            <Text style={styles.sectionLabel}>Between</Text>
+
+            <View style={styles.rowWrap}>
+              {members.map(m => (
+                <Chip
+                  key={m.uid}
+                  label={m.uid === currentUid ? 'You' : m.displayName}
+                  active={participantUids.includes(m.uid)}
+                  onPress={() => toggleParticipant(m.uid)}
+                />
+              ))}
+            </View>
+          </>
+        )}
+
+        {splitType !== 'equal' && (
+          <View style={styles.perMemberBlock}>
+            <Text style={styles.hintText}>
+              {splitType === 'exact' &&
+                (usesOwedToPayerFraming
+                  ? `Enter how much of this expense was for each person. ${
+                      paidBy === currentUid ? 'Your' : `${payerName}'s`
+                    } own part fills in automatically below.`
+                  : 'Enter how much of this expense was for each person.')}
+              {splitType === 'percentage' &&
+                (usesOwedToPayerFraming
+                  ? `Enter what % of this expense was for each person. ${
+                      paidBy === currentUid ? 'Your' : `${payerName}'s`
+                    } own part fills in automatically below.`
+                  : 'Enter what % of this expense was for each person.')}
+              {splitType === 'shares' &&
+                `Give each person a weight — bigger number, bigger share of the cost. The ${moneySymbol} amount that comes out of it is shown below.`}
+            </Text>
+            {nonPayerUids.map(uid => {
+              const member = members.find(m => m.uid === uid);
+              const converted =
+                splitType !== 'exact' && splitPreview
+                  ? splitPreview[uid]
+                  : undefined;
+              return (
+                <View key={uid} style={styles.perMemberRow}>
+                  <Text style={styles.perMemberName}>
+                    {uid === currentUid ? 'You' : member?.displayName}
+                  </Text>
+                  <View style={styles.perMemberRight}>
+                    <TextInput
+                      style={styles.perMemberInput}
+                      keyboardType="decimal-pad"
+                      placeholder={
+                        splitType === 'percentage'
+                          ? '%'
+                          : splitType === 'shares'
+                          ? 'shares'
+                          : moneySymbol
+                      }
+                      placeholderTextColor={theme.color.inkFaint}
+                      value={perMemberInput[uid] || ''}
+                      onChangeText={t =>
+                        setPerMemberInput(prev => ({
+                          ...prev,
+                          [uid]: clampPerMemberValue(
+                            uid,
+                            t,
+                            splitType,
+                            splitCap,
+                            nonPayerUids,
+                            perMemberInput,
+                          ),
+                        }))
+                      }
+                    />
+                    {converted != null && (
+                      <Text style={styles.convertedText}>
+                        = {formatMoney(converted, groupCurrency)}
+                      </Text>
+                    )}
+                  </View>
+                </View>
+              );
+            })}
+            {usesOwedToPayerFraming && (
+              <View style={styles.perMemberRow}>
+                <Text style={styles.perMemberName}>
+                  {paidBy === currentUid ? 'You' : payerName} (paid) — own part
+                </Text>
+                <View style={styles.perMemberRight}>
+                  <Text
+                    style={[
+                      styles.convertedText,
+                      derivedPayerValue < -0.004 && {
+                        color: theme.color.rose,
+                      },
+                    ]}>
+                    {splitType === 'percentage'
+                      ? `${derivedPayerValue}%`
+                      : formatMoney(derivedPayerValue, groupCurrency)}
+                  </Text>
+                </View>
               </View>
-            </KeyboardAwareScrollView>
-          </GlassCard>
-        </KeyboardAvoidingView>
-      </GestureHandlerRootView>
-    </Modal>
+            )}
+            {amountValue > 0 && splitType !== 'shares' && (
+              <Text
+                style={[
+                  styles.statusText,
+                  liveCheck.valid ? styles.statusOk : styles.statusPending,
+                ]}>
+                {liveCheck.valid
+                  ? '✓ Fully assigned'
+                  : (liveCheck as any).error}
+              </Text>
+            )}
+          </View>
+        )}
+
+        {owesLines.length > 0 && (
+          <View style={styles.owesBlock}>
+            {owesLines.map((line, i) => (
+              <Text key={i} style={styles.owesText}>
+                → {line}
+              </Text>
+            ))}
+          </View>
+        )}
+        {splitPreview && owesLines.length === 0 && (
+          <View style={styles.owesBlock}>
+            <Text style={styles.owesTextNeutral}>
+              → No one owes anyone for this — it'll be recorded as{' '}
+              {paidBy === currentUid ? 'your own' : 'their own'} personal
+              spending.
+            </Text>
+          </View>
+        )}
+      </KeyboardSafeScrollView>
+
+      {/* Sticky footer: the confirm control is always reachable, and the
+          one thing blocking it (if any) is stated right above it. */}
+      <View style={styles.footer}>
+        {amountValue > 0 && !liveCheck.valid && !!liveCheck.error && (
+          <Text style={styles.footerError} numberOfLines={2}>
+            {liveCheck.error}
+          </Text>
+        )}
+        <SwipeToConfirm
+          style={styles.swipeConfirm}
+          label={isEditMode ? 'Slide to save changes' : 'Slide to add expense'}
+          pendingLabel={isEditMode ? 'Saving…' : 'Adding…'}
+          successLabel={isEditMode ? 'Saved!' : 'Added!'}
+          disabled={submitting}
+          onConfirm={handleSubmit}
+        />
+      </View>
+    </GeniePanel>
   );
 };
 
 const styles = StyleSheet.create({
-  gestureRoot: {flex: 1},
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(6,5,12,0.72)',
-    justifyContent: 'flex-end',
+  flex: {flex: 1},
+  body: {padding: 16, paddingBottom: 24},
+  footer: {
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 14,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: theme.color.border,
+    backgroundColor: theme.color.modalSurface,
   },
-  sheet: {
-    maxHeight: '88%',
-    borderBottomLeftRadius: 0,
-    borderBottomRightRadius: 0,
-  },
-  title: {
-    color: theme.color.ink,
-    fontFamily: DisplayFont.bold,
-    fontSize: moderateScale(19),
-    fontWeight: '700',
-    marginBottom: 16,
+  footerError: {
+    color: theme.color.rose,
+    fontFamily: BodyFont.regular,
+    fontSize: moderateScale(12),
+    textAlign: 'center',
+    marginBottom: 8,
   },
   input: {
     backgroundColor: 'rgba(255,255,255,0.06)',
@@ -764,6 +843,44 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   rowWrap: {flexDirection: 'row', flexWrap: 'wrap'},
+  itemRow: {flexDirection: 'row', alignItems: 'flex-start', gap: 8},
+  itemName: {flex: 1},
+  itemPrice: {width: moderateScale(104)},
+  itemIconBtn: {
+    width: 36,
+    height: 36,
+    marginTop: 6,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: theme.color.border,
+  },
+  itemAddBtn: {
+    backgroundColor: theme.color.blue,
+    borderColor: theme.color.blue,
+  },
+  itemsTotalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+    marginTop: -2,
+    marginBottom: 12,
+  },
+  itemsTotalLabel: {
+    color: theme.color.inkSoft,
+    fontFamily: BodyFont.semibold,
+    fontSize: moderateScale(13),
+    fontWeight: '600',
+  },
+  itemsTotalValue: {
+    color: theme.color.ink,
+    fontFamily: DisplayFont.bold,
+    fontSize: moderateScale(16),
+    fontWeight: '700',
+  },
   hintText: {
     color: theme.color.inkFaint,
     fontFamily: BodyFont.regular,
@@ -829,25 +946,11 @@ const styles = StyleSheet.create({
     fontSize: moderateScale(13),
     fontWeight: '600',
   },
-  actions: {marginTop: 20, marginBottom: 8},
   // Floating above the sheet, outside the card, centered - replaces the
   // old in-row Cancel button now that the slider owns the full width.
-  closeBtn: {
-    alignSelf: 'center',
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: theme.color.surfaceStrong,
-    borderWidth: 1,
-    borderColor: theme.color.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
-  },
-  swipeConfirm: {
-    width: '90%',
-    alignSelf: 'center',
-  },
+  // Full width of the footer (which already has the body's 16px side
+  // padding), so its edges line up with the fields above.
+  swipeConfirm: {width: '100%'},
   submitBtn: {
     flex: 2,
     paddingVertical: 13,

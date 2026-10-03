@@ -1,38 +1,59 @@
 // src/hooks/useGroups.ts
-// Group list + create/join, shared by GroupCheck.js (the initial gate +
-// deep-link target) and the Groups tab so that logic isn't duplicated.
+// Group list + create/join, shared by GroupCheck.tsx (the initial gate +
+// deep-link target), the Groups tab, SwitchGroupSheet and
+// CreateJoinGroup so that logic isn't duplicated.
+//
+// The actual list now lives in useGroupsStore (a single shared Zustand
+// cache) instead of a local useState here - every call site used to run
+// its own independent getUserGroups() Firestore read on mount, so simply
+// navigating between screens re-read the same group list several times
+// over (see useGroupsStore.ts's own comment for the full reasoning).
+// `refresh()` still forces a real Firestore read (used right after
+// create/join, since that's the one moment the list has genuinely
+// changed); `ensureLoaded()` is the same fetch but non-forced - a no-op
+// whenever a cached copy for this uid already exists - safe to call on
+// every mount/focus. `removeGroupLocally` updates the cache after a
+// successful "leave group" with zero extra reads.
 
-import {useCallback, useEffect, useState} from 'react';
-import auth from '@react-native-firebase/auth';
+import {useCallback, useEffect} from 'react';
 import {
   createGroup as createGroupApi,
   getGroupByJoinCode,
-  getUserGroups,
   joinGroup as joinGroupApi,
-} from '../services/ledger/firestoreLedger';
-import {Group, GroupType} from '../services/ledger/types';
+} from '../data/ledger';
+import {GroupType} from '../services/ledger/types';
+import {useGroupsStore} from '../store/useGroupsStore';
+import {currentUser} from '../data/firebase';
 
 export function useGroups() {
-  const [groups, setGroups] = useState<Group[]>([]);
-  const [loading, setLoading] = useState(true);
-  const user = auth().currentUser;
+  const user = currentUser();
+  const groups = useGroupsStore(state => state.groups);
+  const loading = useGroupsStore(state => state.loading);
+  const fetchGroups = useGroupsStore(state => state.fetchGroups);
+  const removeGroup = useGroupsStore(state => state.removeGroup);
+  const renameGroupInStore = useGroupsStore(state => state.renameGroup);
 
   const refresh = useCallback(async () => {
     if (!user) {
       return;
     }
-    setLoading(true);
-    try {
-      const list = await getUserGroups(user.uid);
-      setGroups(list);
-    } finally {
-      setLoading(false);
+    await fetchGroups(user.uid, {force: true});
+  }, [user, fetchGroups]);
+
+  // Non-forced: reuses the cache (zero Firestore reads) whenever one
+  // already exists for this uid. Safe to call from every screen's mount
+  // or focus effect instead of each one forcing its own refetch.
+  const ensureLoaded = useCallback(async () => {
+    if (!user) {
+      return;
     }
-  }, [user]);
+    await fetchGroups(user.uid);
+  }, [user, fetchGroups]);
 
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    ensureLoaded();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.uid]);
 
   const createGroup = useCallback(
     async (name: string, currency?: string, groupType?: GroupType) => {
@@ -78,6 +99,9 @@ export function useGroups() {
     groups,
     loading,
     refresh,
+    ensureLoaded,
+    removeGroupLocally: removeGroup,
+    renameGroupLocally: renameGroupInStore,
     createGroup,
     joinGroupByCode,
     joinGroupById,

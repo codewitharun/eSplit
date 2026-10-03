@@ -5,7 +5,8 @@
 // value (no extra dependency needed beyond what's already installed).
 
 import React, {useEffect, useRef, useState} from 'react';
-import {Text, TextStyle} from 'react-native';
+import {TextStyle} from 'react-native';
+import {Text} from '../ui/AppText';
 
 interface Props {
   value: number;

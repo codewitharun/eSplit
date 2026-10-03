@@ -19,30 +19,30 @@
 // group's exact name - matching the stakes of an action that erases the
 // group's entire expense history for every member, not just the person
 // tapping the button.
+//
+// Rename (the pencil next to the group name) is the opposite end of that
+// scale: admin-only too (a name change is visible to every member, same
+// reasoning as the lock toggle), but a single-field, no-confirmation
+// write - fixing a typo shouldn't feel like a big decision the way
+// deleting the group does.
 
-import auth from '@react-native-firebase/auth';
 import {useFocusEffect, useNavigation} from '@react-navigation/native';
 import {useBottomTabBarHeight} from '@react-navigation/bottom-tabs';
+import {Pencil, Share2, UserRound, UsersRound} from 'lucide-react-native';
 import React, {useCallback, useState} from 'react';
-import {
-  BackHandler,
-  Modal,
-  ScrollView,
-  StyleSheet,
-  Switch,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import {BackHandler, Modal, ScrollView, StyleSheet, Switch, TouchableOpacity, View} from 'react-native';
+import {Text, TextInput} from '../../component/ui/AppText';
 import QRCode from 'react-native-qrcode-svg';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import GlassCard from '../../component/glass/GlassCard';
+import MemberAvatar from '../../component/MemberAvatar';
 import GroupSwitcherPill from '../../component/GroupSwitcherPill';
+import HomeIconChip from '../../component/HomeIconChip';
 import {useGroupLedger} from '../../hooks/useGroupLedger';
+import {useGroups} from '../../hooks/useGroups';
 import {useJoinRequests} from '../../hooks/useJoinRequests';
 import {useModalOpenGuard} from '../../hooks/useModalOpenGuard';
-import {Routes} from '../../navigator/constants';
+import {Routes, FLOATING_ACTIONS_CLEARANCE} from '../../navigator/constants';
 import AppAlert from '../../services/appAlert';
 import {formatMoney} from '../../services/ledger/currency';
 import {
@@ -52,14 +52,25 @@ import {
   deleteGroup,
   leaveGroup,
   removeGuestMember,
+  renameGroup,
   setGroupLocked,
-} from '../../services/ledger/firestoreLedger';
+} from '../../data/ledger';
 import {EPSILON} from '../../services/ledger/types';
 import Toast from '../../services/toast';
+import InviteSheet from '../../component/InviteSheet';
 import {useExpenseState} from '../../store/useExpenseStore';
 import {haptics} from '../../utils/haptics';
+import {useCollapseFabsOnScroll} from '../../hooks/useCollapseFabsOnScroll';
+import KeyboardSafeOverlay from '../../component/KeyboardSafeOverlay';
+import {groupInviteUrl} from '../../config/urls';
 import theme from '../../utils/theme';
-import {BodyFont, DisplayFont, moderateScale} from '../../utils/fonts';
+import {
+  BodyFont,
+  DisplayFont,
+  MonoFont,
+  moderateScale,
+} from '../../utils/fonts';
+import {currentUser} from '../../data/firebase';
 
 const GroupSettingsScreen: React.FC = () => {
   const navigation = useNavigation<any>();
@@ -69,10 +80,13 @@ const GroupSettingsScreen: React.FC = () => {
   // so scrollable content here can pad exactly enough to clear it at
   // rest while still scrolling underneath it past that point.
   const tabBarHeight = useBottomTabBarHeight();
-  const user = auth().currentUser;
+  // Collapses the floating create button to icon-only while scrolling down.
+  const onFabScroll = useCollapseFabsOnScroll();
+  const user = currentUser();
   const groupKey = useExpenseState(state => state.groupKey);
   const setGroupKey = useExpenseState(state => state.setGroupKey);
   const ledger = useGroupLedger(groupKey);
+  const {renameGroupLocally} = useGroups();
   const [togglingLock, setTogglingLock] = useState(false);
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
@@ -80,11 +94,18 @@ const GroupSettingsScreen: React.FC = () => {
   const {requests: joinRequests} = useJoinRequests(groupKey);
   const [respondingUid, setRespondingUid] = useState<string | null>(null);
   const [addGuestModalVisible, setAddGuestModalVisible] = useState(false);
+  // Rename: deliberately much lighter than the delete modal below - no
+  // typed confirmation, since fixing a mistaken name is meant to be a
+  // quick, easily-reversible correction, not a high-stakes action.
+  const [renameModalVisible, setRenameModalVisible] = useState(false);
+  const [renameInput, setRenameInput] = useState('');
+  const [renamingGroup, setRenamingGroup] = useState(false);
   // See useModalOpenGuard.ts - both confirm modals below open
   // synchronously from a list-row press, the same shape of bug that
   // hit AddExpenseModal without this guard on their Cancel buttons.
   const canCloseDeleteModal = useModalOpenGuard(deleteModalVisible);
   const canCloseAddGuestModal = useModalOpenGuard(addGuestModalVisible);
+  const canCloseRenameModal = useModalOpenGuard(renameModalVisible);
   const [guestNameInput, setGuestNameInput] = useState('');
   const [addingGuest, setAddingGuest] = useState(false);
   const [removingGuestUid, setRemovingGuestUid] = useState<string | null>(null);
@@ -110,6 +131,8 @@ const GroupSettingsScreen: React.FC = () => {
   const hasOpenBalance = Math.abs(myBalance) > EPSILON;
   const myRole = ledger.members.find(m => m.uid === user?.uid)?.role;
   const isGroupAdmin = myRole === 'admin';
+  const isPersonalList = ledger.group?.type === 'personal';
+  const [inviteOpen, setInviteOpen] = useState(false);
   // Delete group needs EVERYONE settled, not just the admin - unlike
   // leaving, where only the leaver's own balance matters, deleting wipes
   // every member's history at once.
@@ -139,6 +162,48 @@ const GroupSettingsScreen: React.FC = () => {
       });
     } finally {
       setTogglingLock(false);
+    }
+  };
+
+  const openRenameModal = () => {
+    setRenameInput(ledger.group?.name || '');
+    setRenameModalVisible(true);
+  };
+
+  const handleRenameGroup = async () => {
+    if (!groupKey) {
+      return;
+    }
+    const trimmed = renameInput.trim();
+    if (!trimmed) {
+      Toast.show({
+        type: 'info',
+        text1: 'Enter a name',
+        text2: 'The group needs a name.',
+      });
+      return;
+    }
+    // No-op guard: closing without actually changing anything shouldn't
+    // fire a write or a success toast.
+    if (trimmed === (ledger.group?.name || '').trim()) {
+      setRenameModalVisible(false);
+      return;
+    }
+    setRenamingGroup(true);
+    try {
+      await renameGroup(groupKey, trimmed);
+      renameGroupLocally(groupKey, trimmed);
+      setRenameModalVisible(false);
+      haptics.success();
+      Toast.show({type: 'success', text1: 'Group renamed'});
+    } catch (error: any) {
+      Toast.show({
+        type: 'error',
+        text1: 'Could not rename group',
+        text2: error?.message,
+      });
+    } finally {
+      setRenamingGroup(false);
     }
   };
 
@@ -391,39 +456,139 @@ const GroupSettingsScreen: React.FC = () => {
   return (
     <View style={styles.flex}>
       <ScrollView
+        onScroll={onFabScroll}
+        scrollEventThrottle={16}
         contentContainerStyle={[
           styles.content,
           // The tab bar floats over content now instead of reserving
           // its own row (see BottomTabNavigator.tsx) - pad for its real
           // height so the Danger Zone card isn't hidden underneath it at
           // rest.
-          {paddingTop: insets.top + 24, paddingBottom: tabBarHeight + 24},
+          {
+            paddingTop: insets.top + 24,
+            paddingBottom: tabBarHeight + FLOATING_ACTIONS_CLEARANCE,
+          },
         ]}>
-        <Text style={styles.heading}>Settings</Text>
-        <GroupSwitcherPill />
+        <View style={styles.headingRow}>
+          <Text style={[styles.heading, styles.headingNoMargin]}>Settings</Text>
+          <View style={styles.headerRightGroup}>
+            <HomeIconChip />
+            <GroupSwitcherPill iconOnly />
+          </View>
+        </View>
 
         <GlassCard style={styles.groupCard}>
-          <Text style={styles.groupName}>
-            {ledger.group?.name || 'Loading…'}
-          </Text>
-          <View style={styles.groupMetaRow}>
-            <Text style={styles.groupMetaText}>
-              {ledger.group?.currency || 'INR'} · {ledger.members.length} member
-              {ledger.members.length === 1 ? '' : 's'}
-            </Text>
-          </View>
-          {ledger.group?.type !== 'personal' &&
-            (!ledger.group?.isLocked ? (
-              !!ledger.group?.joinCode && (
-                <Text style={styles.joinCodeText} selectable>
-                  Join code: {ledger.group.joinCode}
-                </Text>
-              )
-            ) : (
-              <Text style={styles.lockedText}>
-                Locked - the join code no longer works.
+          <View style={styles.groupNameRow}>
+            <MemberAvatar
+              id={ledger.group?.id || groupKey || 'group'}
+              name={ledger.group?.name || '?'}
+              size={46}
+            />
+            <View style={styles.groupNameText}>
+              <Text style={styles.groupName} numberOfLines={1}>
+                {ledger.group?.name || 'Loading…'}
               </Text>
-            ))}
+              {!!ledger.group?.createdAt && (
+                <Text style={styles.groupMetaText} numberOfLines={1}>
+                  Since{' '}
+                  {new Date(ledger.group.createdAt).toLocaleDateString(
+                    'en-IN',
+                    {month: 'short', year: 'numeric'},
+                  )}
+                  {' · created by '}
+                  {ledger.group.createdBy === user?.uid
+                    ? 'you'
+                    : ledger.memberName(ledger.group.createdBy)}
+                </Text>
+              )}
+            </View>
+            {isGroupAdmin && (
+              <TouchableOpacity
+                style={styles.renameBtn}
+                accessibilityLabel="Rename group"
+                hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}
+                onPress={openRenameModal}>
+                <Pencil size={15} color={theme.color.inkSoft} />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          <View style={styles.chipRow}>
+            <View style={styles.chip}>
+              {isPersonalList ? (
+                <UserRound size={13} color={theme.color.inkSoft} />
+              ) : (
+                <UsersRound size={13} color={theme.color.inkSoft} />
+              )}
+              <Text style={styles.chipText}>
+                {isPersonalList ? 'Personal list' : 'Shared group'}
+              </Text>
+            </View>
+            <View style={styles.chip}>
+              <Text style={styles.chipText}>
+                {ledger.group?.currency || 'INR'}
+              </Text>
+            </View>
+            {!isPersonalList && (
+              <View style={styles.chip}>
+                <Text style={styles.chipText}>
+                  {ledger.members.length} member
+                  {ledger.members.length === 1 ? '' : 's'}
+                </Text>
+              </View>
+            )}
+            {!isPersonalList &&
+              !ledger.group?.isLocked &&
+              !!ledger.group?.joinCode && (
+                <View style={styles.chip}>
+                  <Text style={styles.chipText}>Code</Text>
+                  <Text style={styles.codeText} selectable>
+                    {ledger.group.joinCode}
+                  </Text>
+                </View>
+              )}
+          </View>
+
+          {!isPersonalList && (
+            <View style={styles.groupFooter}>
+              <View style={styles.avatarStack}>
+                {ledger.members.slice(0, 5).map((m, i) => (
+                  <MemberAvatar
+                    key={m.uid}
+                    id={m.uid}
+                    name={m.displayName}
+                    size={30}
+                    ring
+                    style={i > 0 ? styles.stacked : undefined}
+                  />
+                ))}
+                {ledger.members.length > 5 && (
+                  <View style={[styles.moreBubble, styles.stacked]}>
+                    <Text style={styles.moreText}>
+                      +{ledger.members.length - 5}
+                    </Text>
+                  </View>
+                )}
+              </View>
+              {ledger.group?.isLocked ? (
+                <Text style={styles.lockedText}>
+                  Locked - the join code no longer works.
+                </Text>
+              ) : (
+                !!ledger.group?.id && (
+                  <TouchableOpacity
+                    style={styles.shareBtn}
+                    onPress={() => {
+                      haptics.tap();
+                      setInviteOpen(true);
+                    }}>
+                    <Share2 size={14} color={theme.color.ink} />
+                    <Text style={styles.shareText}>Invite</Text>
+                  </TouchableOpacity>
+                )
+              )}
+            </View>
+          )}
         </GlassCard>
 
         {isGroupAdmin && ledger.group?.type !== 'personal' && (
@@ -493,9 +658,12 @@ const GroupSettingsScreen: React.FC = () => {
           .filter(m => !m.isGuest)
           .map(m => (
             <View key={m.uid} style={styles.memberRow}>
-              <Text style={styles.memberName}>
-                {m.uid === user?.uid ? 'You' : m.displayName}
-              </Text>
+              <View style={styles.memberLeft}>
+                <MemberAvatar id={m.uid} name={m.displayName} size={30} />
+                <Text style={styles.memberName}>
+                  {m.uid === user?.uid ? 'You' : m.displayName}
+                </Text>
+              </View>
               {m.role === 'admin' && (
                 <View style={styles.adminBadge}>
                   <Text style={styles.adminBadgeText}>Admin</Text>
@@ -527,7 +695,10 @@ const GroupSettingsScreen: React.FC = () => {
                 .filter(m => m.isGuest)
                 .map(m => (
                   <View key={m.uid} style={styles.memberRow}>
-                    <Text style={styles.memberName}>{m.displayName}</Text>
+                    <View style={styles.memberLeft}>
+                      <MemberAvatar id={m.uid} name={m.displayName} size={30} />
+                      <Text style={styles.memberName}>{m.displayName}</Text>
+                    </View>
                     <View style={styles.guestRowActions}>
                       <View style={styles.guestBadge}>
                         <Text style={styles.guestBadgeText}>Guest</Text>
@@ -567,7 +738,7 @@ const GroupSettingsScreen: React.FC = () => {
               <GlassCard opaque style={styles.qrCard}>
                 <View style={styles.qrBox}>
                   <QRCode
-                    value={`https://ezysplit.arun.codes/app/Group-Check/${ledger.group.id}`}
+                    value={groupInviteUrl(ledger.group.id)}
                     size={168}
                     color={theme.color.onAccent}
                     backgroundColor="#FFFFFF"
@@ -631,7 +802,7 @@ const GroupSettingsScreen: React.FC = () => {
         transparent
         animationType="fade"
         onRequestClose={() => setDeleteModalVisible(false)}>
-        <View style={styles.deleteOverlay}>
+        <KeyboardSafeOverlay style={styles.deleteOverlay}>
           <GlassCard opaque style={styles.deleteCard}>
             <Text style={styles.deleteTitle}>
               Delete "{ledger.group?.name}"?
@@ -678,7 +849,7 @@ const GroupSettingsScreen: React.FC = () => {
               </TouchableOpacity>
             </View>
           </GlassCard>
-        </View>
+        </KeyboardSafeOverlay>
       </Modal>
 
       <Modal
@@ -686,7 +857,7 @@ const GroupSettingsScreen: React.FC = () => {
         transparent
         animationType="fade"
         onRequestClose={() => setAddGuestModalVisible(false)}>
-        <View style={styles.deleteOverlay}>
+        <KeyboardSafeOverlay style={styles.deleteOverlay}>
           <GlassCard opaque style={styles.deleteCard}>
             <Text style={styles.deleteTitle}>Add a guest</Text>
             <Text style={styles.deleteBody}>
@@ -729,8 +900,65 @@ const GroupSettingsScreen: React.FC = () => {
               </TouchableOpacity>
             </View>
           </GlassCard>
-        </View>
+        </KeyboardSafeOverlay>
       </Modal>
+
+      <Modal
+        visible={renameModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setRenameModalVisible(false)}>
+        <KeyboardSafeOverlay style={styles.deleteOverlay}>
+          <GlassCard opaque style={styles.deleteCard}>
+            <Text style={styles.deleteTitle}>Rename group</Text>
+            <Text style={styles.deleteLabel}>Group name</Text>
+            <TextInput
+              style={styles.deleteInput}
+              placeholder="e.g. Goa Trip"
+              placeholderTextColor={theme.color.inkFaint}
+              value={renameInput}
+              onChangeText={setRenameInput}
+              autoFocus
+              maxLength={60}
+              editable={!renamingGroup}
+            />
+            <View style={styles.deleteActions}>
+              <TouchableOpacity
+                style={styles.deleteCancelBtn}
+                onPress={() => {
+                  if (canCloseRenameModal()) {
+                    setRenameModalVisible(false);
+                  }
+                }}
+                disabled={renamingGroup}>
+                <Text style={styles.deleteCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.addGuestConfirmBtn,
+                  (!renameInput.trim() || renamingGroup) &&
+                    styles.deleteConfirmBtnDisabled,
+                ]}
+                onPress={handleRenameGroup}
+                disabled={!renameInput.trim() || renamingGroup}>
+                <Text style={styles.addGuestConfirmText}>
+                  {renamingGroup ? 'Saving…' : 'Save'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </GlassCard>
+        </KeyboardSafeOverlay>
+      </Modal>
+
+      {!!ledger.group?.id && !isPersonalList && (
+        <InviteSheet
+          visible={inviteOpen}
+          onClose={() => setInviteOpen(false)}
+          groupId={ledger.group.id}
+          groupName={ledger.group.name}
+          joinCode={ledger.group.joinCode}
+        />
+      )}
     </View>
   );
 };
@@ -748,26 +976,112 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     marginBottom: 16,
   },
+  // Wraps the heading + GroupSwitcherPill on one row (right-aligned pill)
+  // instead of the pill sitting alone on its own line below the title -
+  // the row itself now owns the marginBottom the bare heading used to.
+  headingRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  headingNoMargin: {marginBottom: 0},
+  // GroupSwitcherPill's own default marginTop gave it breathing room
+  // below a title - centered in this row instead, that same margin just
+  // pushed it down and off-center.
+  headerRightGroup: {flexDirection: 'row', alignItems: 'center', gap: 8},
   groupCard: {marginTop: 18, marginBottom: 8},
+  groupNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
   groupName: {
     color: theme.color.ink,
     fontFamily: DisplayFont.bold,
     fontSize: moderateScale(18),
     fontWeight: '700',
   },
-  groupMetaRow: {marginTop: 4},
+  groupNameText: {flex: 1},
+  chipRow: {flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 14},
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: theme.radius.pill,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: theme.color.border,
+  },
+  chipText: {
+    color: theme.color.inkSoft,
+    fontFamily: BodyFont.regular,
+    fontSize: moderateScale(11.5),
+  },
+  codeText: {
+    color: theme.color.ink,
+    fontFamily: MonoFont,
+    fontSize: moderateScale(12),
+    letterSpacing: 1,
+  },
+  groupFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 14,
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: theme.color.border,
+    gap: 10,
+  },
+  avatarStack: {flexDirection: 'row', alignItems: 'center'},
+  stacked: {marginLeft: -8},
+  moreBubble: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.color.surfaceStrong,
+    borderWidth: 2,
+    borderColor: theme.color.modalSurface,
+  },
+  moreText: {
+    color: theme.color.ink,
+    fontFamily: BodyFont.bold,
+    fontSize: moderateScale(11),
+    fontWeight: '700',
+  },
+  shareBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.color.surfaceStrong,
+  },
+  shareText: {
+    color: theme.color.ink,
+    fontFamily: BodyFont.semibold,
+    fontSize: moderateScale(13),
+    fontWeight: '600',
+  },
+  memberLeft: {flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1},
+  renameBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.color.surfaceStrong,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   groupMetaText: {
     color: theme.color.inkSoft,
     fontFamily: BodyFont.regular,
     fontSize: moderateScale(13),
-  },
-  joinCodeText: {
-    color: theme.color.inkFaint,
-    fontFamily: BodyFont.semibold,
-    fontSize: moderateScale(12),
-    fontWeight: '600',
-    letterSpacing: 0.4,
-    marginTop: 10,
   },
   lockedText: {
     color: theme.color.inkFaint,

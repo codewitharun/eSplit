@@ -1,12 +1,28 @@
 name: Android Build & Release
 
+# Same flow as the CLI app: push to main (or run manually) -> build a signed
+# AAB on GitHub's runner -> upload to Google Play. No Expo/EAS servers:
+# `expo prebuild` only GENERATES android/ locally on the runner, then plain
+# Gradle builds it, exactly like before.
+
 on:
-  # Trigger on push to tags (e.g., v1.0.0)
   push:
     branches:
       - main
-  # Allow manual trigger from GitHub Actions tab
   workflow_dispatch:
+    inputs:
+      track:
+        description: "Play track (internal / alpha / beta / production)"
+        required: false
+        default: ""
+
+env:
+  # Default Play track for pushes to main.
+  # ⚠️ "internal" while the Expo rebuild is new: a merge lands in Internal
+  # testing first, you check it on your phone, then promote it to Production
+  # in Play Console (or change this to production once you trust the
+  # pipeline). The CLI app used production + completed.
+  PLAY_TRACK: internal
 
 jobs:
   android-build:
@@ -21,33 +37,42 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: "zulu"
-          java-version: "17" # React Native 0.73+ uses Java 17
+          java-version: "17"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "18"
-          cache: "yarn"
+          node-version: "22" # Expo SDK 57 needs Node 20.19+
+          cache: "npm"
 
       - name: Install Dependencies
-        run: yarn install --immutable
+        run: npm ci
 
-      # --- KEYSTORE DECODING ---
-      # This step takes the base64 secret and saves it as a physical file
-      # for the build server to use.
+      - name: Typecheck + unit tests
+        run: |
+          npx tsc --noEmit
+          npx jest --ci
+
+      # Generates android/ from app.config.ts + plugins (CNG). Same output
+      # as `npm run prebuild` on your Mac. BUILD_NUMBER feeds versionCode
+      # (run_number + 11, identical to the CLI app's numbering).
+      - name: Expo prebuild (generate android/)
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+          EXPO_NO_TELEMETRY: "1"
+        run: npx expo prebuild --platform android --clean --no-install
+
+      # --- KEYSTORE DECODING (after prebuild: prebuild --clean wipes android/) ---
       - name: Decode Keystore
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
-          echo $ANDROID_KEYSTORE_BASE64 | base64 --decode > android/app/release.keystore
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/release.keystore
 
-      # --- BUILD ---
       - name: Build Release Bundle (AAB)
         env:
-          # --- CRITICAL FIX: Pass the GitHub run number to Gradle ---
           BUILD_NUMBER: ${{ github.run_number }}
-
-          # Pass secrets to the Gradle environment
+          # Read by plugins/withEzySplitSigning.js (path is relative to android/app)
           ANDROID_KEYSTORE_PATH: release.keystore
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -56,27 +81,17 @@ jobs:
           cd android
           ./gradlew bundleRelease --no-daemon
 
-      # --- UPLOAD TO GOOGLE PLAY ---
-      # Uses the popular r0adkll/upload-google-play action
       - name: Upload to Google Play
         uses: r0adkll/upload-google-play@v1
         with:
           serviceAccountJsonPlainText: ${{ secrets.ANDROID_SERVICE_ACCOUNT_JSON }}
-          packageName: com.techtitens.ezysplit # REPLACE THIS with your package name
+          packageName: com.techtitens.ezysplit
           releaseFiles: android/app/build/outputs/bundle/release/app-release.aab
-          track: production # Options: internal, alpha, beta, production
-          status: completed # Start as a draft so you can review before release
-          # "What's new" for this release, read from a plain-text file
-          # instead of typed into the Play Console by hand. The action
-          # requires one file per locale, named whatsnew-<BCP-47 locale>,
-          # inside this directory - see distribution/whatsnew/whatsnew-en-US.
-          # Before each release, edit that file's contents to describe
-          # what's actually new in THIS build - the action just uploads
-          # whatever it finds there at build time, so a stale file silently
-          # ships last release's notes again.
+          track: ${{ github.event.inputs.track || env.PLAY_TRACK }}
+          status: completed
+          # Edit distribution/whatsnew/whatsnew-en-US before every release.
           whatsNewDirectory: distribution/whatsnew
 
-      # (Optional) Upload Artifact to GitHub for manual download
       - name: Upload AAB to GitHub Artifacts
         uses: actions/upload-artifact@v4
         with:

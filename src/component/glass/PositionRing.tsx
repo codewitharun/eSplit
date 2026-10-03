@@ -17,7 +17,8 @@
 // idea as the approved web mockup's own Personal-mode ring state.
 
 import React, {useEffect} from 'react';
-import {StyleSheet, Text, View} from 'react-native';
+import {StyleSheet, View} from 'react-native';
+import {Text} from '../ui/AppText';
 import Svg, {Circle, G} from 'react-native-svg';
 import Animated, {
   Easing,
@@ -95,7 +96,9 @@ const PositionRing: React.FC<Props> = ({
   return (
     <View style={{width: size, height: size}}>
       <Svg width={size} height={size}>
-        <G rotation={-90} origin={`${size / 2}, ${size / 2}`}>
+        {/* SVG transform string (not rotation/origin props): the props version
+            renders an invalid `transform-origin` DOM attribute on web. */}
+        <G transform={`rotate(-90 ${size / 2} ${size / 2})`}>
           <Circle
             cx={size / 2}
             cy={size / 2}

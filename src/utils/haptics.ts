@@ -1,19 +1,28 @@
 // src/utils/haptics.ts
-// Deliberately built on React Native's built-in Vibration API rather than
-// react-native-haptic-feedback: that library needs native linking, and
-// this project's Gradle build is currently broken for unrelated reasons
-// (see the corporate-proxy Gradle wrapper issue). Vibration needs no new
-// native module, so this ships today; swap the implementation for the
-// haptic-feedback library later once a clean build is confirmed working -
-// the call sites (tap/success/warning) won't need to change.
+// Expo build: real haptic effects via expo-haptics (VIBRATE permission is
+// added by its config plugin). The call-site API is unchanged from the old
+// Vibration-based version: haptics.tap/tick/success/warning/error.
+// Every call is fire-and-forget and never throws - a phone with haptics
+// turned off must not break a button press.
+import * as Haptics from 'expo-haptics';
 
-import {Platform, Vibration} from 'react-native';
+const safe = (p: Promise<unknown>) => {
+  p.catch(() => {});
+};
 
 export const haptics = {
-  tap: () => Vibration.vibrate(Platform.OS === 'ios' ? 8 : 10),
+  // A normal button press / selection.
+  tap: () => safe(Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)),
+  // The lightest possible pulse - for repeated feedback like the AI's
+  // "typing" and text streaming in.
+  tick: () => safe(Haptics.selectionAsync()),
+  // Something was created / saved / answered.
   success: () =>
-    Vibration.vibrate(
-      Platform.OS === 'ios' ? [0, 12, 40, 12] : [0, 15, 40, 15],
-    ),
-  warning: () => Vibration.vibrate(25),
+    safe(Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)),
+  // A soft "that didn't work" - validation, blocked action.
+  warning: () =>
+    safe(Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning)),
+  // A real failure (network/server error).
+  error: () =>
+    safe(Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error)),
 };

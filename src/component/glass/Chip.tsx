@@ -3,7 +3,8 @@
 // pickers, and filter chips throughout the redesigned screens.
 
 import React from 'react';
-import {StyleSheet, Text, TouchableOpacity} from 'react-native';
+import {StyleSheet, TouchableOpacity} from 'react-native';
+import {Text} from '../ui/AppText';
 import {haptics} from '../../utils/haptics';
 import {BodyFont, moderateScale} from '../../utils/fonts';
 import theme from '../../utils/theme';

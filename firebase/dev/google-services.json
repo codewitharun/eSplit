@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "627849069354",
+    "project_id": "ezysplit-dev",
+    "storage_bucket": "ezysplit-dev.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:627849069354:android:b05dd80805f73bbe419453",
+        "android_client_info": {
+          "package_name": "com.techtitens.ezysplit.dev"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "627849069354-3oqdv09qnietgg5mh483k75mqfa6ga3s.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.techtitens.ezysplit.dev",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
+          "client_id": "627849069354-h16ef1es4cg6rbmbuqp79frie4k97ntu.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDmIJSecjPoXnHsZRs1lDqfX0wrTvkC-Go"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "627849069354-h16ef1es4cg6rbmbuqp79frie4k97ntu.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "627849069354-2sk06hmsug4d1bocq7q52ibempd34ehr.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.techtitens.ezysplit.dev"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

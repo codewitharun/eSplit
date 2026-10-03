@@ -1,7 +1,7 @@
 // src/services/notifications.ts
 // Push notifications go through the existing esplit-backend (a small
 // Express app, deployed separately from this repo, at
-// https://ezysplit.arun.codes) - POST /send-notification takes
+// API_BASE_URL in src/config/urls.ts) - POST /send-notification takes
 // {tokens, title, body} and fans it out via
 // admin.messaging().sendEachForMulticast() on the server side, using the
 // Firebase Admin SDK credentials that live there (mobile clients can't
@@ -13,7 +13,9 @@
 // all, which is why members stopped getting notified even though the
 // server-side endpoint itself was never touched and still works fine.
 
-const NOTIFY_ENDPOINT = 'https://ezysplit.arun.codes/send-notification';
+import {API_BASE_URL} from '../config/urls';
+
+const NOTIFY_ENDPOINT = `${API_BASE_URL}/send-notification`;
 
 export async function sendPushNotification(
   tokens: Array<string | null | undefined>,

@@ -11,7 +11,7 @@ import {
   subscribeGroup,
   subscribeGroupMembers,
   subscribeSettlements,
-} from '../services/ledger/firestoreLedger';
+} from '../data/ledger';
 import {
   computeNetBalances,
   computePairwiseLedger,

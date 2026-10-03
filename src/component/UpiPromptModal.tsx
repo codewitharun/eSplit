@@ -13,25 +13,16 @@
 // user has no upiId saved - naggy, but never a dead end.
 
 import React, {useState} from 'react';
-import {
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  TouchableWithoutFeedback,
-  View,
-} from 'react-native';
-import firestore from '@react-native-firebase/firestore';
+import {ActivityIndicator, KeyboardAvoidingView, Modal, Platform, StyleSheet, TouchableOpacity, TouchableWithoutFeedback, View} from 'react-native';
+import {Text, TextInput} from './ui/AppText';
 import Toast from '../services/toast';
 import GlassCard from './glass/GlassCard';
 import {isValidUpiVpa} from '../services/ledger/upi';
 import {haptics} from '../utils/haptics';
+import {ToastLayer} from './glass/ToastHost';
 import theme from '../utils/theme';
 import {BodyFont, DisplayFont, moderateScale} from '../utils/fonts';
+import {setUserUpiId} from '../data/users';
 
 interface UpiPromptModalProps {
   visible: boolean;
@@ -72,10 +63,7 @@ const UpiPromptModal: React.FC<UpiPromptModalProps> = ({
     }
     setSaving(true);
     try {
-      await firestore()
-        .collection('users')
-        .doc(uid)
-        .set({upiId: trimmed}, {merge: true});
+      await setUserUpiId(uid, trimmed);
       haptics.success();
       Toast.show({type: 'success', text1: 'UPI ID saved'});
       setUpiId('');
@@ -149,6 +137,8 @@ const UpiPromptModal: React.FC<UpiPromptModalProps> = ({
           </View>
         </GlassCard>
       </KeyboardAvoidingView>
+      {/* Toasts fired while this prompt is open show above it. */}
+      <ToastLayer />
     </Modal>
   );
 };

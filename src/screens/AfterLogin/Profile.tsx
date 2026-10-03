@@ -11,34 +11,69 @@
 // never cascade into anyone else's shared data - unlike Delete group in
 // GroupSettings.tsx, which erases data every member of that group shares.
 // The actual deletion (personal expenses, the users/{uid} doc, then the
-// Firebase Auth login) lives in src/services/auth.js's deleteAccount().
+// Firebase Auth login) lives in src/data/auth.ts's deleteAccount().
 
-import auth from '@react-native-firebase/auth';
 import {useNavigation} from '@react-navigation/native';
-import {ChevronLeft} from 'lucide-react-native';
+import {
+  ChevronLeft,
+  ExternalLink,
+  LucideIcon,
+  MessageSquare,
+  ShieldCheck,
+  Trash2,
+} from 'lucide-react-native';
 import React, {useState} from 'react';
 import {
   Image,
+  Linking,
   ScrollView,
   StyleSheet,
-  Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import {Text} from '../../component/ui/AppText';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import GlassCard from '../../component/glass/GlassCard';
+import AppBottomBar, {
+  useAppBottomBarHeight,
+} from '../../navigator/AppBottomBar';
 import TechTitanFooter from '../../component/glass/TechTitanFooter';
 import {useGroups} from '../../hooks/useGroups';
 import AppAlert from '../../services/appAlert';
-import {deleteAccount, signOut} from '../../services/auth';
+import {deleteAccount, signOut} from '../../data/auth';
 import Toast from '../../services/toast';
 import {BodyFont, DisplayFont, moderateScale} from '../../utils/fonts';
 import theme from '../../utils/theme';
+import {currentUser} from '../../data/firebase';
+import {
+  DELETE_ACCOUNT_URL,
+  PRIVACY_POLICY_URL,
+  SUPPORT_URL,
+} from '../../config/urls';
+
+// Help & legal links - open the public pages on esplit-backend in the
+// browser (same URLs Play Console lists for privacy and data deletion).
+const LINKS: {label: string; icon: LucideIcon; url: string}[] = [
+  {label: 'Help & support', icon: MessageSquare, url: SUPPORT_URL},
+  {label: 'Privacy policy', icon: ShieldCheck, url: PRIVACY_POLICY_URL},
+  {label: 'Delete account & data', icon: Trash2, url: DELETE_ACCOUNT_URL},
+];
+
+const openLink = (url: string) => {
+  Linking.openURL(url).catch(() =>
+    Toast.show({
+      type: 'error',
+      text1: "Couldn't open the link",
+      text2: url,
+    }),
+  );
+};
 
 const ProfileScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
-  const user = auth().currentUser;
+  const barHeight = useAppBottomBarHeight();
+  const user = currentUser();
   const {groups, loading: groupsLoading} = useGroups();
   const [deletingAccount, setDeletingAccount] = useState(false);
 
@@ -140,7 +175,14 @@ const ProfileScreen: React.FC = () => {
         <View style={styles.headerSpacer} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView
+        contentContainerStyle={[
+          styles.content,
+          // ~50 covers TechTitanFooter's own rendered height (paddingTop
+          // 10 + the logo/text row + paddingBottom 10); +24 is the same
+          // breathing-room gap used elsewhere for AppBottomBar clearance.
+          {paddingBottom: barHeight + 74},
+        ]}>
         <GlassCard style={styles.profileCard}>
           {user?.photoURL ? (
             <Image source={{uri: user.photoURL}} style={styles.avatar} />
@@ -151,6 +193,21 @@ const ProfileScreen: React.FC = () => {
             <Text style={styles.name}>{user?.displayName || 'Guest'}</Text>
             <Text style={styles.email}>{user?.email}</Text>
           </View>
+        </GlassCard>
+
+        <Text style={styles.sectionTitle}>Help & legal</Text>
+        <GlassCard style={styles.linksCard}>
+          {LINKS.map(({label, icon: Icon, url}, i) => (
+            <TouchableOpacity
+              key={url}
+              style={[styles.linkRow, i > 0 && styles.linkRowDivider]}
+              onPress={() => openLink(url)}
+              activeOpacity={0.7}>
+              <Icon size={18} color={theme.color.inkSoft} />
+              <Text style={styles.linkText}>{label}</Text>
+              <ExternalLink size={15} color={theme.color.inkFaint} />
+            </TouchableOpacity>
+          ))}
         </GlassCard>
 
         <Text style={[styles.sectionTitle, styles.dangerTitle]}>
@@ -180,9 +237,9 @@ const ProfileScreen: React.FC = () => {
         </TouchableOpacity>
       </ScrollView>
 
-      <TechTitanFooter
-        style={[styles.footerFixed, {paddingBottom: insets.bottom + 10}]}
-      />
+      <TechTitanFooter style={[styles.footerFixed, {bottom: barHeight}]} />
+
+      <AppBottomBar active="settings" />
     </View>
   );
 };
@@ -204,7 +261,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   headerSpacer: {width: 30},
-  content: {padding: 20, paddingBottom: 90},
+  content: {padding: 20},
   profileCard: {flexDirection: 'row', alignItems: 'center', marginBottom: 8},
   avatar: {width: 52, height: 52, borderRadius: 26},
   avatarFallback: {
@@ -237,6 +294,20 @@ const styles = StyleSheet.create({
     marginTop: 28,
   },
   dangerTitle: {color: theme.color.rose},
+  linksCard: {paddingVertical: 2, paddingHorizontal: 14},
+  linkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 14,
+  },
+  linkRowDivider: {borderTopWidth: 1, borderTopColor: theme.color.border},
+  linkText: {
+    flex: 1,
+    fontFamily: BodyFont.semibold,
+    color: theme.color.ink,
+    fontSize: moderateScale(14.5),
+  },
   dangerRow: {
     paddingVertical: 14,
     borderWidth: 1,
@@ -275,9 +346,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: 0,
     justifyContent: 'center',
     paddingTop: 10,
+    paddingBottom: 10,
     backgroundColor: theme.color.ground,
   },
 });

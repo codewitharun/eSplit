@@ -17,7 +17,7 @@
 // "version" and android/app/build.gradle's versionName in sync by hand for
 // every release, so it's a free source of truth with no new dependency.
 
-import firestore from '@react-native-firebase/firestore';
+import {getGlobalAppConfig} from '../data/appConfig';
 import {Linking} from 'react-native';
 
 const pkg = require('../../package.json');
@@ -61,11 +61,10 @@ export interface AppConfigCheckResult {
 
 export async function checkAppConfig(): Promise<AppConfigCheckResult> {
   try {
-    const snap = await firestore().collection('appConfig').doc('global').get();
-    if (!snap.exists) {
+    const data = await getGlobalAppConfig();
+    if (!data) {
       return {status: 'ok'};
     }
-    const data = snap.data() || {};
     const min: string | undefined = data.minSupportedVersion;
     const latest: string | undefined = data.latestVersion;
     const message: string | undefined = data.updateMessage;

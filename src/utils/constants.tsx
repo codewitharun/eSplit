@@ -1,8 +1,10 @@
 import colors from './colors';
-import {
-  heightPercentageToDP,
-  widthPercentageToDP,
-} from 'react-native-responsive-screen';
+import {Dimensions} from 'react-native';
+// Tiny replacement for react-native-responsive-screen (not carried over).
+const pct = (dim: 'width' | 'height') => (p: number | string) =>
+  (Dimensions.get('window')[dim] * parseFloat(String(p))) / 100;
+const heightPercentageToDP = pct('height');
+const widthPercentageToDP = pct('width');
 export const ERROR_DURATION = 2000;
 export const ERROR_STYLE = {borderColor: colors.error};
 export const HP = heightPercentageToDP;

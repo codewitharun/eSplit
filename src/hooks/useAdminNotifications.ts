@@ -3,11 +3,11 @@
 // Notifications screen.
 
 import {useEffect, useState} from 'react';
-import auth from '@react-native-firebase/auth';
 import {
   AdminNotification,
   subscribeAdminNotifications,
-} from '../services/adminNotifications';
+} from '../data/adminNotifications';
+import {currentUser} from '../data/firebase';
 
 export interface AdminNotificationsState {
   loading: boolean;
@@ -15,7 +15,7 @@ export interface AdminNotificationsState {
 }
 
 export function useAdminNotifications(): AdminNotificationsState {
-  const user = auth().currentUser;
+  const user = currentUser();
   const [notifications, setNotifications] = useState<AdminNotification[]>([]);
   const [loading, setLoading] = useState(true);
 

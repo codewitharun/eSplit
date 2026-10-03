@@ -4,15 +4,8 @@
 // of sync (size, spacing, link behavior all live here once). Tapping the
 // logo opens techtiten.com in the device's browser.
 import React from 'react';
-import {
-  Linking,
-  StyleProp,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-  ViewStyle,
-} from 'react-native';
+import {Linking, StyleProp, StyleSheet, TouchableOpacity, View, ViewStyle} from 'react-native';
+import {Text} from '../ui/AppText';
 import Toast from '../../services/toast';
 import {BodyFont, moderateScale} from '../../utils/fonts';
 import theme from '../../utils/theme';

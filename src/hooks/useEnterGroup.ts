@@ -14,14 +14,14 @@
 // set it, which per-component state/useRef can't do across two different
 // mounted screens.
 
-import auth from '@react-native-firebase/auth';
-import firestore from '@react-native-firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {useCallback, useRef, useState} from 'react';
 import {isUpiCurrency} from '../services/ledger/currency';
 import {GroupType} from '../services/ledger/types';
 import {useExpenseState} from '../store/useExpenseStore';
 import {haptics} from '../utils/haptics';
+import {currentUser, type AuthUser} from '../data/firebase';
+import {getUserUpiId} from '../data/users';
 
 let upiPromptShownThisSession = false;
 
@@ -35,7 +35,7 @@ export function useEnterGroup(navigation: any) {
 
   const promptForUpiIfMissing = useCallback(
     async (
-      currentUser: ReturnType<typeof auth>['currentUser'],
+      user: AuthUser | null,
       groupCurrency?: string,
       groupType?: GroupType,
     ) => {
@@ -46,7 +46,7 @@ export function useEnterGroup(navigation: any) {
       // settle up with), so there's no one to ever pay via UPI there
       // either - asking is never actionable for it.
       if (
-        !currentUser ||
+        !user ||
         upiPromptShownThisSession ||
         checkInFlightRef.current ||
         !isUpiCurrency(groupCurrency) ||
@@ -56,11 +56,7 @@ export function useEnterGroup(navigation: any) {
       }
       checkInFlightRef.current = true;
       try {
-        const doc = await firestore()
-          .collection('users')
-          .doc(currentUser.uid)
-          .get();
-        const hasUpiId = !!(doc.exists && doc.data()?.upiId);
+        const hasUpiId = !!(await getUserUpiId(user.uid));
         if (hasUpiId) {
           return;
         }
@@ -83,7 +79,7 @@ export function useEnterGroup(navigation: any) {
       await AsyncStorage.setItem('lastJoinedGroup', groupKey);
       haptics.success();
       navigation.navigate('Home');
-      promptForUpiIfMissing(auth().currentUser, groupCurrency, groupType);
+      promptForUpiIfMissing(currentUser(), groupCurrency, groupType);
     },
     [navigation, setGroupKey, promptForUpiIfMissing],
   );

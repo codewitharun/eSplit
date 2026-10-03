@@ -29,47 +29,52 @@ import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import {
   ArrowLeftRight,
   ListChecks,
-  PlusIcon,
+  ReceiptText,
   Settings,
 } from 'lucide-react-native';
 import React, {useEffect} from 'react';
-import {StyleSheet, TouchableOpacity, View} from 'react-native';
+import {StyleSheet, View} from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withSpring,
 } from 'react-native-reanimated';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
-import GradientView from '../component/glass/GradientView';
+import ExtendedFab from '../component/ExtendedFab';
+import AssistantOrb from '../component/assistant/AssistantOrb';
 import ActivityScreen from '../screens/AfterLogin/Activity';
 import BalancesScreen from '../screens/AfterLogin/Balances';
 import GroupSettingsScreen from '../screens/AfterLogin/GroupSettings';
 import {useExpenseState} from '../store/useExpenseStore';
+import {useGroupsStore} from '../store/useGroupsStore';
 import {BodyFont, moderateScale} from '../utils/fonts';
-import {haptics} from '../utils/haptics';
 import theme from '../utils/theme';
-import {Routes} from './constants';
+import {ADD_EXPENSE_FAB, Routes} from './constants';
 
 const Tab = createBottomTabNavigator();
 
-const FAB_SIZE = 54;
+const FAB_SIZE = ADD_EXPENSE_FAB.size;
+const FAB_RIGHT = ADD_EXPENSE_FAB.right;
 
+// The in-group primary action. UX: an extended pill with a receipt icon
+// and an always-visible "Add expense" label - the filled blue->green
+// gradient is reserved for this money action, so it can't be confused
+// with "New group" (outlined, people icon, see AddGroupFab.tsx) or the
+// AI orb (small dark sparkle circle, see AssistantOrb.tsx).
 function AddFab({bottom}: {bottom: number}) {
   const triggerAddExpense = useExpenseState(state => state.triggerAddExpense);
   return (
-    <TouchableOpacity
-      style={[styles.fabShadow, {bottom}]}
-      activeOpacity={0.85}
-      onPress={() => {
-        haptics.tap();
-        triggerAddExpense();
-      }}>
-      <GradientView
-        colors={[theme.color.blueBright, theme.color.green]}
-        style={styles.fab}>
-        <PlusIcon size={24} color={theme.color.onAccent} />
-      </GradientView>
-    </TouchableOpacity>
+    <ExtendedFab
+      variant="primary"
+      icon={<ReceiptText size={20} color={theme.color.onAccent} />}
+      iconSize={20}
+      label="Add expense"
+      accessibilityLabel="Add expense"
+      size={FAB_SIZE}
+      bottom={bottom}
+      right={FAB_RIGHT}
+      onPress={triggerAddExpense}
+    />
   );
 }
 
@@ -138,7 +143,6 @@ const NAV_FLOAT_GAP = 11;
 // oversized for how little content actually sits in it - a narrower,
 // more centered pill suits three icon+label pairs better.
 const TAB_BAR_SIDE_INSET = 24;
-
 export default function MainTabs() {
   // Real, per-device answer to "how much room does the current navigation
   // mode need at the bottom" - larger under gesture navigation's floating
@@ -158,6 +162,12 @@ export default function MainTabs() {
   // lives entirely in margin, outside the pill, never inside it.
   const marginBelowPill = NAV_FLOAT_GAP + bottomInset;
   const tabBarHeight = pillHeight + marginBelowPill;
+  // Current group's name, for the AI panel's suggested questions -
+  // already in the groups store, no extra read.
+  const groupKey = useExpenseState(state => state.groupKey);
+  const groupName = useGroupsStore(
+    state => state.groups.find(g => g.id === groupKey)?.name,
+  );
 
   return (
     <View style={styles.flex}>
@@ -170,8 +180,9 @@ export default function MainTabs() {
         // showed up as a stray white bar around/behind the pill on a
         // real device. sceneContainerStyle covers each screen's own
         // background for the same reason.
-        sceneContainerStyle={{backgroundColor: theme.color.ground}}
         screenOptions={({route}) => ({
+          // v7: sceneContainerStyle moved into screenOptions as sceneStyle.
+          sceneStyle: {backgroundColor: theme.color.ground},
           headerShown: false,
           tabBarShowLabel: true,
           tabBarActiveTintColor: theme.color.ink,
@@ -183,6 +194,8 @@ export default function MainTabs() {
               paddingTop: PILL_VERTICAL_PADDING,
               paddingBottom: PILL_VERTICAL_PADDING,
               marginBottom: marginBelowPill,
+              marginLeft: TAB_BAR_SIDE_INSET,
+              marginRight: TAB_BAR_SIDE_INSET,
             },
           ],
           tabBarLabelStyle: styles.tabLabel,
@@ -227,7 +240,12 @@ export default function MainTabs() {
           options={{title: 'Settings'}}
         />
       </Tab.Navigator>
-      <AddFab bottom={tabBarHeight + 46} />
+      <AddFab bottom={tabBarHeight + ADD_EXPENSE_FAB.bottomOffset} />
+      <AssistantOrb
+        bottom={tabBarHeight + ADD_EXPENSE_FAB.bottomOffset + FAB_SIZE + 14}
+        right={FAB_RIGHT}
+        groupName={groupName}
+      />
     </View>
   );
 }
@@ -253,7 +271,6 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: theme.color.border,
     borderRadius: theme.radius.pill,
-    marginHorizontal: TAB_BAR_SIDE_INSET,
     paddingTop: 8,
     // Floating overlay, not a row that reserves its own space: with this,
     // each screen renders at full height and its scrollable content
@@ -283,28 +300,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   iconSlotPill: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderRadius: theme.radius.pill,
     backgroundColor: 'rgba(255,255,255,0.08)',
-  },
-  fabShadow: {
-    position: 'absolute',
-    right: 24,
-    width: FAB_SIZE,
-    height: FAB_SIZE,
-    borderRadius: FAB_SIZE / 2,
-    shadowColor: theme.color.greenBright,
-    shadowOpacity: 0.5,
-    shadowRadius: 14,
-    shadowOffset: {width: 0, height: 8},
-    elevation: 6,
-  },
-  fab: {
-    width: FAB_SIZE,
-    height: FAB_SIZE,
-    borderRadius: FAB_SIZE / 2,
-    justifyContent: 'center',
-    alignItems: 'center',
-    overflow: 'hidden',
   },
 });

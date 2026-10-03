@@ -13,31 +13,27 @@
 // for every OTHER member (unchanged) and now also read/written here for
 // the current user instead of in Profile.tsx.
 
-import auth from '@react-native-firebase/auth';
-import firestore from '@react-native-firebase/firestore';
 import {useFocusEffect, useNavigation} from '@react-navigation/native';
 import {useBottomTabBarHeight} from '@react-navigation/bottom-tabs';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
-import React, {useCallback, useEffect, useRef, useState} from 'react';
-import {
-  AppState,
-  BackHandler,
-  Linking,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import {AppState, BackHandler, Linking, ScrollView, StyleSheet, TouchableOpacity, View} from 'react-native';
+import {Text, TextInput} from '../../component/ui/AppText';
 import Toast from '../../services/toast';
+import {openExportedFile} from '../../services/ledger/openExport';
 import AppAlert from '../../services/appAlert';
 import AnimatedNumber from '../../component/glass/AnimatedNumber';
+import BalanceBar from '../../component/BalanceBar';
+import MemberAvatar from '../../component/MemberAvatar';
+import ProgressBar from '../../component/ProgressBar';
+import {ArrowRight, Check} from 'lucide-react-native';
+import {computeSettleUpSummary} from '../../services/ledger/groupInsights';
 import GlassCard from '../../component/glass/GlassCard';
 import GroupSwitcherPill from '../../component/GroupSwitcherPill';
+import HomeIconChip from '../../component/HomeIconChip';
 import SwipeableRow from '../../component/glass/SwipeableRow';
 import {useGroupLedger} from '../../hooks/useGroupLedger';
-import {addSettlement} from '../../services/ledger/firestoreLedger';
+import {addSettlement} from '../../data/ledger';
 import {
   exportGroupExcel,
   exportGroupPdf,
@@ -46,16 +42,20 @@ import {buildUpiPayUri, isValidUpiVpa} from '../../services/ledger/upi';
 import {
   currencySymbol,
   formatMoney,
+  formatSignedMoney,
   isUpiCurrency,
 } from '../../services/ledger/currency';
-import {Routes} from '../../navigator/constants';
+import {Routes, FLOATING_ACTIONS_CLEARANCE} from '../../navigator/constants';
 import {useExpenseState} from '../../store/useExpenseStore';
 import {haptics} from '../../utils/haptics';
+import {useCollapseFabsOnScroll} from '../../hooks/useCollapseFabsOnScroll';
 import theme from '../../utils/theme';
 import {BodyFont, DisplayFont, moderateScale} from '../../utils/fonts';
+import {currentUser} from '../../data/firebase';
+import {getUserUpiId, setUserUpiId} from '../../data/users';
 
 const BalancesScreen: React.FC = () => {
-  const user = auth().currentUser;
+  const user = currentUser();
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
   // Real height of the floating tab bar (it overlays content now
@@ -63,6 +63,8 @@ const BalancesScreen: React.FC = () => {
   // so scrollable content here can pad exactly enough to clear it at
   // rest while still scrolling underneath it past that point.
   const tabBarHeight = useBottomTabBarHeight();
+  // Collapses the floating create button to icon-only while scrolling down.
+  const onFabScroll = useCollapseFabsOnScroll();
   const groupKey = useExpenseState(state => state.groupKey);
   const ledger = useGroupLedger(groupKey);
   const [upiIds, setUpiIds] = useState<Record<string, string>>({});
@@ -95,8 +97,7 @@ const BalancesScreen: React.FC = () => {
     (async () => {
       const entries = await Promise.all(
         ledger.members.map(async m => {
-          const doc = await firestore().collection('users').doc(m.uid).get();
-          return [m.uid, doc.exists ? doc.data()?.upiId || '' : ''] as const;
+          return [m.uid, await getUserUpiId(m.uid)] as const;
         }),
       );
       setUpiIds(Object.fromEntries(entries));
@@ -126,10 +127,7 @@ const BalancesScreen: React.FC = () => {
     }
     setSavingUpi(true);
     try {
-      await firestore()
-        .collection('users')
-        .doc(user.uid)
-        .set({upiId: myUpiId.trim()}, {merge: true});
+      await setUserUpiId(user.uid, myUpiId.trim());
       setUpiIds(prev => ({...prev, [user.uid]: myUpiId.trim()}));
       haptics.success();
       Toast.show({type: 'success', text1: 'UPI ID saved'});
@@ -151,6 +149,26 @@ const BalancesScreen: React.FC = () => {
   // one member, so this screen shows a much simpler view instead of the
   // full settle-up UI for those.
   const isPersonal = ledger.members.length <= 1;
+  const isSettled = Math.abs(myBalance) < 0.01;
+  // Hero card breakdown + settle-up progress - derived from the same
+  // transfers/settlements this screen already shows, no extra reads.
+  const summary = useMemo(
+    () =>
+      computeSettleUpSummary(
+        ledger.transfers,
+        ledger.settlements,
+        user?.uid || '',
+      ),
+    [ledger.transfers, ledger.settlements, user?.uid],
+  );
+  const maxAbsBalance = useMemo(
+    () =>
+      Math.max(
+        0,
+        ...ledger.members.map(m => Math.abs(ledger.netBalances[m.uid] || 0)),
+      ),
+    [ledger.members, ledger.netBalances],
+  );
 
   const settle = async (
     fromUid: string,
@@ -325,7 +343,15 @@ const BalancesScreen: React.FC = () => {
         ledger.group?.currency,
       );
       haptics.success();
-      Toast.show({type: 'success', text1: 'PDF exported', text2: path});
+      Toast.show({type: 'success', text1: 'PDF exported'});
+      // The file lives in the app's own private storage (see
+      // exportReport.ts) - there's nothing at a path the user could
+      // browse to, so hand it straight to the OS share sheet (expo-sharing)
+      // where they can view it or save/share it wherever they like.
+      // Best-effort: the export itself already succeeded and the toast
+      // above already said so, so a viewer failure (e.g. no PDF app on
+      // the device) shouldn't read as the export having failed.
+      openExportedFile(path, 'pdf').catch(() => {});
     } catch (error: any) {
       haptics.warning();
       Toast.show({
@@ -351,7 +377,9 @@ const BalancesScreen: React.FC = () => {
         ledger.group?.currency,
       );
       haptics.success();
-      Toast.show({type: 'success', text1: 'Excel exported', text2: path});
+      Toast.show({type: 'success', text1: 'Excel exported'});
+      // Same hand-off as onExportPdf above.
+      openExportedFile(path, 'xlsx').catch(() => {});
     } catch (error: any) {
       haptics.warning();
       Toast.show({
@@ -375,33 +403,126 @@ const BalancesScreen: React.FC = () => {
   return (
     <View style={styles.flex}>
       <ScrollView
+        onScroll={onFabScroll}
+        scrollEventThrottle={16}
         contentContainerStyle={[
           styles.content,
           // The tab bar floats over content now instead of reserving
           // its own row (see BottomTabNavigator.tsx) - pad for its real
           // height so the last card isn't hidden underneath it at rest.
-          {paddingTop: insets.top + 24, paddingBottom: tabBarHeight + 24},
+          {
+            paddingTop: insets.top + 24,
+            paddingBottom: tabBarHeight + FLOATING_ACTIONS_CLEARANCE,
+          },
         ]}>
-        <Text style={styles.heading}>Balances</Text>
-        <GroupSwitcherPill />
+        <View style={styles.headingRow}>
+          <Text style={[styles.heading, styles.headingNoMargin]}>Balances</Text>
+          <View style={styles.headerRightGroup}>
+            <HomeIconChip />
+            <GroupSwitcherPill iconOnly />
+          </View>
+        </View>
 
-        <GlassCard tilt strong style={styles.heroCard}>
-          <Text style={styles.heroLabel}>
-            {myBalance >= 0 ? "You're owed" : 'You owe'}
-          </Text>
-          <AnimatedNumber
-            value={Math.abs(myBalance)}
-            prefix={currencySymbol(ledger.group?.currency)}
-            decimals={2}
-            style={[
-              styles.heroAmount,
-              {color: myBalance >= 0 ? theme.color.green : theme.color.rose},
-            ]}
-          />
-          <Text style={styles.heroSub}>
-            Total group spend:{' '}
-            {formatMoney(ledger.totalSpent, ledger.group?.currency)}
-          </Text>
+        <GlassCard style={styles.heroCard}>
+          {isPersonal ? (
+            <>
+              <Text style={styles.heroLabel}>Total spent</Text>
+              <AnimatedNumber
+                value={ledger.totalSpent}
+                prefix={currencySymbol(ledger.group?.currency)}
+                decimals={2}
+                style={[styles.heroAmount, {color: theme.color.ink}]}
+              />
+              <Text style={styles.heroSub}>
+                Personal list · nothing to settle
+              </Text>
+            </>
+          ) : isSettled ? (
+            <>
+              <View style={styles.settledBadge}>
+                <Check size={22} color={theme.color.green} />
+              </View>
+              <Text style={styles.settledTitle}>You're all settled up</Text>
+              <Text style={styles.heroSub}>
+                Nothing owed either way · Group spend{' '}
+                {formatMoney(ledger.totalSpent, ledger.group?.currency)}
+              </Text>
+            </>
+          ) : (
+            <>
+              <Text style={styles.heroLabel}>
+                {myBalance > 0 ? "You're owed" : 'You owe'}
+              </Text>
+              <AnimatedNumber
+                value={Math.abs(myBalance)}
+                prefix={currencySymbol(ledger.group?.currency)}
+                decimals={2}
+                style={[
+                  styles.heroAmount,
+                  {
+                    color: myBalance > 0 ? theme.color.green : theme.color.rose,
+                  },
+                ]}
+              />
+              <Text style={styles.heroSub}>
+                Total group spend:{' '}
+                {formatMoney(ledger.totalSpent, ledger.group?.currency)}
+              </Text>
+            </>
+          )}
+
+          {!isPersonal && (
+            <>
+              <View style={styles.heroStats}>
+                <View style={styles.heroStat}>
+                  <Text style={styles.heroStatLabel}>Owed to you</Text>
+                  <Text style={[styles.heroStatValue, styles.positive]}>
+                    {formatMoney(summary.owedToMe, ledger.group?.currency)}
+                  </Text>
+                  <Text style={styles.heroStatHint}>
+                    {summary.owedToMeCount === 0
+                      ? 'from no one'
+                      : `from ${summary.owedToMeCount} ${
+                          summary.owedToMeCount === 1 ? 'person' : 'people'
+                        }`}
+                  </Text>
+                </View>
+                <View style={styles.heroStatDivider} />
+                <View style={styles.heroStat}>
+                  <Text style={styles.heroStatLabel}>You owe</Text>
+                  <Text style={[styles.heroStatValue, styles.negative]}>
+                    {formatMoney(summary.iOwe, ledger.group?.currency)}
+                  </Text>
+                  <Text style={styles.heroStatHint}>
+                    {summary.iOweCount === 0
+                      ? 'to no one'
+                      : `to ${summary.iOweCount} ${
+                          summary.iOweCount === 1 ? 'person' : 'people'
+                        }`}
+                  </Text>
+                </View>
+              </View>
+              {summary.settled + summary.outstanding > 0 && (
+                <View style={styles.progressBlock}>
+                  <View style={styles.progressLabels}>
+                    <Text style={styles.heroStatHint}>
+                      Group settle-up progress
+                    </Text>
+                    <Text style={styles.heroStatHint}>
+                      {Math.round(summary.settledRatio * 100)}% settled
+                    </Text>
+                  </View>
+                  <ProgressBar value={summary.settledRatio} />
+                  <Text style={[styles.heroStatHint, styles.progressFoot]}>
+                    {formatMoney(summary.settled, ledger.group?.currency)}{' '}
+                    settled ·{' '}
+                    {formatMoney(summary.outstanding, ledger.group?.currency)}{' '}
+                    still open
+                  </Text>
+                </View>
+              )}
+            </>
+          )}
         </GlassCard>
 
         {isUpiCurrency(ledger.group?.currency) && !isPersonal && (
@@ -449,7 +570,25 @@ const BalancesScreen: React.FC = () => {
             const isMine = t.fromUid === user?.uid;
             const key = `${t.fromUid}-${t.toUid}-${i}`;
             const card = (
-              <GlassCard style={styles.transferRow}>
+              <GlassCard
+                style={
+                  isMine || t.toUid === user?.uid
+                    ? [styles.transferRow, styles.transferRowMine]
+                    : styles.transferRow
+                }>
+                <View style={styles.transferPeople}>
+                  <MemberAvatar
+                    id={t.fromUid}
+                    name={ledger.memberName(t.fromUid)}
+                    size={28}
+                  />
+                  <ArrowRight size={14} color={theme.color.inkFaint} />
+                  <MemberAvatar
+                    id={t.toUid}
+                    name={ledger.memberName(t.toUid)}
+                    size={28}
+                  />
+                </View>
                 <Text style={styles.transferText}>
                   {t.fromUid === user?.uid
                     ? 'You'
@@ -496,29 +635,58 @@ const BalancesScreen: React.FC = () => {
         {!isPersonal && (
           <>
             <Text style={styles.sectionTitle}>Per-person totals</Text>
-            {ledger.members.map(m => (
-              <View key={m.uid} style={styles.memberRow}>
-                <Text style={styles.memberName}>
-                  {m.uid === user?.uid ? 'You' : m.displayName}
-                </Text>
-                <Text
-                  style={[
-                    styles.memberBalance,
-                    {
-                      color:
-                        (ledger.netBalances[m.uid] || 0) >= 0
-                          ? theme.color.green
-                          : theme.color.rose,
-                    },
-                  ]}>
-                  {(ledger.netBalances[m.uid] || 0) >= 0 ? '+' : ''}
-                  {formatMoney(
-                    ledger.netBalances[m.uid] || 0,
-                    ledger.group?.currency,
-                  )}
-                </Text>
+            <GlassCard style={styles.perPersonCard}>
+              {/* Legend for the bars: the centre line is zero, left of
+                  it means that person owes, right means they're owed. */}
+              <View style={styles.legendRow}>
+                <View style={styles.legendAvatarSpacer} />
+                <View style={styles.legendMid}>
+                  <Text style={[styles.legendText, styles.negative]}>
+                    ← owes
+                  </Text>
+                  <Text style={[styles.legendText, styles.positive]}>
+                    is owed →
+                  </Text>
+                </View>
+                <View style={styles.amountCol} />
               </View>
-            ))}
+              {ledger.members.map((m, i) => {
+                const bal = ledger.netBalances[m.uid] || 0;
+                return (
+                  <View
+                    key={m.uid}
+                    style={[
+                      styles.memberRow,
+                      i === ledger.members.length - 1 && styles.memberRowLast,
+                    ]}>
+                    <MemberAvatar id={m.uid} name={m.displayName} size={28} />
+                    <View style={styles.memberMid}>
+                      <Text style={styles.memberName} numberOfLines={1}>
+                        {m.uid === user?.uid ? 'You' : m.displayName}
+                      </Text>
+                      <BalanceBar
+                        value={bal}
+                        maxAbs={maxAbsBalance}
+                        delay={120 + i * 60}
+                      />
+                    </View>
+                    <Text
+                      numberOfLines={1}
+                      style={[
+                        styles.memberBalance,
+                        styles.amountCol,
+                        Math.abs(bal) < 0.01
+                          ? styles.neutral
+                          : bal > 0
+                          ? styles.positive
+                          : styles.negative,
+                      ]}>
+                      {formatSignedMoney(bal, ledger.group?.currency)}
+                    </Text>
+                  </View>
+                );
+              })}
+            </GlassCard>
           </>
         )}
 
@@ -548,7 +716,28 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     marginBottom: 16,
   },
-  heroCard: {alignItems: 'center', paddingVertical: 28, marginBottom: 24},
+  // Wraps the heading + GroupSwitcherPill on one row (right-aligned pill)
+  // instead of the pill sitting alone on its own line below the title -
+  // the row itself now owns the marginBottom the bare heading used to.
+  headingRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  headingNoMargin: {marginBottom: 0},
+  // GroupSwitcherPill's own default marginTop gave it breathing room
+  // below a title - centered in this row instead, that same margin just
+  // pushed it down and off-center.
+  headerRightGroup: {flexDirection: 'row', alignItems: 'center', gap: 8},
+  // Same plain GlassCard as Activity's insights card (no tilt/strong
+  // fill), kept compact.
+  heroCard: {
+    alignItems: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    marginBottom: 20,
+  },
   heroLabel: {
     color: theme.color.inkSoft,
     fontFamily: BodyFont.regular,
@@ -556,15 +745,15 @@ const styles = StyleSheet.create({
   },
   heroAmount: {
     fontFamily: DisplayFont.extrabold,
-    fontSize: moderateScale(40),
+    fontSize: moderateScale(30),
     fontWeight: '800',
-    marginTop: 6,
+    marginTop: 2,
   },
   heroSub: {
     color: theme.color.inkFaint,
     fontFamily: BodyFont.regular,
-    fontSize: moderateScale(12.5),
-    marginTop: 8,
+    fontSize: moderateScale(12),
+    marginTop: 4,
   },
   sectionTitle: {
     color: theme.color.inkSoft,
@@ -642,11 +831,92 @@ const styles = StyleSheet.create({
   },
   memberRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 8,
-    borderBottomWidth: 1,
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: theme.color.border,
   },
+  memberRowLast: {borderBottomWidth: 0},
+  // Fixed-width amount column so every row's bar has the same width and
+  // the zero line sits at the same x on every row.
+  amountCol: {width: moderateScale(96), textAlign: 'right'},
+  legendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingTop: 10,
+  },
+  legendAvatarSpacer: {width: 28},
+  legendMid: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  legendText: {
+    fontFamily: BodyFont.regular,
+    fontSize: moderateScale(10.5),
+  },
+  memberMid: {flex: 1, gap: 6},
+  perPersonCard: {paddingVertical: 4, paddingHorizontal: 14},
+  positive: {color: theme.color.green},
+  negative: {color: theme.color.rose},
+  neutral: {color: theme.color.inkSoft},
+  transferPeople: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginRight: 10,
+  },
+  transferRowMine: {borderColor: 'rgba(56,217,201,0.45)'},
+  settledBadge: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(62,207,142,0.14)',
+    marginBottom: 6,
+  },
+  settledTitle: {
+    color: theme.color.ink,
+    fontFamily: DisplayFont.bold,
+    fontSize: moderateScale(18),
+    fontWeight: '700',
+  },
+  heroStats: {
+    flexDirection: 'row',
+    alignSelf: 'stretch',
+    marginTop: 14,
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: theme.color.border,
+  },
+  heroStat: {flex: 1, alignItems: 'center'},
+  heroStatDivider: {
+    width: StyleSheet.hairlineWidth,
+    backgroundColor: theme.color.border,
+  },
+  heroStatLabel: {
+    color: theme.color.inkSoft,
+    fontFamily: BodyFont.regular,
+    fontSize: moderateScale(12),
+  },
+  heroStatValue: {
+    fontFamily: DisplayFont.bold,
+    fontSize: moderateScale(15.5),
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  heroStatHint: {
+    color: theme.color.inkFaint,
+    fontFamily: BodyFont.regular,
+    fontSize: moderateScale(11.5),
+    marginTop: 2,
+  },
+  progressBlock: {alignSelf: 'stretch', marginTop: 12, gap: 5},
+  progressLabels: {flexDirection: 'row', justifyContent: 'space-between'},
+  progressFoot: {textAlign: 'center'},
   memberName: {
     color: theme.color.ink,
     fontFamily: BodyFont.regular,

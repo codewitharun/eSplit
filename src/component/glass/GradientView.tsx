@@ -1,32 +1,24 @@
 // src/component/glass/GradientView.tsx
-// A reusable linear-gradient background, built on react-native-svg (an
-// existing dependency) instead of react-native-linear-gradient/
-// expo-linear-gradient (neither is installed, and adding either means a
-// new native module + Gradle changes, which this project's build has
-// historically been fragile around - see GradientMesh.tsx for the same
-// reasoning applied to the radial glow).
+// Linear-gradient background, now a thin wrapper over expo-linear-gradient
+// (a native view). Same props as before - colors / locations / start / end
+// as 0..1 fractions, e.g. {x: 0, y: 0} -> {x: 1, y: 1} = top-left to
+// bottom-right - so no call site changes.
 //
-// API deliberately mirrors react-native-linear-gradient's shape (colors/
-// start/end/locations) so it reads familiar and is a drop-in if a native
-// gradient library is ever added later - `start`/`end` are 0..1 fractions
-// of the box, e.g. {x: 0, y: 0} -> {x: 1, y: 1} is top-left to
-// bottom-right.
+// Why native instead of the old react-native-svg version: the SVG had to be
+// sized to the view, either from onLayout (lags when the size is animated on
+// the UI thread - the half-filled "Add expense" pill) or as width="100%"
+// (not resolved reliably on the New Architecture - buttons only half
+// painted). A native gradient view stretches with its box on every frame.
+// (The old reason to avoid a native gradient module - the fragile CLI
+// Gradle build - doesn't apply under Expo.)
 //
 // Usage: wrap content the way you would a <View> -
 //   <GradientView colors={theme.gradient.hero} style={styles.card}>
 //     <Text>...</Text>
 //   </GradientView>
-
-import React, {useState} from 'react';
-import {
-  LayoutChangeEvent,
-  StyleProp,
-  StyleSheet,
-  View,
-  ViewProps,
-  ViewStyle,
-} from 'react-native';
-import Svg, {Defs, LinearGradient, Rect, Stop} from 'react-native-svg';
+import {LinearGradient} from 'expo-linear-gradient';
+import React from 'react';
+import type {ColorValue, StyleProp, ViewProps, ViewStyle} from 'react-native';
 
 interface Point {
   x: number;
@@ -42,7 +34,8 @@ interface Props extends ViewProps {
   children?: React.ReactNode;
 }
 
-let gradientIdCounter = 0;
+type GradientColors = readonly [ColorValue, ColorValue, ...ColorValue[]];
+type GradientLocations = readonly [number, number, ...number[]];
 
 const GradientView: React.FC<Props> = ({
   colors,
@@ -53,50 +46,26 @@ const GradientView: React.FC<Props> = ({
   children,
   ...rest
 }) => {
-  // A stable-per-mount id avoids gradient defs colliding when several
-  // GradientViews render at once (each needs its own <Defs> id).
-  const [id] = useState(() => `gv-grad-${++gradientIdCounter}`);
-  const [size, setSize] = useState({width: 0, height: 0});
-
-  const onLayout = (e: LayoutChangeEvent) => {
-    const {width, height} = e.nativeEvent.layout;
-    setSize({width, height});
-  };
+  // expo-linear-gradient needs at least two stops; a single colour is just
+  // a flat fill.
+  const stops = (colors.length >= 2
+    ? colors
+    : [colors[0], colors[0]]) as unknown as GradientColors;
+  const locs =
+    locations && locations.length === stops.length
+      ? (locations as unknown as GradientLocations)
+      : undefined;
 
   return (
-    <View style={style} onLayout={onLayout} {...rest}>
-      {size.width > 0 && size.height > 0 && (
-        <Svg
-          width={size.width}
-          height={size.height}
-          style={StyleSheet.absoluteFill}
-          pointerEvents="none">
-          <Defs>
-            <LinearGradient
-              id={id}
-              x1={`${start.x * 100}%`}
-              y1={`${start.y * 100}%`}
-              x2={`${end.x * 100}%`}
-              y2={`${end.y * 100}%`}>
-              {colors.map((c, i) => (
-                <Stop
-                  key={c + i}
-                  offset={
-                    locations && locations[i] !== undefined
-                      ? locations[i]
-                      : i / Math.max(colors.length - 1, 1)
-                  }
-                  stopColor={c}
-                  stopOpacity={1}
-                />
-              ))}
-            </LinearGradient>
-          </Defs>
-          <Rect width="100%" height="100%" fill={`url(#${id})`} />
-        </Svg>
-      )}
+    <LinearGradient
+      colors={stops}
+      locations={locs}
+      start={start}
+      end={end}
+      style={style}
+      {...rest}>
       {children}
-    </View>
+    </LinearGradient>
   );
 };
 

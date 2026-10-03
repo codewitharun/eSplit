@@ -55,3 +55,13 @@ describe('currency helper', () => {
     expect(formatMoney(100, 'DKK')).toBe('kr 100.00');
   });
 });
+
+describe('formatSignedMoney', () => {
+  const {formatSignedMoney} = require('../currency');
+  it('puts the sign before the symbol', () => {
+    expect(formatSignedMoney(443.67, 'INR')).toBe('+₹443.67');
+    expect(formatSignedMoney(-2645.99, 'INR')).toBe('\u2212₹2645.99');
+    expect(formatSignedMoney(0, 'INR')).toBe('₹0.00');
+    expect(formatSignedMoney(-0.001, 'INR')).toBe('₹0.00');
+  });
+});
