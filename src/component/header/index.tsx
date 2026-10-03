@@ -22,6 +22,8 @@ import {Bell, User} from 'lucide-react-native';
 import {useAuthStore} from '../../store/useAuthStore';
 import GradientView from '../glass/GradientView';
 import theme from '../../utils/theme';
+import RequestsBadge from '../RequestsBadge';
+import {useTotalPendingRequests} from '../../store/useJoinRequestsStore';
 import {Typography} from '../../utils/fonts';
 
 const AVATAR_OUTER = 46;
@@ -52,6 +54,9 @@ const Header = () => {
   const handleAvatarPress = () => {
     navigation.navigate('Profile');
   };
+
+  // Join requests waiting on you, in any group you admin.
+  const pendingRequests = useTotalPendingRequests();
 
   const handleBellPress = () => {
     navigation.navigate('Notifications');
@@ -98,6 +103,7 @@ const Header = () => {
           style={styles.iconBtn}
           hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
           <Bell color={theme.color.inkSoft} size={17} />
+          <RequestsBadge count={pendingRequests} />
         </TouchableOpacity>
       </View>
     </View>

@@ -29,6 +29,8 @@ import {haptics} from '../utils/haptics';
 import theme from '../utils/theme';
 import GlassCard from './glass/GlassCard';
 import {currentUser} from '../data/firebase';
+import RequestsBadge from './RequestsBadge';
+import {useJoinRequestsStore} from '../store/useJoinRequestsStore';
 
 const MAX_SHOWN = 5;
 
@@ -67,6 +69,7 @@ const SwitchGroupSheet: React.FC<SwitchGroupSheetProps> = ({
   const user = currentUser();
   const {groups, loading} = useGroups();
   const overview = useGroupsOverview(groups, user?.uid);
+  const pendingByGroup = useJoinRequestsStore(state => state.byGroup);
   const {enterGroup} = useEnterGroup(navigation);
   const currentGroupKey = useExpenseState(state => state.groupKey);
   // See useModalOpenGuard.ts - swallows the phantom close Android can
@@ -175,6 +178,10 @@ const SwitchGroupSheet: React.FC<SwitchGroupSheetProps> = ({
                 {g.type === 'personal' && (
                   <Text style={styles.subtle}>Just you - nothing to split</Text>
                 )}
+                <RequestsBadge
+                  variant="pill"
+                  count={pendingByGroup[g.id]?.length ?? 0}
+                />
                 {g.type !== 'personal' &&
                   overview.perGroupBalance[g.id] != null &&
                   Math.abs(overview.perGroupBalance[g.id]) <= 0.01 && (

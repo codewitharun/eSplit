@@ -24,6 +24,9 @@ import React, {useState} from 'react';
 import {StyleSheet, TouchableOpacity, ViewStyle} from 'react-native';
 import {Text} from './ui/AppText';
 import SwitchGroupSheet from './SwitchGroupSheet';
+import RequestsBadge from './RequestsBadge';
+import {useExpenseState} from '../store/useExpenseStore';
+import {useTotalPendingRequests} from '../store/useJoinRequestsStore';
 import theme from '../utils/theme';
 import {haptics} from '../utils/haptics';
 import {BodyFont, moderateScale} from '../utils/fonts';
@@ -40,6 +43,10 @@ interface Props {
 
 const GroupSwitcherPill: React.FC<Props> = ({style, iconOnly}) => {
   const [sheetVisible, setSheetVisible] = useState(false);
+  // Join requests waiting in your OTHER groups (the open group's own
+  // requests already show on its Settings tab) - a nudge to switch.
+  const groupKey = useExpenseState(state => state.groupKey);
+  const otherGroupsPending = useTotalPendingRequests(groupKey);
 
   return (
     <>
@@ -54,6 +61,7 @@ const GroupSwitcherPill: React.FC<Props> = ({style, iconOnly}) => {
           color={iconOnly ? theme.color.ink : theme.color.inkSoft}
         />
         {!iconOnly && <Text style={styles.text}>Switch group</Text>}
+        <RequestsBadge count={otherGroupsPending} />
       </TouchableOpacity>
       <SwitchGroupSheet
         visible={sheetVisible}

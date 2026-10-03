@@ -33,6 +33,7 @@ import {stripUndefined} from '../services/ledger/firestoreUtils';
 import {sendPushNotification} from '../services/notifications';
 import {formatMoney} from '../services/ledger/currency';
 import {
+  DeletedExpense,
   Expense,
   ExpenseCategory,
   ExpenseItem,
@@ -412,6 +413,22 @@ export function subscribeJoinRequests(
   );
 }
 
+// Live view of the signed-in user's OWN member entry in a group
+// (groups/{groupId}/members/{uid}) - used to know whether they're an
+// admin there, so pending join requests are only listened to for groups
+// they can actually approve (see JoinRequestsSync.tsx). Read-only.
+export function subscribeMyMembership(
+  groupId: string,
+  uid: string,
+  onChange: (member: GroupMember | null) => void,
+): () => void {
+  return listenDoc(
+    doc(db(), 'groups', groupId, 'members', uid),
+    snap => onChange(snap.exists() ? (snap.data() as GroupMember) : null),
+    () => onChange(null),
+  );
+}
+
 export async function getUserGroups(uid: string): Promise<Group[]> {
   const userSnap = await getDoc(userDoc(uid));
   const groupIds: string[] = userSnap.exists()
@@ -715,11 +732,66 @@ export async function editExpense(
   );
 }
 
+// Deleting leaves a small record in groups/{id}/deletedExpenses (see
+// DeletedExpense in types.ts) so members can see what vanished after a
+// settle-up. The record is best-effort and written FIRST: if it can't be
+// written (offline queue aside - e.g. a rules change), the delete still
+// goes ahead exactly as before rather than being blocked by the audit.
+// If the delete itself then fails, the record is removed again.
 export async function deleteExpense(
   groupId: string,
   expenseId: string,
+  audit?: {expense: Expense; deletedBy: string},
 ): Promise<void> {
-  await deleteDoc(doc(db(), 'groups', groupId, 'expenses', expenseId));
+  const logRef = doc(db(), 'groups', groupId, 'deletedExpenses', expenseId);
+  let logged = false;
+  if (audit) {
+    const e = audit.expense;
+    try {
+      await setDoc(
+        logRef,
+        stripUndefined({
+          description: e.description,
+          amount: e.amount,
+          currency: e.currency,
+          category: e.category,
+          paidBy: e.paidBy,
+          shares: e.shares,
+          createdBy: e.createdBy,
+          createdAt: e.createdAt,
+          deletedBy: audit.deletedBy,
+          deletedAt: nowIso(),
+        }),
+      );
+      logged = true;
+    } catch {
+      // audit record is optional - never block the delete on it
+    }
+  }
+  try {
+    await deleteDoc(doc(db(), 'groups', groupId, 'expenses', expenseId));
+  } catch (error) {
+    if (logged) {
+      deleteDoc(logRef).catch(() => {});
+    }
+    throw error;
+  }
+}
+
+// Newest first. Errors (e.g. no read access) are swallowed into an empty
+// list - the deletion log is extra context, never required.
+export function subscribeDeletedExpenses(
+  groupId: string,
+  onChange: (deleted: DeletedExpense[]) => void,
+): () => void {
+  return listenQuery(
+    query(sub(groupId, 'deletedExpenses'), orderBy('deletedAt', 'desc'), limit(50)),
+    snap =>
+      onChange(
+        snap.docs.map(d => ({...(d.data() as DeletedExpense), id: d.id})),
+      ),
+    () => onChange([]),
+  );
 }
 
 export function subscribeExpenses(

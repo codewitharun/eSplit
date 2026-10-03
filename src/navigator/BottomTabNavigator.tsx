@@ -47,6 +47,7 @@ import BalancesScreen from '../screens/AfterLogin/Balances';
 import GroupSettingsScreen from '../screens/AfterLogin/GroupSettings';
 import {useExpenseState} from '../store/useExpenseStore';
 import {useGroupsStore} from '../store/useGroupsStore';
+import {usePendingRequestCount} from '../store/useJoinRequestsStore';
 import {BodyFont, moderateScale} from '../utils/fonts';
 import theme from '../utils/theme';
 import {ADD_EXPENSE_FAB, Routes} from './constants';
@@ -168,6 +169,9 @@ export default function MainTabs() {
   const groupName = useGroupsStore(
     state => state.groups.find(g => g.id === groupKey)?.name,
   );
+  // Join requests waiting in this group (admins only - 0 otherwise),
+  // shown as a red badge on the Settings tab where they're approved.
+  const pendingRequests = usePendingRequestCount(groupKey);
 
   return (
     <View style={styles.flex}>
@@ -237,7 +241,11 @@ export default function MainTabs() {
         <Tab.Screen
           name={Routes.GroupSettings}
           component={GroupSettingsScreen}
-          options={{title: 'Settings'}}
+          options={{
+            title: 'Settings',
+            tabBarBadge: pendingRequests > 0 ? pendingRequests : undefined,
+            tabBarBadgeStyle: styles.tabBadge,
+          }}
         />
       </Tab.Navigator>
       <AddFab bottom={tabBarHeight + ADD_EXPENSE_FAB.bottomOffset} />
@@ -291,6 +299,14 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.15,
     marginTop: 2,
+  },
+  tabBadge: {
+    backgroundColor: theme.color.rose,
+    color: theme.color.onAccent,
+    fontFamily: BodyFont.bold,
+    fontSize: moderateScale(10),
+    fontWeight: '700',
+    top: 2,
   },
   iconSlot: {
     paddingHorizontal: 15,

@@ -65,3 +65,15 @@ describe('formatSignedMoney', () => {
     expect(formatSignedMoney(-0.001, 'INR')).toBe('₹0.00');
   });
 });
+
+describe('formatMoneyShort', () => {
+  const {formatMoneyShort} = require('../currency');
+  it('groups thousands and drops .00 on whole amounts', () => {
+    expect(formatMoneyShort(15033, 'INR')).toBe('\u20b915,033');
+    expect(formatMoneyShort(1823456.5, 'INR')).toBe('\u20b918,23,456.50');
+    expect(formatMoneyShort(18210.33, 'INR')).toBe('\u20b918,210.33');
+    expect(formatMoneyShort(1234567, 'USD')).toMatch(/1,234,567$/);
+    expect(formatMoneyShort(50, 'INR')).toBe('\u20b950');
+    expect(formatMoneyShort(0, 'INR')).toBe('\u20b90');
+  });
+});

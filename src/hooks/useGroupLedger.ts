@@ -7,6 +7,7 @@
 
 import {useEffect, useMemo, useState} from 'react';
 import {
+  subscribeDeletedExpenses,
   subscribeExpenses,
   subscribeGroup,
   subscribeGroupMembers,
@@ -17,6 +18,7 @@ import {
   computePairwiseLedger,
 } from '../services/ledger/debtSimplifier';
 import {
+  DeletedExpense,
   Expense,
   Group,
   GroupMember,
@@ -35,6 +37,8 @@ export interface GroupLedger {
   pastMembers: GroupMember[];
   expenses: Expense[];
   settlements: Settlement[];
+  // Expenses deleted by app versions that log deletions (newest first).
+  deletedExpenses: DeletedExpense[];
   totalSpent: number;
   netBalances: Record<string, number>;
   transfers: SimplifiedTransfer[];
@@ -49,6 +53,7 @@ export function useGroupLedger(groupId: string | null): GroupLedger {
   const [allMembers, setAllMembers] = useState<GroupMember[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [settlements, setSettlements] = useState<Settlement[]>([]);
+  const [deletedExpenses, setDeletedExpenses] = useState<DeletedExpense[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -68,11 +73,13 @@ export function useGroupLedger(groupId: string | null): GroupLedger {
       setLoading(false);
     });
     const unsubSettlements = subscribeSettlements(groupId, setSettlements);
+    const unsubDeleted = subscribeDeletedExpenses(groupId, setDeletedExpenses);
     return () => {
       unsubGroup();
       unsubMembers();
       unsubExpenses();
       unsubSettlements();
+      unsubDeleted();
     };
   }, [groupId]);
 
@@ -131,6 +138,7 @@ export function useGroupLedger(groupId: string | null): GroupLedger {
     pastMembers,
     expenses,
     settlements,
+    deletedExpenses,
     totalSpent,
     netBalances,
     transfers,

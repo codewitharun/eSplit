@@ -1,6 +1,6 @@
 {
   "name": "ezysplit-expo",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "main": "index.ts",
   "dependencies": {
     "@expo/metro-runtime": "~57.0.16",

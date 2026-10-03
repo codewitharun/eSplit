@@ -76,6 +76,28 @@ export function formatMoney(
   return `${symbol}${sep}${amount.toFixed(decimals)}`;
 }
 
+// Display-friendly amount for dashboard cards: thousands separators
+// (Indian 1,23,456 grouping for INR, 123,456 elsewhere) and no ".00" on
+// whole amounts - "₹15,033" / "₹18,210.33". Ledger screens and exports
+// keep formatMoney's fixed 2 decimals.
+export function formatMoneyShort(amount: number, code?: string | null): string {
+  const symbol = currencySymbol(code);
+  const sep = needsSpace(symbol) ? ' ' : '';
+  const neg = amount < 0;
+  const abs = Math.round(Math.abs(amount) * 100) / 100;
+  const whole = Math.abs(abs - Math.round(abs)) < 0.005;
+  const [intPart, frac] = (whole ? Math.round(abs).toFixed(0) : abs.toFixed(2)).split('.');
+  let grouped: string;
+  if ((code || DEFAULT_CURRENCY) === 'INR' && intPart.length > 3) {
+    const last3 = intPart.slice(-3);
+    const rest = intPart.slice(0, -3).replace(/\B(?=(\d{2})+(?!\d))/g, ',');
+    grouped = `${rest},${last3}`;
+  } else {
+    grouped = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  }
+  return `${neg ? '\u2212' : ''}${symbol}${sep}${grouped}${frac ? `.${frac}` : ''}`;
+}
+
 // "+₹443.67" / "−₹2645.99" / "₹0.00" - sign in front of the symbol
 // (formatMoney on a negative number gives "₹-2645.99"). Uses a real minus
 // sign (U+2212) so it lines up with "+" in tabular layouts.

@@ -37,7 +37,7 @@ const Notifications = {
       android: {
         channelId,
         smallIcon: 'notification_icon',
-        color: '#3ECF8E',
+        color: '#0082B0',
         sound: undefined,
         pressAction: {
           id: 'open-pdf',
@@ -54,7 +54,7 @@ const Notifications = {
       android: {
         channelId: 'Transaction',
         smallIcon: 'notification_icon',
-        color: '#3ECF8E',
+        color: '#0082B0',
       },
     });
   },
@@ -82,7 +82,7 @@ const Notifications = {
       android: {
         channelId: 'Transaction',
         smallIcon: 'notification_icon',
-        color: '#3ECF8E',
+        color: '#0082B0',
         pressAction: {id: 'join-notification'},
       },
       data,

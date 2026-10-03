@@ -17,6 +17,7 @@ import {useFocusEffect, useNavigation} from '@react-navigation/native';
 import {Search, SlidersHorizontal, X} from 'lucide-react-native';
 import React, {useCallback, useMemo, useRef, useState} from 'react';
 import {
+  Alert,
   BackHandler,
   FlatList,
   Modal,
@@ -42,6 +43,11 @@ import {useModalOpenGuard} from '../../hooks/useModalOpenGuard';
 import {formatMoney} from '../../services/ledger/currency';
 import {visibleItems} from '../../services/ledger/expenseItems';
 import {computeGroupInsights} from '../../services/ledger/groupInsights';
+import {
+  editBadge,
+  lastSettlementAt,
+  predatesLastSettlement,
+} from '../../services/ledger/expenseAudit';
 import {
   dayKey,
   dayLabel,
@@ -209,19 +215,11 @@ const ActivityScreen: React.FC = () => {
     // any expense - tightened alongside this). Mirror that here so tapping
     // someone else's expense gives a clear reason instead of a silent
     // permission-denied write once they hit Save.
+    // Everyone else gets a read-only view - items (if any) and how it's
+    // split - for single and multi-item expenses alike.
     if (expense.createdBy !== user?.uid) {
-      if (visibleItems(expense)) {
-        haptics.tap();
-        setViewingItemsOf(expense);
-        return;
-      }
-      Toast.show({
-        type: 'info',
-        text1: 'Only the person who added this can edit it',
-        text2: `Ask ${ledger.memberName(
-          expense.createdBy,
-        )} to make the change.`,
-      });
+      haptics.tap();
+      setViewingItemsOf(expense);
       return;
     }
     haptics.tap();
@@ -400,13 +398,37 @@ const ActivityScreen: React.FC = () => {
       });
       return;
     }
-    deleteExpense(groupKey, expenseId).catch(error =>
-      Toast.show({
-        type: 'error',
-        text1: 'Could not delete',
-        text2: error?.message,
-      }),
-    );
+    const run = () =>
+      deleteExpense(
+        groupKey,
+        expenseId,
+        expense && user?.uid ? {expense, deletedBy: user.uid} : undefined,
+      ).catch(error =>
+        Toast.show({
+          type: 'error',
+          text1: 'Could not delete',
+          text2: error?.message,
+        }),
+      );
+    // Deleting something the group already settled up on silently
+    // reopens balances - ask first (newer expenses delete straight away,
+    // as before).
+    if (
+      expense &&
+      !isPersonalList &&
+      predatesLastSettlement(expense, ledger.settlements)
+    ) {
+      Alert.alert(
+        'Delete a settled expense?',
+        `“${expense.description}” is from before your group’s last settle-up. Deleting it will reopen balances, and everyone will see it under “Changes since settle-up” on Balances.`,
+        [
+          {text: 'Cancel', style: 'cancel'},
+          {text: 'Delete', style: 'destructive', onPress: run},
+        ],
+      );
+      return;
+    }
+    run();
   };
 
   if (!groupKey) {
@@ -660,12 +682,44 @@ const ActivityScreen: React.FC = () => {
                   </View>
                   <View style={styles.expenseMid}>
                     <Text style={styles.expenseTitle}>{item.description}</Text>
-                    <Text style={styles.expenseSub} numberOfLines={1}>
-                      {item.paidBy === user?.uid
-                        ? 'You'
-                        : ledger.memberName(item.paidBy)}{' '}
-                      paid · {timeLabel(item.createdAt)}
-                    </Text>
+                    <View style={styles.expenseSubRow}>
+                      <Text
+                        style={[styles.expenseSub, styles.expenseSubText]}
+                        numberOfLines={1}>
+                        {item.paidBy === user?.uid
+                          ? 'You'
+                          : ledger.memberName(item.paidBy)}{' '}
+                        paid · {timeLabel(item.createdAt)}
+                      </Text>
+                      {(() => {
+                        const badge = editBadge(item, ledger.settlements);
+                        if (badge === 'none') {
+                          return null;
+                        }
+                        const warn = badge === 'afterSettle';
+                        return (
+                          <TouchableOpacity
+                            hitSlop={{top: 8, bottom: 8, left: 6, right: 6}}
+                            accessibilityLabel="See what changed"
+                            onPress={() => {
+                              haptics.tap();
+                              setViewingItemsOf(item);
+                            }}
+                            style={[
+                              styles.editedChip,
+                              warn && styles.editedChipWarn,
+                            ]}>
+                            <Text
+                              style={[
+                                styles.editedChipText,
+                                warn && styles.editedChipTextWarn,
+                              ]}>
+                              {warn ? 'Edited after settle-up' : 'Edited'}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })()}
+                    </View>
                   </View>
                   <View style={styles.expenseRight}>
                     <Text style={styles.expenseAmount}>
@@ -721,6 +775,9 @@ const ActivityScreen: React.FC = () => {
           groupCurrency={ledger.group?.currency}
           editingExpense={editingExpense}
           origin={expenseOrigin}
+          lastSettledAt={
+            isPersonalList ? null : lastSettlementAt(ledger.settlements)
+          }
         />
       )}
 
@@ -744,6 +801,9 @@ const ActivityScreen: React.FC = () => {
             : ledger.memberName(viewingItemsOf?.paidBy || '')
         }
         createdByLabel={ledger.memberName(viewingItemsOf?.createdBy || '')}
+        memberName={ledger.memberName}
+        currentUid={user?.uid}
+        settlements={ledger.settlements}
       />
 
       <Modal
@@ -1040,6 +1100,27 @@ const styles = StyleSheet.create({
     fontSize: moderateScale(12),
     marginTop: 2,
   },
+  expenseSubRow: {flexDirection: 'row', alignItems: 'center', gap: 6},
+  expenseSubText: {flexShrink: 1},
+  editedChip: {
+    marginTop: 2,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: theme.radius.pill,
+    borderWidth: 1,
+    borderColor: theme.color.border,
+  },
+  editedChipWarn: {
+    borderColor: 'rgba(240,185,77,0.5)',
+    backgroundColor: 'rgba(240,185,77,0.12)',
+  },
+  editedChipText: {
+    color: theme.color.inkSoft,
+    fontFamily: BodyFont.semibold,
+    fontSize: moderateScale(10.5),
+    fontWeight: '600',
+  },
+  editedChipTextWarn: {color: theme.color.amber},
   expenseAmount: {
     color: theme.color.ink,
     fontFamily: BodyFont.bold,

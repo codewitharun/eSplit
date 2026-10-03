@@ -9,15 +9,18 @@
 import KeyboardSafeScrollView from '../../component/KeyboardSafeScrollView';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {useIsFocused, useRoute} from '@react-navigation/native';
-import React, {useEffect, useRef, useState} from 'react';
+import React, {useEffect, useMemo, useRef, useState} from 'react';
 import {ActivityIndicator, LayoutChangeEvent, StyleSheet, TouchableOpacity, View} from 'react-native';
 import {Text} from '../../component/ui/AppText';
 import {
   ArrowDown,
   ArrowUp,
   ChevronDown,
+  CalendarDays,
   ChevronRight,
   Clock,
+  History,
+  Receipt,
   Sigma,
 } from 'lucide-react-native';
 import Toast from '../../services/toast';
@@ -43,7 +46,11 @@ import AddGroupFab, {
 import AssistantOrb, {
   ASSISTANT_ORB_SIZE,
 } from '../../component/assistant/AssistantOrb';
-import {formatMoney, isUpiCurrency} from '../../services/ledger/currency';
+import {
+  formatMoney,
+  formatMoneyShort,
+  isUpiCurrency,
+} from '../../services/ledger/currency';
 import UpiPromptModal from '../../component/UpiPromptModal';
 import {useExpenseState} from '../../store/useExpenseStore';
 import {haptics} from '../../utils/haptics';
@@ -56,9 +63,23 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import {BodyFont, MonoFont, Typography, moderateScale} from '../../utils/fonts';
+import {
+  BodyFont,
+  DisplayFont,
+  MonoFont,
+  Typography,
+  moderateScale,
+} from '../../utils/fonts';
 import {useCountUp} from '../../utils/animation';
 import {currentUser} from '../../data/firebase';
+import RequestsBadge from '../../component/RequestsBadge';
+import MonthInsightCard from '../../component/MonthInsightCard';
+import {
+  comparisonWindows,
+  computeMonthInsight,
+  monthToDateTotal,
+} from '../../services/ledger/monthInsight';
+import {useJoinRequestsStore} from '../../store/useJoinRequestsStore';
 import {getUserUpiId} from '../../data/users';
 
 // Deterministic accent color per group (from its id) for the lettered
@@ -96,6 +117,8 @@ const GroupManagement = ({navigation}: any) => {
   const {groups, loading, ensureLoaded, removeGroupLocally, joinGroupById} =
     useGroups();
   const overview = useGroupsOverview(groups, user?.uid);
+  // Pending join requests per group you admin (red chip on its card).
+  const pendingByGroup = useJoinRequestsStore(state => state.byGroup);
   const [spendMode, setSpendMode] = useState<'all' | 'groups' | 'personal'>(
     'all',
   );
@@ -366,8 +389,29 @@ const GroupManagement = ({navigation}: any) => {
   const heroYouAreOwed = overview.totalOwedToYou >= overview.totalYouOwe;
   const heroColor = heroYouAreOwed ? theme.color.greenBright : theme.color.rose;
   const heroRingColor = heroYouAreOwed ? theme.color.green : theme.color.rose;
-  const personalSpendPrimary =
-    personalSpendByCurrency[overview.primaryCurrency] || 0;
+  // The Personal hero is captioned "logged this month", so it shows this
+  // month's personal spend (it used to show the all-time total).
+  const personalSpendPrimary = useMemo(
+    () =>
+      monthToDateTotal(overview.myShareEntries, {
+        scope: 'personal',
+        currency: overview.primaryCurrency,
+      }),
+    [overview.myShareEntries, overview.primaryCurrency],
+  );
+  // "This month" insight card under the hero - follows the toggle.
+  const monthInsight = useMemo(
+    () =>
+      computeMonthInsight(overview.myShareEntries, {
+        scope: spendMode,
+        currency: overview.primaryCurrency,
+        // Personal lists are logged one item at a time and are all yours,
+        // so even a single expense is worth summarising there. Groups/All
+        // wait for a few so "top spend" means something.
+        minExpenses: spendMode === 'personal' ? 1 : 3,
+      }),
+    [overview.myShareEntries, overview.primaryCurrency, spendMode],
+  );
   // Counts up from 0 to the real figure whenever it changes (initial
   // load, or the All/Groups/Personal toggle swapping the hero amount) -
   // was a hard jump straight to the final number before.
@@ -435,71 +479,159 @@ const GroupManagement = ({navigation}: any) => {
   // Rendered twice below: once in a hidden measurer, once in the visible
   // animated shutter. Kept as one JSX value so the two copies can never
   // drift out of sync.
-  const quickStatTiles = (
-    <>
-      <View style={styles.quickStatTile}>
-        <View style={[styles.quickStatIcon, styles.quickStatIconGreen]}>
-          <ArrowDown size={15} color={theme.color.green} />
-        </View>
-        <Text style={styles.quickStatValue}>
-          {formatMoney(overview.totalOwedToYou, overview.primaryCurrency)}
-        </Text>
-        <Text style={styles.quickStatLabel}>Owed to you</Text>
-        <Text style={styles.quickStatHint}>
-          {overview.totalOwedToYou > 0.01
-            ? `▲ across ${owedGroupsCount} group${
-                owedGroupsCount === 1 ? '' : 's'
-              }`
-            : '— no open credit'}
-        </Text>
-      </View>
-      <View style={styles.quickStatTile}>
-        <View style={[styles.quickStatIcon, styles.quickStatIconRose]}>
-          <ArrowUp size={15} color={theme.color.rose} />
-        </View>
-        <Text style={styles.quickStatValue}>
-          {formatMoney(overview.totalYouOwe, overview.primaryCurrency)}
-        </Text>
-        <Text style={styles.quickStatLabel}>You owe</Text>
-        <Text style={styles.quickStatHint}>
-          {overview.totalYouOwe > 0.01
-            ? `▲ across ${oweGroupsCount} group${
-                oweGroupsCount === 1 ? '' : 's'
-              }`
-            : '— all clear'}
-        </Text>
-      </View>
-      <View style={styles.quickStatTile}>
-        <View style={[styles.quickStatIcon, styles.quickStatIconBlue]}>
-          <Sigma size={15} color={theme.color.teal} />
-        </View>
-        <Text style={styles.quickStatValue}>
-          {formatMoney(
+  // Compact 2x2: icon beside the number, label + context on one line
+  // underneath. Was icon / number / label / hint stacked - ~45% taller
+  // with lots of dead space for four small facts.
+  const owedHint =
+    overview.totalOwedToYou > 0.01
+      ? `${owedGroupsCount} group${owedGroupsCount === 1 ? '' : 's'}`
+      : 'none open';
+  const oweHint =
+    overview.totalYouOwe > 0.01
+      ? `${oweGroupsCount} group${oweGroupsCount === 1 ? '' : 's'}`
+      : 'all clear';
+  const spentHint =
+    spendMode === 'all' ? 'all' : spendMode === 'groups' ? 'groups' : 'personal';
+  // Personal has no owe/owed (nothing is split), so its tiles answer
+  // "how am I spending" instead: count, daily pace, last month, all time.
+  const personalStats = useMemo(() => {
+    const now = new Date();
+    const {thisStart, thisEnd, lastStart, lastMonthEnd} = comparisonWindows(now);
+    const cur = overview.primaryCurrency;
+    const mine = overview.myShareEntries.filter(
+      e => e.personal && e.amount > 0 && (e.currency || cur) === cur,
+    );
+    const inRange = (iso: string, a: Date, b: Date) => {
+      const t = new Date(iso);
+      return t >= a && t < b;
+    };
+    const thisMonth = mine.filter(e => inRange(e.createdAt, thisStart, thisEnd));
+    const lastMonthTotal = mine
+      .filter(e => inRange(e.createdAt, lastStart, lastMonthEnd))
+      .reduce((sum, e) => sum + e.amount, 0);
+    return {
+      count: thisMonth.length,
+      dailyAvg: personalSpendPrimary / now.getDate(),
+      lastMonthTotal,
+      lastMonthName: lastStart.toLocaleString('en-IN', {month: 'short'}),
+    };
+  }, [overview.myShareEntries, overview.primaryCurrency, personalSpendPrimary]);
+
+  const quickStats: {
+    key: string;
+    icon: React.ReactNode;
+    iconStyle: object;
+    value: string;
+    label: string;
+    hint: string;
+  }[] = heroIsPersonal
+    ? [
+        {
+          key: 'count',
+          icon: <Receipt size={13} color={theme.color.teal} />,
+          iconStyle: styles.quickStatIconBlue,
+          value: `${personalStats.count} logged`,
+          label: 'Expenses',
+          hint: 'this month',
+        },
+        {
+          key: 'daily',
+          icon: <CalendarDays size={13} color={theme.color.green} />,
+          iconStyle: styles.quickStatIconGreen,
+          value: formatMoneyShort(
+            Math.round(personalStats.dailyAvg),
+            overview.primaryCurrency,
+          ),
+          label: 'Per day',
+          hint: 'avg this month',
+        },
+        {
+          key: 'last',
+          icon: <History size={13} color={theme.color.amber} />,
+          iconStyle: styles.quickStatIconAmber,
+          value: formatMoneyShort(
+            personalStats.lastMonthTotal,
+            overview.primaryCurrency,
+          ),
+          label: 'Last month',
+          hint: personalStats.lastMonthName,
+        },
+        {
+          key: 'spent',
+          icon: <Sigma size={13} color={theme.color.rose} />,
+          iconStyle: styles.quickStatIconRose,
+          value: formatMoneyShort(
             activeSpendByCurrency[overview.primaryCurrency] || 0,
             overview.primaryCurrency,
-          )}
-        </Text>
-        <Text style={styles.quickStatLabel}>Total spent</Text>
-        <Text style={styles.quickStatHint}>
-          {spendMode === 'all'
-            ? 'groups + personal'
-            : spendMode === 'groups'
-            ? 'groups only'
-            : 'personal only'}
-        </Text>
-      </View>
-      <View style={styles.quickStatTile}>
-        <View style={[styles.quickStatIcon, styles.quickStatIconAmber]}>
-          <Clock size={15} color={theme.color.amber} />
+          ),
+          label: 'Total spent',
+          hint: 'all time',
+        },
+      ]
+    : [
+    {
+      key: 'owed',
+      icon: <ArrowDown size={13} color={theme.color.green} />,
+      iconStyle: styles.quickStatIconGreen,
+      value: formatMoneyShort(overview.totalOwedToYou, overview.primaryCurrency),
+      label: 'Owed to you',
+      hint: owedHint,
+    },
+    {
+      key: 'owe',
+      icon: <ArrowUp size={13} color={theme.color.rose} />,
+      iconStyle: styles.quickStatIconRose,
+      value: formatMoneyShort(overview.totalYouOwe, overview.primaryCurrency),
+      label: 'You owe',
+      hint: oweHint,
+    },
+    {
+      key: 'spent',
+      icon: <Sigma size={13} color={theme.color.teal} />,
+      iconStyle: styles.quickStatIconBlue,
+      value: formatMoneyShort(
+        activeSpendByCurrency[overview.primaryCurrency] || 0,
+        overview.primaryCurrency,
+      ),
+      label: 'Total spent',
+      hint: spentHint,
+    },
+    {
+      key: 'groups',
+      icon: <Clock size={13} color={theme.color.amber} />,
+      iconStyle: styles.quickStatIconAmber,
+      value: `${groups.length} active`,
+      label: 'Groups',
+      hint: settledGroupsCount > 0 ? `${settledGroupsCount} settled` : '',
+    },
+  ];
+
+  // Rendered twice below: once in a hidden measurer, once in the visible
+  // animated shutter. Kept as one JSX value so the two copies can never
+  // drift out of sync.
+  const quickStatTiles = (
+    <>
+      {quickStats.map(stat => (
+        <View key={stat.key} style={styles.quickStatTile}>
+          <View style={styles.quickStatTopRow}>
+            <View style={[styles.quickStatIcon, stat.iconStyle]}>
+              {stat.icon}
+            </View>
+            {/* No adjustsFontSizeToFit: on Android it measures while the
+            shutter is collapsed (height 0) and shrinks the text to a
+            few px, which stuck until the value changed. */}
+            <Text style={styles.quickStatValue} numberOfLines={1}>
+              {stat.value}
+            </Text>
+          </View>
+          <Text style={styles.quickStatLabel} numberOfLines={1}>
+            {stat.label}
+            {stat.hint ? (
+              <Text style={styles.quickStatHint}> · {stat.hint}</Text>
+            ) : null}
+          </Text>
         </View>
-        <Text style={styles.quickStatValue}>{groups.length} active</Text>
-        <Text style={styles.quickStatLabel}>Groups</Text>
-        <Text style={styles.quickStatHint}>
-          {settledGroupsCount > 0
-            ? `▼ ${settledGroupsCount} settled up`
-            : `${groups.length} group${groups.length === 1 ? '' : 's'}`}
-        </Text>
-      </View>
+      ))}
     </>
   );
 
@@ -566,7 +698,14 @@ const GroupManagement = ({navigation}: any) => {
                     </Text>
                     {!heroIsPersonal &&
                       Object.entries(overview.totalsByCurrency)
-                        .filter(([code]) => code !== overview.primaryCurrency)
+                        // Other currencies only when there's actually money
+                        // in them - a 0.00/0.00 line was just noise.
+                        .filter(
+                          ([code, totals]) =>
+                            code !== overview.primaryCurrency &&
+                            (Math.abs(totals.owedToYou) > 0.004 ||
+                              Math.abs(totals.youOwe) > 0.004),
+                        )
                         .map(([code, totals]) => (
                           <Text
                             key={code}
@@ -627,6 +766,19 @@ const GroupManagement = ({navigation}: any) => {
                   ))}
                 </View>
               </GlassCard>
+            )}
+
+            {groups.length > 0 && (
+              <MonthInsightCard
+                insight={monthInsight}
+                scopeLabel={
+                  spendMode === 'all'
+                    ? undefined
+                    : spendMode === 'groups'
+                    ? 'groups'
+                    : 'personal'
+                }
+              />
             )}
 
             {groups.length > 0 && (
@@ -745,6 +897,10 @@ const GroupManagement = ({navigation}: any) => {
                             year: 'numeric',
                           })}`}
                       </Text>
+                      <RequestsBadge
+                        variant="pill"
+                        count={pendingByGroup[g.id]?.length ?? 0}
+                      />
                       {overview.perGroupBalance[g.id] != null &&
                         Math.abs(overview.perGroupBalance[g.id]) > 0.01 && (
                           <Text
@@ -1022,8 +1178,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     flexShrink: 0,
-    gap: 10,
-    marginBottom: 14,
+    gap: 8,
+    marginBottom: 12,
   },
   quickStatTile: {
     flexBasis: '47%',
@@ -1031,36 +1187,44 @@ const styles = StyleSheet.create({
     backgroundColor: theme.color.groundAlt,
     borderWidth: 1,
     borderColor: theme.color.border,
-    borderRadius: theme.radius.lg,
-    paddingVertical: 13,
-    paddingHorizontal: 14,
+    borderRadius: theme.radius.md,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  quickStatTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   quickStatIcon: {
-    width: 30,
-    height: 30,
-    borderRadius: theme.radius.sm,
+    width: 24,
+    height: 24,
+    borderRadius: 7,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 10,
   },
   quickStatIconGreen: {backgroundColor: 'rgba(62,207,142,0.16)'},
   quickStatIconRose: {backgroundColor: 'rgba(240,129,156,0.16)'},
   quickStatIconBlue: {backgroundColor: 'rgba(56,217,201,0.16)'},
   quickStatIconAmber: {backgroundColor: 'rgba(240,185,77,0.16)'},
   quickStatValue: {
+    flex: 1,
     color: theme.color.ink,
-    ...Typography.title,
+    fontFamily: DisplayFont.bold,
+    fontSize: moderateScale(17),
+    fontWeight: '700',
   },
   quickStatLabel: {
     color: theme.color.inkSoft,
-    ...Typography.body,
-    marginTop: 2,
+    fontFamily: BodyFont.semibold,
+    fontSize: moderateScale(12),
+    fontWeight: '600',
+    marginTop: 6,
   },
   quickStatHint: {
     color: theme.color.inkFaint,
     fontFamily: BodyFont.regular,
-    fontSize: moderateScale(11.5),
-    marginTop: 6,
+    fontWeight: '400',
   },
   groupsHeaderRow: {
     flexDirection: 'row',

@@ -7,7 +7,7 @@
 
 import {Plus, ReceiptText, X} from 'lucide-react-native';
 import React, {useEffect, useMemo, useRef, useState} from 'react';
-import {StyleSheet, TouchableOpacity, View} from 'react-native';
+import {Alert, StyleSheet, TouchableOpacity, View} from 'react-native';
 import {Text, TextInput} from './ui/AppText';
 import {useModalOpenGuard} from '../hooks/useModalOpenGuard';
 import {currencySymbol, formatMoney} from '../services/ledger/currency';
@@ -59,6 +59,26 @@ interface Props {
   // Where the panel grows from: the Add expense button, or the spot the
   // user tapped on an expense row (edit).
   origin?: GenieOrigin;
+  // ISO time of the group's latest settle-up payment. Editing the amount
+  // or split of an expense from before it reopens balances for everyone,
+  // so that asks for confirmation first (see confirmReopen below).
+  lastSettledAt?: string | null;
+}
+
+// Editing an expense the group already settled up on changes balances
+// that everyone thought were closed - make that an explicit choice.
+function confirmReopen(): Promise<boolean> {
+  return new Promise(resolve =>
+    Alert.alert(
+      'This expense was already settled',
+      'It’s from before your group’s last settle-up. Changing the amount or split will reopen balances for everyone, and they’ll see it marked “Edited after settle-up”.',
+      [
+        {text: 'Cancel', style: 'cancel', onPress: () => resolve(false)},
+        {text: 'Save anyway', style: 'destructive', onPress: () => resolve(true)},
+      ],
+      {cancelable: true, onDismiss: () => resolve(false)},
+    ),
+  );
 }
 
 // Fallback origin (bottom-centre) for any caller that doesn't pass one.
@@ -106,6 +126,7 @@ function buildChangeSummary(
     splitType: SplitType;
     participantUids: string[];
     items: ExpenseItem[];
+    shares?: Record<string, number>;
   },
 ): string {
   const parts: string[] = [];
@@ -139,6 +160,16 @@ function buildChangeSummary(
     [...after.participantUids].sort().join(',')
   ) {
     parts.push('participants changed');
+  } else if (
+    before.amount === after.amount &&
+    after.shares &&
+    Object.keys(after.shares).some(
+      uid => Math.abs((after.shares![uid] || 0) - (before.shares[uid] || 0)) > 0.004,
+    )
+  ) {
+    // Same people, same total, different per-person amounts (exact /
+    // percentage / shares re-weighted) - used to log as a vague "Edited".
+    parts.push('shares changed');
   }
   return parts.length ? parts.join('; ') : 'Edited expense';
 }
@@ -188,6 +219,7 @@ const AddExpenseModal: React.FC<Props> = ({
   groupCurrency,
   editingExpense,
   origin,
+  lastSettledAt,
 }) => {
   const isEditMode = !!editingExpense;
   const moneySymbol = currencySymbol(groupCurrency);
@@ -453,6 +485,26 @@ const AddExpenseModal: React.FC<Props> = ({
       });
       throw new Error('invalid-split');
     }
+    if (isEditMode && editingExpense && lastSettledAt && editingExpense.createdAt < lastSettledAt) {
+      const nextShares = computeSplits(
+        fields.amount,
+        splitType,
+        participantUids,
+        buildSplitParams(),
+      );
+      const moneyChanged =
+        Math.abs(fields.amount - editingExpense.amount) > 0.004 ||
+        paidBy !== editingExpense.paidBy ||
+        Object.keys({...nextShares, ...editingExpense.shares}).some(
+          uid =>
+            Math.abs((nextShares[uid] || 0) - (editingExpense.shares[uid] || 0)) >
+            0.004,
+        );
+      if (moneyChanged && !(await confirmReopen())) {
+        // Throwing resets the swipe-to-save, like the validation errors.
+        throw new Error('cancelled');
+      }
+    }
     setSubmitting(true);
     try {
       if (isEditMode && editingExpense?.id) {
@@ -470,7 +522,15 @@ const AddExpenseModal: React.FC<Props> = ({
           editingExpense.id,
           currentUid,
           {...nextValues, splitParams: buildSplitParams()},
-          buildChangeSummary(editingExpense, nextValues),
+          buildChangeSummary(editingExpense, {
+            ...nextValues,
+            shares: computeSplits(
+              fields.amount,
+              splitType,
+              participantUids,
+              buildSplitParams(),
+            ),
+          }),
         );
         Toast.show({type: 'success', text1: 'Expense updated'});
       } else {

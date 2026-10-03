@@ -26,10 +26,10 @@
 // write - fixing a typo shouldn't feel like a big decision the way
 // deleting the group does.
 
-import {useFocusEffect, useNavigation} from '@react-navigation/native';
+import {useFocusEffect, useNavigation, useRoute} from '@react-navigation/native';
 import {useBottomTabBarHeight} from '@react-navigation/bottom-tabs';
 import {Pencil, Share2, UserRound, UsersRound} from 'lucide-react-native';
-import React, {useCallback, useState} from 'react';
+import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {BackHandler, Modal, ScrollView, StyleSheet, Switch, TouchableOpacity, View} from 'react-native';
 import {Text, TextInput} from '../../component/ui/AppText';
 import QRCode from 'react-native-qrcode-svg';
@@ -71,6 +71,7 @@ import {
   moderateScale,
 } from '../../utils/fonts';
 import {currentUser} from '../../data/firebase';
+import {timeAgo} from '../../utils/timeAgo';
 
 const GroupSettingsScreen: React.FC = () => {
   const navigation = useNavigation<any>();
@@ -91,7 +92,17 @@ const GroupSettingsScreen: React.FC = () => {
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deletingGroup, setDeletingGroup] = useState(false);
-  const {requests: joinRequests} = useJoinRequests(groupKey);
+  const {requests: joinRequests, loading: joinRequestsLoading} =
+    useJoinRequests(groupKey);
+  // Set when a "wants to join" push (or the Notifications screen) sends
+  // the admin here - see openGroupJoinRequests() in
+  // services/notificationNavigation.ts. Highlights that request briefly.
+  const route = useRoute<any>();
+  const focusRequestUid: string | undefined = route.params?.focusRequestUid;
+  const focusAt: number | undefined = route.params?.focusAt;
+  const [highlightUid, setHighlightUid] = useState<string | null>(null);
+  const scrollRef = useRef<ScrollView>(null);
+  const handledFocusRef = useRef<number | null>(null);
   const [respondingUid, setRespondingUid] = useState<string | null>(null);
   const [addGuestModalVisible, setAddGuestModalVisible] = useState(false);
   // Rename: deliberately much lighter than the delete modal below - no
@@ -131,6 +142,61 @@ const GroupSettingsScreen: React.FC = () => {
   const hasOpenBalance = Math.abs(myBalance) > EPSILON;
   const myRole = ledger.members.find(m => m.uid === user?.uid)?.role;
   const isGroupAdmin = myRole === 'admin';
+
+  // Arrived from a join-request notification: requests are listed at the
+  // top of this screen, so scroll up and highlight the one tapped. If it's
+  // no longer pending (another admin got there first, or they cancelled),
+  // say so instead of leaving the admin looking for it.
+  useEffect(() => {
+    if (!focusAt || handledFocusRef.current === focusAt) {
+      return;
+    }
+    if (
+      joinRequestsLoading ||
+      ledger.loading ||
+      ledger.group?.id !== groupKey
+    ) {
+      return; // wait until this group's requests and roles have loaded
+    }
+    handledFocusRef.current = focusAt;
+    scrollRef.current?.scrollTo({y: 0, animated: true});
+    if (!isGroupAdmin) {
+      Toast.show({
+        type: 'info',
+        text1: 'Only group admins can approve requests',
+      });
+    } else if (
+      focusRequestUid &&
+      !joinRequests.some(r => r.uid === focusRequestUid)
+    ) {
+      Toast.show({
+        type: 'info',
+        text1: 'That request was already handled',
+        text2: 'Nothing left to approve for this person.',
+      });
+    } else if (focusRequestUid) {
+      setHighlightUid(focusRequestUid);
+    }
+    navigation.setParams({focusRequestUid: undefined, focusAt: undefined});
+  }, [
+    focusAt,
+    focusRequestUid,
+    joinRequestsLoading,
+    ledger.loading,
+    ledger.group?.id,
+    groupKey,
+    isGroupAdmin,
+    joinRequests,
+    navigation,
+  ]);
+
+  useEffect(() => {
+    if (!highlightUid) {
+      return;
+    }
+    const t = setTimeout(() => setHighlightUid(null), 4000);
+    return () => clearTimeout(t);
+  }, [highlightUid]);
   const isPersonalList = ledger.group?.type === 'personal';
   const [inviteOpen, setInviteOpen] = useState(false);
   // Delete group needs EVERYONE settled, not just the admin - unlike
@@ -456,6 +522,7 @@ const GroupSettingsScreen: React.FC = () => {
   return (
     <View style={styles.flex}>
       <ScrollView
+        ref={scrollRef}
         onScroll={onFabScroll}
         scrollEventThrottle={16}
         contentContainerStyle={[
@@ -476,6 +543,59 @@ const GroupSettingsScreen: React.FC = () => {
             <GroupSwitcherPill iconOnly />
           </View>
         </View>
+
+        {/* Pending join requests come first, so an admin sees them the
+            moment this tab opens - no scrolling past group details. */}
+        {isGroupAdmin &&
+          ledger.group?.type !== 'personal' &&
+          joinRequests.length > 0 && (
+            <GlassCard style={styles.requestsCard}>
+              <View style={styles.requestsHeader}>
+                <Text style={styles.requestsTitle}>Join requests</Text>
+                <View style={styles.requestsCount}>
+                  <Text style={styles.requestsCountText}>
+                    {joinRequests.length}
+                  </Text>
+                </View>
+              </View>
+              {joinRequests.map((r, i) => (
+                <View
+                  key={r.uid}
+                  style={[
+                    styles.requestRow,
+                    i === joinRequests.length - 1 && styles.requestRowLast,
+                    highlightUid === r.uid && styles.requestRowHighlight,
+                  ]}>
+                  <MemberAvatar id={r.uid} name={r.displayName} size={32} />
+                  <View style={styles.requestInfo}>
+                    <Text style={styles.requestName} numberOfLines={1}>
+                      {r.displayName}
+                    </Text>
+                    <Text style={styles.requestHint} numberOfLines={1}>
+                      wants to join
+                      {r.requestedAt ? ` · ${timeAgo(r.requestedAt)}` : ''}
+                    </Text>
+                  </View>
+                  <View style={styles.requestActions}>
+                    <TouchableOpacity
+                      style={styles.requestDeclineBtn}
+                      onPress={() => handleDeclineRequest(r.uid, r.displayName)}
+                      disabled={!!respondingUid}>
+                      <Text style={styles.requestDeclineText}>Decline</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.requestApproveBtn}
+                      onPress={() => handleApproveRequest(r.uid)}
+                      disabled={!!respondingUid}>
+                      <Text style={styles.requestApproveText}>
+                        {respondingUid === r.uid ? 'Approving…' : 'Approve'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))}
+            </GlassCard>
+          )}
 
         <GlassCard style={styles.groupCard}>
           <View style={styles.groupNameRow}>
@@ -616,42 +736,6 @@ const GroupSettingsScreen: React.FC = () => {
             </View>
           </>
         )}
-
-        {isGroupAdmin &&
-          ledger.group?.type !== 'personal' &&
-          joinRequests.length > 0 && (
-            <>
-              <Text style={styles.sectionTitle}>
-                Join requests ({joinRequests.length})
-              </Text>
-              {joinRequests.map(r => (
-                <View key={r.uid} style={styles.requestRow}>
-                  <View style={styles.requestInfo}>
-                    <Text style={styles.requestName}>{r.displayName}</Text>
-                    <Text style={styles.requestHint}>
-                      wants to join this group
-                    </Text>
-                  </View>
-                  <View style={styles.requestActions}>
-                    <TouchableOpacity
-                      style={styles.requestDeclineBtn}
-                      onPress={() => handleDeclineRequest(r.uid, r.displayName)}
-                      disabled={!!respondingUid}>
-                      <Text style={styles.requestDeclineText}>Decline</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.requestApproveBtn}
-                      onPress={() => handleApproveRequest(r.uid)}
-                      disabled={!!respondingUid}>
-                      <Text style={styles.requestApproveText}>
-                        {respondingUid === r.uid ? 'Approving…' : 'Approve'}
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ))}
-            </>
-          )}
 
         <Text style={styles.sectionTitle}>Members</Text>
         {ledger.members
@@ -1128,14 +1212,55 @@ const styles = StyleSheet.create({
     fontSize: moderateScale(11.5),
     marginTop: 3,
   },
+  requestsCard: {
+    marginBottom: 16,
+    borderColor: 'rgba(240,129,156,0.45)',
+    paddingVertical: 6,
+  },
+  requestsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingTop: 6,
+    paddingBottom: 4,
+  },
+  requestsTitle: {
+    color: theme.color.ink,
+    fontFamily: BodyFont.bold,
+    fontSize: moderateScale(14),
+    fontWeight: '700',
+  },
+  requestsCount: {
+    minWidth: 20,
+    height: 20,
+    paddingHorizontal: 6,
+    borderRadius: 10,
+    backgroundColor: theme.color.rose,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  requestsCountText: {
+    color: theme.color.onAccent,
+    fontFamily: BodyFont.bold,
+    fontSize: moderateScale(11),
+    fontWeight: '700',
+  },
   requestRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 10,
     paddingVertical: 12,
+    paddingHorizontal: 8,
+    marginHorizontal: -8,
+    borderRadius: theme.radius.sm,
     borderBottomWidth: 1,
     borderBottomColor: theme.color.border,
+  },
+  requestRowLast: {borderBottomWidth: 0},
+  requestRowHighlight: {
+    backgroundColor: 'rgba(56,217,201,0.12)',
+    borderBottomColor: 'transparent',
   },
   requestInfo: {flex: 1},
   requestName: {

@@ -17,7 +17,7 @@ import {useFocusEffect, useNavigation} from '@react-navigation/native';
 import {useBottomTabBarHeight} from '@react-navigation/bottom-tabs';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {AppState, BackHandler, Linking, ScrollView, StyleSheet, TouchableOpacity, View} from 'react-native';
+import {ActivityIndicator, AppState, BackHandler, Linking, ScrollView, StyleSheet, TouchableOpacity, View} from 'react-native';
 import {Text, TextInput} from '../../component/ui/AppText';
 import Toast from '../../services/toast';
 import {openExportedFile} from '../../services/ledger/openExport';
@@ -26,8 +26,16 @@ import AnimatedNumber from '../../component/glass/AnimatedNumber';
 import BalanceBar from '../../component/BalanceBar';
 import MemberAvatar from '../../component/MemberAvatar';
 import ProgressBar from '../../component/ProgressBar';
-import {ArrowRight, Check} from 'lucide-react-native';
+import {
+  ArrowRight,
+  Check,
+  FileSpreadsheet,
+  FileText,
+  Pencil,
+} from 'lucide-react-native';
 import {computeSettleUpSummary} from '../../services/ledger/groupInsights';
+import {changesSinceSettlement} from '../../services/ledger/expenseAudit';
+import BalanceChangesCard from '../../component/BalanceChangesCard';
 import GlassCard from '../../component/glass/GlassCard';
 import GroupSwitcherPill from '../../component/GroupSwitcherPill';
 import HomeIconChip from '../../component/HomeIconChip';
@@ -70,6 +78,10 @@ const BalancesScreen: React.FC = () => {
   const [upiIds, setUpiIds] = useState<Record<string, string>>({});
   const [myUpiId, setMyUpiId] = useState('');
   const [savingUpi, setSavingUpi] = useState(false);
+  // Once a UPI ID is saved the field is read-only with a pencil button;
+  // tapping it unlocks the field and the button turns back into Save.
+  const [editingUpi, setEditingUpi] = useState(false);
+  const upiInputRef = useRef<TextInput>(null);
 
   // Balances is a secondary tab, so the hardware back button should first
   // return the user to the home tab (Activity) rather than exiting the
@@ -113,6 +125,15 @@ const BalancesScreen: React.FC = () => {
     }
   }, [user, upiIds]);
 
+  const savedUpiId = user ? upiIds[user.uid] || '' : '';
+  const upiLocked = !!savedUpiId && !editingUpi;
+  const startEditingUpi = () => {
+    haptics.tap();
+    setEditingUpi(true);
+    // Focus after the field becomes editable on the next render.
+    setTimeout(() => upiInputRef.current?.focus(), 50);
+  };
+
   const saveMyUpiId = async () => {
     if (!user) {
       return;
@@ -129,6 +150,7 @@ const BalancesScreen: React.FC = () => {
     try {
       await setUserUpiId(user.uid, myUpiId.trim());
       setUpiIds(prev => ({...prev, [user.uid]: myUpiId.trim()}));
+      setEditingUpi(false);
       haptics.success();
       Toast.show({type: 'success', text1: 'UPI ID saved'});
     } catch (error: any) {
@@ -143,6 +165,23 @@ const BalancesScreen: React.FC = () => {
   };
 
   const myBalance = user ? ledger.netBalances[user.uid] || 0 : 0;
+  // Edits/deletions to already-settled expenses (see BalanceChangesCard).
+  const balanceChanges = useMemo(
+    () =>
+      changesSinceSettlement(
+        ledger.expenses,
+        ledger.deletedExpenses,
+        ledger.settlements,
+        {uid: user?.uid || '', currency: ledger.group?.currency},
+      ),
+    [
+      ledger.expenses,
+      ledger.deletedExpenses,
+      ledger.settlements,
+      user?.uid,
+      ledger.group?.currency,
+    ],
+  );
   // A personal list (or, incidentally, any real group everyone else has
   // left) has nobody to owe or settle with - UPI-for-receiving-payment,
   // "who owes whom", and a per-person breakdown are all meaningless with
@@ -325,6 +364,22 @@ const BalancesScreen: React.FC = () => {
           },
         ],
       );
+    }
+  };
+
+  // Which export is running - shows a spinner on that card and stops a
+  // double tap from starting a second export.
+  const [exporting, setExporting] = useState<'pdf' | 'xlsx' | null>(null);
+  const runExport = async (kind: 'pdf' | 'xlsx', fn: () => Promise<void>) => {
+    if (exporting) {
+      return;
+    }
+    haptics.tap();
+    setExporting(kind);
+    try {
+      await fn();
+    } finally {
+      setExporting(null);
     }
   };
 
@@ -525,26 +580,46 @@ const BalancesScreen: React.FC = () => {
           )}
         </GlassCard>
 
+        {!isPersonal && (
+          <BalanceChangesCard
+            changes={balanceChanges}
+            currency={ledger.group?.currency}
+            nameOf={uid => (uid === user?.uid ? 'You' : ledger.memberName(uid))}
+          />
+        )}
+
         {isUpiCurrency(ledger.group?.currency) && !isPersonal && (
           <>
             <Text style={styles.sectionTitle}>Your UPI ID (for settle-up)</Text>
             <GlassCard style={styles.upiCard}>
               <TextInput
-                style={styles.upiInput}
+                ref={upiInputRef}
+                editable={!upiLocked}
+                style={[styles.upiInput, upiLocked && styles.upiInputLocked]}
                 placeholder="yourname@bank"
                 placeholderTextColor={theme.color.inkFaint}
                 autoCapitalize="none"
                 value={myUpiId}
                 onChangeText={setMyUpiId}
               />
-              <TouchableOpacity
-                style={styles.saveBtn}
-                onPress={saveMyUpiId}
-                disabled={savingUpi}>
-                <Text style={styles.saveBtnText}>
-                  {savingUpi ? 'Saving…' : 'Save'}
-                </Text>
-              </TouchableOpacity>
+              {upiLocked ? (
+                <TouchableOpacity
+                  style={styles.editUpiBtn}
+                  onPress={startEditingUpi}
+                  accessibilityLabel="Edit UPI ID"
+                  hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
+                  <Pencil size={16} color={theme.color.ink} />
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={styles.saveBtn}
+                  onPress={saveMyUpiId}
+                  disabled={savingUpi}>
+                  <Text style={styles.saveBtnText}>
+                    {savingUpi ? 'Saving…' : 'Save'}
+                  </Text>
+                </TouchableOpacity>
+              )}
             </GlassCard>
             <Text style={styles.hint}>
               When someone settles up with you, this is what lets EzySplit open
@@ -690,13 +765,55 @@ const BalancesScreen: React.FC = () => {
           </>
         )}
 
+        <Text style={[styles.sectionTitle, styles.exportTitle]}>
+          Export & share
+        </Text>
         <View style={styles.exportRow}>
-          <TouchableOpacity style={styles.exportBtn} onPress={onExportPdf}>
-            <Text style={styles.exportText}>Export PDF</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.exportBtn} onPress={onExportExcel}>
-            <Text style={styles.exportText}>Export Excel</Text>
-          </TouchableOpacity>
+          {(
+            [
+              {
+                kind: 'pdf',
+                title: 'PDF report',
+                hint: 'Ready to share',
+                Icon: FileText,
+                tint: theme.color.rose,
+                onPress: onExportPdf,
+              },
+              {
+                kind: 'xlsx',
+                title: 'Excel sheet',
+                hint: 'All expenses',
+                Icon: FileSpreadsheet,
+                tint: theme.color.green,
+                onPress: onExportExcel,
+              },
+            ] as const
+          ).map(({kind, title, hint, Icon, tint, onPress}) => {
+            const busy = exporting === kind;
+            return (
+              <TouchableOpacity
+                key={kind}
+                style={[styles.exportBtn, !!exporting && !busy && styles.exportBtnDim]}
+                activeOpacity={0.8}
+                disabled={!!exporting}
+                accessibilityLabel={`Export ${title}`}
+                onPress={() => runExport(kind, onPress)}>
+                <View style={[styles.exportIcon, {backgroundColor: `${tint}22`}]}>
+                  {busy ? (
+                    <ActivityIndicator size="small" color={tint} />
+                  ) : (
+                    <Icon size={20} color={tint} />
+                  )}
+                </View>
+                <View style={styles.exportBody}>
+                  <Text style={styles.exportText}>{title}</Text>
+                  <Text style={styles.exportHint} numberOfLines={1}>
+                    {busy ? 'Preparing…' : hint}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
         </View>
       </ScrollView>
     </View>
@@ -771,6 +888,17 @@ const styles = StyleSheet.create({
     color: theme.color.ink,
     fontFamily: BodyFont.regular,
     fontSize: moderateScale(14.5),
+  },
+  upiInputLocked: {color: theme.color.inkSoft},
+  editUpiBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.color.surfaceStrong,
+    borderWidth: 1,
+    borderColor: theme.color.border,
   },
   saveBtn: {
     backgroundColor: theme.color.blue,
@@ -927,21 +1055,40 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontVariant: ['tabular-nums'],
   },
-  exportRow: {flexDirection: 'row', gap: 10, marginTop: 24},
+  exportTitle: {marginTop: 26},
+  exportRow: {flexDirection: 'row', gap: 10},
   exportBtn: {
     flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
     backgroundColor: theme.color.surface,
     borderWidth: 1,
     borderColor: theme.color.border,
     borderRadius: theme.radius.md,
     paddingVertical: 12,
-    alignItems: 'center',
+    paddingHorizontal: 12,
   },
+  exportBtnDim: {opacity: 0.5},
+  exportIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  exportBody: {flex: 1},
   exportText: {
     color: theme.color.ink,
     fontFamily: BodyFont.semibold,
     fontWeight: '600',
-    fontSize: moderateScale(13),
+    fontSize: moderateScale(13.5),
+  },
+  exportHint: {
+    color: theme.color.inkFaint,
+    fontFamily: BodyFont.regular,
+    fontSize: moderateScale(11),
+    marginTop: 2,
   },
   emptyState: {flex: 1, justifyContent: 'center', alignItems: 'center'},
 });
