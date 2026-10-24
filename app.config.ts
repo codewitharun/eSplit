@@ -134,25 +134,19 @@ const config: { expo: ExpoConfig } = {
         "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.SYSTEM_ALERT_WINDOW",
       ],
-      // App Links only on prod: the dev app must not claim ezysplit.arun.codes.
+      // App Links only on prod: the dev app must not claim the EzySplit domain.
       intentFilters: IS_DEV
         ? []
         : [
             {
               action: "VIEW",
               autoVerify: true,
-              data: [
-                {
-                  scheme: "https",
-                  host: "ezysplit.arun.codes",
-                  pathPrefix: "/app",
-                },
-                {
-                  scheme: "http",
-                  host: "ezysplit.arun.codes",
-                  pathPrefix: "/app",
-                },
-              ],
+              // New domain + the old one (expires 5 Nov 2026; drop it after)
+              // so invite links shared earlier still open the app.
+              data: ["ezysplit.techtiten.com", "ezysplit.arun.codes"].flatMap((host) => [
+                { scheme: "https", host, pathPrefix: "/app" },
+                { scheme: "http", host, pathPrefix: "/app" },
+              ]),
               category: ["BROWSABLE", "DEFAULT"],
             },
           ],

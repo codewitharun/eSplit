@@ -1,7 +1,4 @@
-What's new in EzySplit 2.4
+What's new in EzySplit 2.5
 
-• No more surprise balances: edited expenses are tagged, and changes made after a settle-up are flagged with a full change log
-• "Changes since settle-up" on Balances shows exactly what moved and why
-• New monthly insight: your top category and how you compare with last month
-• Cleaner Quick stats, with personal-only stats on the Personal tab
-• Redesigned PDF reports and a more useful Excel export
+• EzySplit has a new home: ezysplit.techtiten.com. Invite links and QR codes now use the new address (old links keep working for now)
+• Fixes and performance improvements
