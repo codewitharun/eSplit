@@ -5,22 +5,26 @@
 //
 // Two things outside JS also contain the host and must be updated by hand
 // in the same release (native config can't read this file):
-//   1. android/app/src/main/AndroidManifest.xml - the two
-//      android:host="..." entries in the App Links intent-filter
+//   1. app.config.ts - the App Links hosts in android.intentFilters
+//      (android/ is generated from it by expo prebuild)
 //   2. the new domain must serve /.well-known/assetlinks.json (esplit-backend
 //      already serves it) so Android verifies the App Links.
 // Keep the OLD domain working (redirect) for a while: invite links and QR
 // codes already shared by users point at it.
 
 // No trailing slash.
-export const WEB_BASE_URL = 'https://ezysplit.arun.codes';
+export const WEB_BASE_URL = 'https://ezysplit.techtiten.com';
 
 // esplit-backend (push notifications, AI assistant, deep-link pages) is
 // served from the same host today. Split this out if that ever changes.
 export const API_BASE_URL = WEB_BASE_URL;
 
+// Old domain (until 5 Nov 2026). Invite links / QR codes shared before 2.5.0
+// point here, so the app still opens them. Remove once it has expired.
+export const LEGACY_WEB_BASE_URL = 'https://ezysplit.arun.codes';
+
 // Deep links the app opens (React Navigation `linking.prefixes`).
-export const DEEP_LINK_PREFIXES = ['ezysplit://', `${WEB_BASE_URL}/app/`];
+export const DEEP_LINK_PREFIXES = ['ezysplit://', `${WEB_BASE_URL}/app/`, `${LEGACY_WEB_BASE_URL}/app/`];
 
 // Link that opens a group's join flow (invite messages, QR codes).
 export function groupInviteUrl(groupId: string): string {
