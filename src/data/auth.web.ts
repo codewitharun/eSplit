@@ -1,4 +1,7 @@
-// src/data/auth.web.ts - web twin of auth.ts (dev Firebase project only).
+// src/data/auth.web.ts - web twin of auth.ts.
+// Production web build: only WEB_ALLOWED_EMAILS can sign in (checked on the
+// popup result, BEFORE the real sign-in, so no one else even gets an account
+// or a users/{uid} doc), and account deletion is disabled.
 //
 // Native Google Sign-In doesn't exist on web, so: open Google's popup with
 // the plain Firebase JS SDK on a throwaway secondary app, take the Google ID
@@ -18,10 +21,13 @@ import {getApps, initializeApp as initJsApp} from 'firebase/app';
 import {
   GoogleAuthProvider as JsGoogleAuthProvider,
   getAuth as getJsAuth,
+  getRedirectResult,
   signInWithPopup,
+  signInWithRedirect,
   signOut as jsSignOut,
+  type UserCredential as JsUserCredential,
 } from 'firebase/auth';
-import {FIREBASE_WEB_CONFIG} from '../config/firebaseWeb';
+import {FIREBASE_WEB_CONFIG, WEB_ALLOWED_EMAILS, isWebEmailAllowed} from '../config/firebaseWeb';
 import {useAuthStore} from '../store/useAuthStore';
 import {currentUser, firebaseAuth} from './firebase';
 import {deleteUserDoc} from './users';
@@ -35,14 +41,68 @@ function popupAuth() {
   return getJsAuth(app);
 }
 
+const NOT_ALLOWED =
+  'This web version of EzySplit is private. Please use the Android app.';
+
+// Opened from the iPhone Home Screen: popups can't report back there, so the
+// Google page opens in the same window (redirect) and we finish on return.
+const isStandalone = () =>
+  typeof window !== 'undefined' &&
+  ((navigator as {standalone?: boolean}).standalone === true ||
+    !!window.matchMedia?.('(display-mode: standalone)').matches);
+
+const googleProvider = () => {
+  const provider = new JsGoogleAuthProvider();
+  provider.setCustomParameters({prompt: 'select_account'});
+  return provider;
+};
+
+// Email check + the Google ID token, from a popup or redirect result.
+function idTokenFrom(result: JsUserCredential): string | null {
+  if (!isWebEmailAllowed(result.user.email)) {
+    throw new Error(NOT_ALLOWED);
+  }
+  return JsGoogleAuthProvider.credentialFromResult(result)?.idToken ?? null;
+}
+
+// Back from the Google redirect (Home Screen app): sign in to the real auth.
+async function finishRedirectSignIn(): Promise<void> {
+  const auth = popupAuth();
+  try {
+    const result = await getRedirectResult(auth);
+    if (!result) {
+      return;
+    }
+    const idToken = idTokenFrom(result);
+    if (idToken) {
+      await signInWithCredential(
+        firebaseAuth(),
+        GoogleAuthProvider.credential(idToken),
+      );
+    }
+  } catch (error: any) {
+    console.error('[web] Google redirect sign-in failed', error);
+    if (error?.message === NOT_ALLOWED && typeof window !== 'undefined') {
+      window.alert(NOT_ALLOWED);
+    }
+  } finally {
+    jsSignOut(auth).catch(() => {});
+  }
+}
+if (typeof window !== 'undefined') {
+  finishRedirectSignIn();
+}
+
 // Google ID token from a popup, or null if the user closed it.
 async function googleIdToken(): Promise<string | null> {
   const auth = popupAuth();
+  if (isStandalone()) {
+    await signInWithRedirect(auth, googleProvider());
+    return new Promise<null>(() => {}); // the page navigates to Google
+  }
   try {
-    const provider = new JsGoogleAuthProvider();
-    provider.setCustomParameters({prompt: 'select_account'});
-    const result = await signInWithPopup(auth, provider);
-    return JsGoogleAuthProvider.credentialFromResult(result)?.idToken ?? null;
+    const result = await signInWithPopup(auth, googleProvider());
+    return idTokenFrom(result);
   } catch (error: any) {
     if (
       error?.code === 'auth/popup-closed-by-user' ||
@@ -73,6 +133,9 @@ export async function signOut(): Promise<void> {
 }
 
 export async function deleteAccount(): Promise<void> {
+  if (WEB_ALLOWED_EMAILS !== null) {
+    throw new Error('Delete your account from the Android app.');
+  }
   const user = currentUser();
   if (!user) {
     throw new Error('You are not signed in.');
