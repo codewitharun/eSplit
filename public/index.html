@@ -14,6 +14,9 @@
     <meta name="apple-mobile-web-app-title" content="EzySplit" />
     <meta name="robots" content="noindex, nofollow" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <!-- scope "/" keeps every page (Home, Groups, Settings) inside the Home Screen
+         app; without it iOS takes the scope from the page you added it on. -->
+    <link rel="manifest" href="/manifest.json" />
     <title>EzySplit</title>
     <style id="expo-reset">
       html,

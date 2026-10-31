@@ -49,3 +49,4 @@ credentials/*
 *.jks
 signing.properties
 *.p12
+.vercel
