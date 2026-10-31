@@ -13,6 +13,11 @@ on:
     paths-ignore:
       - '**/*.md'
       - '.github/**'
+      # web-only files (Arun's private web build, deployed by hand with Vercel)
+      - 'src/**/*.web.ts'
+      - 'src/config/firebaseWeb.ts'
+      - 'public/**'
+      - 'assets/favicon.png'
   workflow_dispatch:
     inputs:
       track:
