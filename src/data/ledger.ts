@@ -410,6 +410,7 @@ export function subscribeJoinRequests(
     snap => {
       onChange(snap.docs.map(d => d.data() as JoinRequest));
     },
+    () => onChange([]),
   );
 }
 
@@ -493,8 +494,12 @@ export function subscribeGroup(
   groupId: string,
   onChange: (group: Group | null) => void,
 ): () => void {
-  return listenDoc(groupDoc(groupId), snap =>
-    onChange(snap.exists() ? (snap.data() as Group) : null),
+  // An error (e.g. permission-denied once the group is deleted or you've
+  // left it) reads as "no group" instead of an uncaught listener error.
+  return listenDoc(
+    groupDoc(groupId),
+    snap => onChange(snap.exists() ? (snap.data() as Group) : null),
+    () => onChange(null),
   );
 }
 
@@ -502,9 +507,13 @@ export function subscribeGroupMembers(
   groupId: string,
   onChange: (members: GroupMember[]) => void,
 ): () => void {
-  return listenQuery(sub(groupId, 'members'), snap => {
-    onChange(snap.docs.map(d => d.data() as GroupMember));
-  });
+  return listenQuery(
+    sub(groupId, 'members'),
+    snap => {
+      onChange(snap.docs.map(d => d.data() as GroupMember));
+    },
+    () => onChange([]),
+  );
 }
 
 // --- Expenses ----------------------------------------------------------------
@@ -803,7 +812,7 @@ export function subscribeExpenses(
     query(sub(groupId, 'expenses'), orderBy('createdAt', 'desc')),
     snap =>
       onChange(snap.docs.map(d => ({...(d.data() as Expense), id: d.id}))),
-    err => onError?.(err as unknown as Error),
+    err => (onError ? onError(err as unknown as Error) : onChange([])),
   );
 }
 
@@ -827,6 +836,7 @@ export function subscribeSettlements(
     query(sub(groupId, 'settlements'), orderBy('createdAt', 'desc')),
     snap =>
       onChange(snap.docs.map(d => ({...(d.data() as Settlement), id: d.id}))),
+    () => onChange([]),
   );
 }
 

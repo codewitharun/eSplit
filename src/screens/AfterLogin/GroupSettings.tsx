@@ -87,7 +87,7 @@ const GroupSettingsScreen: React.FC = () => {
   const groupKey = useExpenseState(state => state.groupKey);
   const setGroupKey = useExpenseState(state => state.setGroupKey);
   const ledger = useGroupLedger(groupKey);
-  const {renameGroupLocally} = useGroups();
+  const {renameGroupLocally, removeGroupLocally} = useGroups();
   const [togglingLock, setTogglingLock] = useState(false);
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
@@ -320,6 +320,7 @@ const GroupSettingsScreen: React.FC = () => {
           onPress: async () => {
             try {
               await leaveGroup(groupKey, user.uid);
+              removeGroupLocally(groupKey);
               setGroupKey(null);
               navigation.getParent()?.navigate('Group-Check');
             } catch (error: any) {
@@ -423,6 +424,9 @@ const GroupSettingsScreen: React.FC = () => {
     try {
       await deleteGroup(groupKey);
       setDeleteModalVisible(false);
+      // Drop it from the cached group list too, or the deleted group stays
+      // listed and opening it shows an empty, unusable group.
+      removeGroupLocally(groupKey);
       setGroupKey(null);
       haptics.success();
       Toast.show({type: 'success', text1: 'Group deleted'});
