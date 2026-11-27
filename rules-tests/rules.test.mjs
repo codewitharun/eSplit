@@ -235,6 +235,22 @@ describe('leave group', () => {
     await assertSucceeds(b.commit());
     await assertSucceeds(updateDoc(doc(f, 'users', 'bob'), {groupIds: arrayRemove('g1')}));
   });
+  test('last admin leaves and hands admin to a member in the same batch', async () => {
+    const f = db('alice');
+    const b = writeBatch(f);
+    b.update(doc(f, 'groups', 'g1'), {memberIds: arrayRemove('alice')});
+    b.update(doc(f, 'groups', 'g1', 'members', 'alice'), {active: false, leftAt: 'now'});
+    b.update(doc(f, 'groups', 'g1', 'members', 'bob'), {role: 'admin'});
+    await assertSucceeds(b.commit());
+    await assertSucceeds(updateDoc(doc(f, 'users', 'alice'), {groupIds: arrayRemove('g1')}));
+  });
+  test('a plain member cannot make themselves admin on the way out', async () => {
+    const f = db('bob');
+    const b = writeBatch(f);
+    b.update(doc(f, 'groups', 'g1'), {memberIds: arrayRemove('bob')});
+    b.update(doc(f, 'groups', 'g1', 'members', 'bob'), {active: false, leftAt: 'now', role: 'admin'});
+    await assertFails(b.commit());
+  });
   test('a member cannot remove someone else', async () => {
     await assertFails(updateDoc(doc(db('bob'), 'groups', 'g1'), {memberIds: arrayRemove('alice')}));
   });

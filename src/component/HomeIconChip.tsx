@@ -36,7 +36,7 @@ const HomeIconChip: React.FC<Props> = ({style}) => {
       hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}
       onPress={() => {
         haptics.tap();
-        navigation.getParent()?.navigate('Group-Check');
+        navigation.getParent()?.navigate('Group-Check', undefined, {pop: true});
       }}>
       <HomeIcon size={18} color={theme.color.ink} />
     </TouchableOpacity>

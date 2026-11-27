@@ -152,11 +152,16 @@ const ActivityScreen: React.FC = () => {
   // back, changing groups, anything that remounts Activity), reopening
   // the modal even though nobody tapped "+" this time. A ref seeded from
   // the value at mount only reacts to a genuine *change* afterwards.
+  // Only the Activity inside the VISIBLE Home answers the "+" signal. The
+  // FAB shows on every tab, so this Activity tab itself may be unfocused -
+  // what matters is that its tab navigator (the Home route) is the one on
+  // screen. A stale Home copy lower in the root stack would otherwise open
+  // its own modal behind the visible one.
   const lastAddSignalRef = useRef(addExpenseSignal);
   React.useEffect(() => {
     if (addExpenseSignal !== lastAddSignalRef.current) {
       lastAddSignalRef.current = addExpenseSignal;
-      if (groupKey) {
+      if (groupKey && (navigation.getParent()?.isFocused() ?? true)) {
         setEditingExpense(null);
         // Grow the panel out of the Add expense button itself.
         setExpenseOrigin({

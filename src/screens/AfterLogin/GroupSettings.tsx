@@ -51,6 +51,7 @@ import {
   declineJoinRequest,
   deleteGroup,
   leaveGroup,
+  pickNextAdmin,
   removeGuestMember,
   renameGroup,
   setGroupLocked,
@@ -142,6 +143,18 @@ const GroupSettingsScreen: React.FC = () => {
   const hasOpenBalance = Math.abs(myBalance) > EPSILON;
   const myRole = ledger.members.find(m => m.uid === user?.uid)?.role;
   const isGroupAdmin = myRole === 'admin';
+  // Leaving a personal list, or a group where you're the only real member,
+  // would strand it in the DB (nobody left to read, join or delete it), so
+  // those get Delete instead of Leave. Guests don't count - they have no
+  // account to open the group with.
+  const hasOtherRealMembers = ledger.members.some(
+    m => m.uid !== user?.uid && m.active !== false && !m.isGuest,
+  );
+  const canLeave =
+    ledger.group?.type !== 'personal' &&
+    (ledger.loading || hasOtherRealMembers);
+  // Set when you're the last admin: they take over the moment you leave.
+  const nextAdmin = user ? pickNextAdmin(ledger.members, user.uid) : null;
 
   // Arrived from a join-request notification: requests are listed at the
   // top of this screen, so scroll up and highlight the one tapped. If it's
@@ -311,7 +324,11 @@ const GroupSettingsScreen: React.FC = () => {
       'Leave this group?',
       `You'll need the join code or a new invite to get back into "${
         ledger.group?.name || 'this group'
-      }".`,
+      }".${
+        nextAdmin
+          ? `\n\n${nextAdmin.displayName} will become the admin.`
+          : ''
+      }`,
       [
         {text: 'Cancel', style: 'cancel'},
         {
@@ -319,10 +336,17 @@ const GroupSettingsScreen: React.FC = () => {
           style: 'destructive',
           onPress: async () => {
             try {
-              await leaveGroup(groupKey, user.uid);
+              const promoted = await leaveGroup(groupKey, user.uid);
               removeGroupLocally(groupKey);
+              if (promoted) {
+                Toast.show({
+                  type: 'success',
+                  text1: 'Left the group',
+                  text2: `${promoted.displayName} is the admin now.`,
+                });
+              }
               setGroupKey(null);
-              navigation.getParent()?.navigate('Group-Check');
+              navigation.getParent()?.navigate('Group-Check', undefined, {pop: true});
             } catch (error: any) {
               Toast.show({
                 type: 'error',
@@ -337,7 +361,7 @@ const GroupSettingsScreen: React.FC = () => {
   };
 
   const handleSwitchGroup = () => {
-    navigation.getParent()?.navigate('Group-Check');
+    navigation.getParent()?.navigate('Group-Check', undefined, {pop: true});
   };
 
   const handleApproveRequest = async (requesterUid: string) => {
@@ -430,7 +454,7 @@ const GroupSettingsScreen: React.FC = () => {
       setGroupKey(null);
       haptics.success();
       Toast.show({type: 'success', text1: 'Group deleted'});
-      navigation.getParent()?.navigate('Group-Check');
+      navigation.getParent()?.navigate('Group-Check', undefined, {pop: true});
     } catch (error: any) {
       Toast.show({
         type: 'error',
@@ -844,27 +868,37 @@ const GroupSettingsScreen: React.FC = () => {
           <Text style={styles.actionText}>Switch or create a group</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.actionRow}
-          onPress={handleLeaveGroup}
-          disabled={hasOpenBalance}
-          activeOpacity={hasOpenBalance ? 1 : 0.6}>
-          <Text
-            style={[
-              styles.actionText,
-              {
-                color: hasOpenBalance ? theme.color.inkFaint : theme.color.rose,
-              },
-            ]}>
-            Leave this group
-          </Text>
-          {hasOpenBalance && (
-            <Text style={styles.leaveBlockedHint}>
-              Settle your {myBalance >= 0 ? 'incoming' : 'open'} balance of{' '}
-              {formatMoney(Math.abs(myBalance), ledger.group?.currency)} first
+        {canLeave ? (
+          <TouchableOpacity
+            style={styles.actionRow}
+            onPress={handleLeaveGroup}
+            disabled={hasOpenBalance}
+            activeOpacity={hasOpenBalance ? 1 : 0.6}>
+            <Text
+              style={[
+                styles.actionText,
+                {
+                  color: hasOpenBalance ? theme.color.inkFaint : theme.color.rose,
+                },
+              ]}>
+              Leave this group
             </Text>
-          )}
-        </TouchableOpacity>
+            {hasOpenBalance && (
+              <Text style={styles.leaveBlockedHint}>
+                Settle your {myBalance >= 0 ? 'incoming' : 'open'} balance of{' '}
+                {formatMoney(Math.abs(myBalance), ledger.group?.currency)} first
+              </Text>
+            )}
+          </TouchableOpacity>
+        ) : (
+          !isGroupAdmin && (
+            <Text style={[styles.leaveBlockedHint, {marginBottom: 8}]}>
+              {ledger.group?.type === 'personal'
+                ? 'Personal lists can only be deleted by their owner.'
+                : "You're the only member left, and only an admin can delete a group."}
+            </Text>
+          )
+        )}
 
         {isGroupAdmin && (
           <>
