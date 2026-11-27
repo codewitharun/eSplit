@@ -410,6 +410,7 @@ export function subscribeJoinRequests(
     snap => {
       onChange(snap.docs.map(d => d.data() as JoinRequest));
     },
+    () => onChange([]),
   );
 }
 
@@ -493,8 +494,12 @@ export function subscribeGroup(
   groupId: string,
   onChange: (group: Group | null) => void,
 ): () => void {
-  return listenDoc(groupDoc(groupId), snap =>
-    onChange(snap.exists() ? (snap.data() as Group) : null),
+  // An error (e.g. permission-denied once the group is deleted or you've
+  // left it) reads as "no group" instead of an uncaught listener error.
+  return listenDoc(
+    groupDoc(groupId),
+    snap => onChange(snap.exists() ? (snap.data() as Group) : null),
+    () => onChange(null),
   );
 }
 
@@ -502,9 +507,13 @@ export function subscribeGroupMembers(
   groupId: string,
   onChange: (members: GroupMember[]) => void,
 ): () => void {
-  return listenQuery(sub(groupId, 'members'), snap => {
-    onChange(snap.docs.map(d => d.data() as GroupMember));
-  });
+  return listenQuery(
+    sub(groupId, 'members'),
+    snap => {
+      onChange(snap.docs.map(d => d.data() as GroupMember));
+    },
+    () => onChange([]),
+  );
 }
 
 // --- Expenses ----------------------------------------------------------------
@@ -803,7 +812,7 @@ export function subscribeExpenses(
     query(sub(groupId, 'expenses'), orderBy('createdAt', 'desc')),
     snap =>
       onChange(snap.docs.map(d => ({...(d.data() as Expense), id: d.id}))),
-    err => onError?.(err as unknown as Error),
+    err => (onError ? onError(err as unknown as Error) : onChange([])),
   );
 }
 
@@ -827,12 +836,77 @@ export function subscribeSettlements(
     query(sub(groupId, 'settlements'), orderBy('createdAt', 'desc')),
     snap =>
       onChange(snap.docs.map(d => ({...(d.data() as Settlement), id: d.id}))),
+    () => onChange([]),
   );
 }
 
 // --- Leave group guard -----------------------------------------------------
 
-export async function leaveGroup(groupId: string, uid: string): Promise<void> {
+// Thrown when leaving would strand the group: a personal list, or a group
+// where the leaver is the only real (non-guest) member. Nobody could read,
+// join or delete that group afterwards, so the UI offers Delete instead.
+export class LeaveNotAllowedError extends Error {
+  constructor(public reason: 'personal' | 'onlyMember') {
+    super(
+      reason === 'personal'
+        ? 'Personal lists can be deleted, not left.'
+        : "You're the only member. Delete the group instead.",
+    );
+    this.name = 'LeaveNotAllowedError';
+  }
+}
+
+// Who takes over as admin if `uid` leaves now. null when `uid` isn't the
+// last active admin (someone else already is one) or nobody is left to
+// promote. Oldest active non-guest member wins.
+export function pickNextAdmin(
+  members: GroupMember[],
+  uid: string,
+): GroupMember | null {
+  const others = members.filter(
+    m => m.uid !== uid && m.active !== false && !m.isGuest,
+  );
+  const me = members.find(m => m.uid === uid);
+  if (me?.role !== 'admin') {
+    return null;
+  }
+  if (others.some(m => m.role === 'admin')) {
+    return null;
+  }
+  return (
+    [...others].sort((a, b) =>
+      (a.joinedAt || '').localeCompare(b.joinedAt || ''),
+    )[0] ?? null
+  );
+}
+
+// Resolves to the member who was promoted to admin, if anyone was.
+export async function leaveGroup(
+  groupId: string,
+  uid: string,
+): Promise<GroupMember | null> {
+  const [groupSnap, membersSnap] = await Promise.all([
+    getDoc(groupDoc(groupId)),
+    getDocs(sub(groupId, 'members')),
+  ]);
+  if ((groupSnap.data() as {type?: string} | undefined)?.type === 'personal') {
+    throw new LeaveNotAllowedError('personal');
+  }
+  const members = membersSnap.docs.map(
+    d => ({...(d.data() as GroupMember), uid: d.id}),
+  );
+  const othersLeft = members.some(
+    m => m.uid !== uid && m.active !== false && !m.isGuest,
+  );
+  if (!othersLeft) {
+    throw new LeaveNotAllowedError('onlyMember');
+  }
+  // Last admin leaving would leave nobody to approve joins or delete the
+  // group, so hand admin to the longest-standing member in the same batch.
+  // The batch is checked against the state before it, when the leaver is
+  // still an admin, so firestore.rules allows the promotion.
+  const nextAdmin = pickNextAdmin(members, uid);
+
   // Previously this only removed `uid` from the group's `memberIds` array -
   // the per-member doc at groups/{groupId}/members/{uid} was never touched,
   // so it sat there forever with `active: true`. Every screen that reads
@@ -855,9 +929,15 @@ export async function leaveGroup(groupId: string, uid: string): Promise<void> {
     active: false,
     leftAt: nowIso(),
   });
+  if (nextAdmin) {
+    batch.update(doc(db(), 'groups', groupId, 'members', nextAdmin.uid), {
+      role: 'admin',
+    });
+  }
   await batch.commit();
 
   await updateDoc(userDoc(uid), {groupIds: arrayRemove(groupId)});
+  return nextAdmin;
 }
 
 // --- Guests (manual members, no account, never joined) ----------------------

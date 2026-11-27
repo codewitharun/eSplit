@@ -14,11 +14,15 @@ on:
       - '**/*.md'
       - '.github/**'
       # web-only files (Arun's private web build, deployed by hand with Vercel)
-      - 'src/**/*.web.ts'
+      - 'src/**/*.web.*'  # .web.ts AND .web.js (the .js shim slipped through on PR #22)
       - 'src/config/firebaseWeb.ts'
       - 'public/**'
       - 'assets/favicon.png'
       - 'metro.config.js'  # today it only changes the web bundle; run the workflow by hand if that changes
+      # Firestore rules + their tests (deployed by hand with the Firebase CLI, not part of the app)
+      - 'firestore.rules'
+      - 'firebase.json'
+      - 'rules-tests/**'
   workflow_dispatch:
     inputs:
       track:

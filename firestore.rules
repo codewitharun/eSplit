@@ -1,8 +1,189 @@
 rules_version = '2';
+
+// EzySplit Firestore rules (prod: esplit-d362c, dev: ezysplit-dev).
+// Shared by the Expo app AND the old CLI app (ESplit_App): both use the same
+// collections and write shapes, so these rules must keep both working.
+// The backend (esplit-backend) uses the admin SDK, which ignores these rules.
+//
+// Schema:
+//   users/{uid}                                   groupIds[], upiId, fcmToken, name...
+//   users/{uid}/notifications/{id}                written by the backend only
+//   groups/{gid}                                  memberIds[], joinCode, createdBy, isLocked, name
+//   groups/{gid}/members/{uid}                    role 'admin'|'member', active, isGuest
+//   groups/{gid}/expenses/{id}                    createdBy, shares...
+//   groups/{gid}/deletedExpenses/{id}             soft-delete log
+//   groups/{gid}/settlements/{id}                 fromUid, toUid (append-only)
+//   groups/{gid}/joinRequests/{uid}               status 'pending'|'approved'|'declined'
+//   announcements, appConfig                      read-only for clients
+//
+// Who may do what mirrors the app's own UI rules:
+//   - only members see a group's data
+//   - only the person who added an expense edits or deletes it
+//   - admins (members/{uid}.role == 'admin') approve joins, rename, lock,
+//     manage guests, delete the group
+//   - a non-admin member can only remove THEMSELVES from memberIds (leave)
+//
+// Test: cd rules-tests && npm test   (runs the Firestore emulator)
+// Deploy: firebase deploy --only firestore:rules -P dev   (then -P EzySplit for prod)
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if true;
+
+    function signedIn() {
+      return request.auth != null;
     }
+
+    function me() {
+      return request.auth.uid;
+    }
+
+    function groupPath(gid) {
+      return /databases/$(database)/documents/groups/$(gid);
+    }
+
+    function isMember(gid) {
+      return signedIn() && me() in get(groupPath(gid)).data.memberIds;
+    }
+
+    function isAdmin(gid) {
+      let m = /databases/$(database)/documents/groups/$(gid)/members/$(me());
+      return signedIn() && exists(m) &&
+        get(m).data.role == 'admin' && get(m).data.get('active', true) != false;
+    }
+
+    function hasPendingRequest(gid) {
+      let r = /databases/$(database)/documents/groups/$(gid)/joinRequests/$(me());
+      return signedIn() && exists(r) && get(r).data.status == 'pending';
+    }
+
+    function onlyChanged(keys) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
+    }
+
+    // ---- users ------------------------------------------------------------
+    match /users/{uid} {
+      // Names, photos, UPI ids and push tokens of group mates are read by
+      // uid all over the app (balances, join notifications).
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if signedIn() && (me() == uid ||
+        request.resource.data.keys().hasOnly(['groupIds']));
+      // Self: anything. Others: only groupIds (an admin approving a join, or
+      // deleting a group, updates the other member's groupIds).
+      allow update: if signedIn() && (me() == uid || onlyChanged(['groupIds']));
+      allow delete: if signedIn() && me() == uid;
+
+      match /notifications/{id} {
+        allow read: if signedIn() && me() == uid;
+        allow write: if false; // backend only
+      }
+    }
+
+    // ---- groups -----------------------------------------------------------
+    match /groups/{gid} {
+      // get by id is needed BEFORE joining (joinGroup reads the group to see
+      // if it's locked). Group ids are random and unguessable.
+      allow get: if signedIn();
+      // Join-code lookup and the joinCode clash check are queries on
+      // `joinCode` with limit(1). Rules can't see the where() value, so this
+      // is limited to one result per query.
+      // TODO(security): move the join-code lookup to the backend, then make
+      // this `isMember(gid)` only.
+      allow list: if signedIn() && request.query.limit <= 1;
+
+      allow create: if signedIn() &&
+        request.resource.data.createdBy == me() &&
+        request.resource.data.memberIds == [me()];
+
+      // Admin: anything (approve joins, rename, lock).
+      // Member: only remove themselves from memberIds (leave group).
+      allow update: if isAdmin(gid) ||
+        (isMember(gid) && onlyChanged(['memberIds']) &&
+          request.resource.data.memberIds ==
+            resource.data.memberIds.removeAll([me()]));
+
+      // Admin deletes the group; the creator may also roll back a
+      // half-created group (createGroup failed to write their member doc).
+      // deleteGroup() removes every members/{uid} doc (the admin's own too)
+      // BEFORE the group doc, so by then isAdmin() is false: a member whose
+      // own member doc is already gone may delete the group doc.
+      // TODO(app): delete the group doc before the admin's own member doc,
+      // then drop the last clause.
+      allow delete: if isAdmin(gid) ||
+        (signedIn() && resource.data.createdBy == me() &&
+          resource.data.memberIds == [me()]) ||
+        (isMember(gid) &&
+          !exists(/databases/$(database)/documents/groups/$(gid)/members/$(me())));
+
+      match /members/{uid} {
+        // A joiner with a pending request reads the member list once, to
+        // find the admins to notify.
+        allow read: if isMember(gid) || hasPendingRequest(gid);
+        // Creator writes their own admin doc right after creating the group.
+        // Admins add approved members and guests.
+        allow create: if isAdmin(gid) ||
+          (isMember(gid) && uid == me() &&
+            get(groupPath(gid)).data.createdBy == me());
+        // Self: leaving (active false, leftAt). Admin: anything.
+        allow update: if isAdmin(gid) ||
+          (isMember(gid) && uid == me() && onlyChanged(['active', 'leftAt']));
+        allow delete: if isAdmin(gid);
+      }
+
+      match /expenses/{expenseId} {
+        allow read: if isMember(gid);
+        allow create: if isMember(gid) &&
+          request.resource.data.createdBy == me();
+        // Only the person who added it edits or deletes it (same as the UI),
+        // and createdBy can't be rewritten. Admins can delete while deleting
+        // the whole group.
+        allow update: if isMember(gid) && resource.data.createdBy == me() &&
+          request.resource.data.createdBy == me();
+        allow delete: if (isMember(gid) && resource.data.createdBy == me()) ||
+          isAdmin(gid);
+      }
+
+      match /deletedExpenses/{expenseId} {
+        allow read: if isMember(gid);
+        allow create: if isMember(gid);
+        // Rollback if the expense delete itself failed.
+        allow delete: if isMember(gid);
+        allow update: if false;
+      }
+
+      match /settlements/{settlementId} {
+        allow read: if isMember(gid);
+        allow create: if isMember(gid);
+        allow update: if false; // append-only
+        allow delete: if isAdmin(gid); // only while deleting the group
+      }
+
+      match /joinRequests/{uid} {
+        allow get: if (signedIn() && uid == me()) || isMember(gid);
+        allow list: if isMember(gid);
+        // Self: a new or renewed pending request (a fresh set() overwrites an
+        // old approved/declined one).
+        allow create, update: if (signedIn() && uid == me() &&
+            request.resource.data.status == 'pending' &&
+            request.resource.data.uid == me() &&
+            get(groupPath(gid)).data.get('isLocked', false) != true) ||
+          (isAdmin(gid) && request.resource.data.status in ['approved', 'declined']);
+        allow delete: if false;
+      }
+    }
+
+    // ---- read-only content ------------------------------------------------
+    match /announcements/{id} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /appConfig/{id} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Everything else (aiAccess, aiUsage, aiStats, config, feedbacks,
+    // notificationCrons, legacy Esplitgroups/Esplitusers) is backend-only.
   }
 }

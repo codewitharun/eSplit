@@ -78,7 +78,7 @@ export function useEnterGroup(navigation: any) {
       await AsyncStorage.setItem('groupKey', groupKey);
       await AsyncStorage.setItem('lastJoinedGroup', groupKey);
       haptics.success();
-      navigation.navigate('Home');
+      navigation.navigate('Home', undefined, {pop: true});
       promptForUpiIfMissing(currentUser(), groupCurrency, groupType);
     },
     [navigation, setGroupKey, promptForUpiIfMissing],

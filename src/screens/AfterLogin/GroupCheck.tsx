@@ -37,6 +37,7 @@ import AppBottomBar, {
 import {useGroups} from '../../hooks/useGroups';
 import {useGroupsOverview} from '../../hooks/useGroupsOverview';
 import {leaveGroup} from '../../data/ledger';
+import {Routes} from '../../navigator/constants';
 import {mergeCurrencyTotals} from '../../services/ledger/spendTotals';
 import GradientView from '../../component/glass/GradientView';
 import AddGroupFab, {
@@ -244,7 +245,7 @@ const GroupManagement = ({navigation}: any) => {
     await AsyncStorage.setItem('groupKey', groupKey);
     await AsyncStorage.setItem('lastJoinedGroup', groupKey);
     haptics.success();
-    navigation.navigate('Home');
+    navigation.navigate('Home', undefined, {pop: true});
     promptForUpiIfMissing(user, groupCurrency, groupType);
   };
 
@@ -279,6 +280,44 @@ const GroupManagement = ({navigation}: any) => {
     } finally {
       setLoader(false);
     }
+  };
+
+  // A personal list, or a group where you're the only account, can't be
+  // left - nobody would be left to open or delete it. Swipe offers Delete,
+  // which goes through the full delete flow in that group's settings
+  // (everyone-settled check + type-the-name confirm) instead of a swipe.
+  const mustDeleteInstead = (g: {type?: string; memberIds?: string[]}) =>
+    g.type === 'personal' || (g.memberIds?.length ?? 0) <= 1;
+
+  const handleDeleteFromList = (g: {
+    id: string;
+    name: string;
+    currency: string;
+    type?: GroupType;
+  }) => {
+    const isPersonal = g.type === 'personal';
+    AppAlert.alert(
+      isPersonal ? 'Delete this list?' : 'Delete this group?',
+      isPersonal
+        ? 'Personal lists can be deleted, not left.'
+        : "You're the only member, so leaving would leave an empty group behind. Delete it instead from the group's settings.",
+      [
+        {text: 'Cancel', style: 'cancel'},
+        {
+          text: 'Open settings',
+          onPress: async () => {
+            setGroupKey(g.id);
+            await AsyncStorage.setItem('groupKey', g.id);
+            await AsyncStorage.setItem('lastJoinedGroup', g.id);
+            navigation.navigate(
+              'Home',
+              {screen: Routes.GroupSettings},
+              {pop: true},
+            );
+          },
+        },
+      ],
+    );
   };
 
   const handleLeaveGroup = (leaveGroupId: string) => {
@@ -337,13 +376,19 @@ const GroupManagement = ({navigation}: any) => {
           style: 'destructive',
           onPress: async () => {
             try {
-              await leaveGroup(leaveGroupId, user.uid);
+              const promoted = await leaveGroup(leaveGroupId, user.uid);
               removeGroupLocally(leaveGroupId);
               if (leaveGroupId === currentGroupKey) {
                 setGroupKey(null);
               }
               haptics.tap();
-              Toast.show({type: 'success', text1: 'Left group'});
+              Toast.show({
+                type: 'success',
+                text1: 'Left group',
+                text2: promoted
+                  ? `${promoted.displayName} is the admin now.`
+                  : undefined,
+              });
             } catch (error: any) {
               Toast.show({
                 type: 'error',
@@ -853,9 +898,13 @@ const GroupManagement = ({navigation}: any) => {
             {latestActiveGroups.map(g => (
               <SwipeableRow
                 key={g.id}
-                actionLabel="Leave"
+                actionLabel={mustDeleteInstead(g) ? 'Delete' : 'Leave'}
                 actionColor={theme.color.rose}
-                onAction={() => handleLeaveGroup(g.id)}>
+                onAction={() =>
+                  mustDeleteInstead(g)
+                    ? handleDeleteFromList(g)
+                    : handleLeaveGroup(g.id)
+                }>
                 <TouchableOpacity
                   onPress={() => enterGroup(g.id, g.currency, g.type)}
                   activeOpacity={0.85}>
